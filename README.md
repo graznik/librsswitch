@@ -17,4 +17,10 @@ Usage
 - Add a 433 MHz sender to GPIO 4 of the Raspberry Pi (see the Wiki for a detailed description).
 
 ### API
+A socket is switched on or off by function socket_send().
     socket_send(uint dev, uint group, uint socket, uint data);
+
+- dev: Manufacturer ID
+- group: Socket group
+- socket: Socket within a socket group
+- data: 1 = On, 0 = Off
