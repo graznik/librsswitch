@@ -11,4 +11,4 @@ At the moment librsswitch is able to emulate the following encoder chips:
 
 Usage
 ===========
-You'll have to install the C library [bcm2835](the http://www.open.com.au/mikem/bcm2835/) on your Raspberry Pi.
+You'll have to install the C library [bcm2835](http://www.open.com.au/mikem/bcm2835/) on your Raspberry Pi.
