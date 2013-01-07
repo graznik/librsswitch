@@ -17,3 +17,4 @@ Usage
 - Add a 433 MHz sender to GPIO 4 of the Raspberry Pi (see the Wiki for a detailed description).
 
 ### API
+command(socket_send(int socket_send(uint dev, uint group, uint socket, uint data);)
