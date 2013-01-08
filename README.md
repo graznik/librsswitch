@@ -18,9 +18,9 @@ Usage
 
 ### API
 A socket is switched on or off by function socket_send().
-
-    socket_send(uint dev, uint group, uint socket, uint data);
-
+```c
+socket_send(uint dev, uint group, uint socket, uint data);
+```
 - dev: Manufacturer ID
 - group: Socket group
 - socket: Socket within a socket group
