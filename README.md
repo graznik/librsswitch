@@ -11,6 +11,7 @@ Encoders
 At the moment librsswitch is able to emulate the following encoder chips:
 
 - PT2260-R4S
+- PT2262 (HX2262)
 
 Usage
 -------
