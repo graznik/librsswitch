@@ -43,7 +43,7 @@ A socket is switched on or off by function socket_send().
 ```c
 socket_send(uint dev, uint group, uint socket, uint data);
 ```
-- **dev**: Vendor ID (check table obove)
+- **dev**: Vendor ID (check the table of supported devices)
 - **group**: Socket group
 - **socket**: Socket within a socket group
 - **data**: 1 = On, 0 = Off
