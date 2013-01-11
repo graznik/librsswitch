@@ -1,14 +1,14 @@
 librsswitch
 ===========
-librsswitch (remote socket switch) is a Raspberry Pi Linux library for controlling remote controlled power sockets.
+**librsswitch** (remote socket switch) is a Raspberry Pi Linux library for controlling remote controlled power sockets.
 The library emulates the encoder chip within the power socket remote control, so a separate 433 MHz sender is needed.
 
-librsswitch is written in C and heavily inspired by [rcswitch-pi](https://github.com/r10r/rcswitch-pi), which is based
+**librsswitch** is written in C and heavily inspired by [rcswitch-pi](https://github.com/r10r/rcswitch-pi), which is based
 on [rc-switch](http://code.google.com/p/rc-switch/).
 
 Supported devices
 -------
-At the moment librsswitch supports the following devices:
+At the moment **librsswitch** supports the following devices:
 
 <table>
   <tr>
