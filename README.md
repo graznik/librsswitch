@@ -31,6 +31,8 @@ At the moment librsswitch supports the following devices:
   </tr>
 </table>
 
+If in doubt, open the remote control of your device and check which encoder is used. 
+
 Usage
 -------
 - Install the C library [bcm2835](http://www.open.com.au/mikem/bcm2835/) on your Raspberry Pi.
