@@ -31,7 +31,7 @@ At the moment librsswitch supports the following devices:
   </tr>
 </table>
 
-If in doubt, open the remote control of your device and check which encoder is used. 
+If in doubt, open the remote control of your device and check which encoder is used.
 
 Usage
 -------
