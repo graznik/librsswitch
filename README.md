@@ -12,16 +12,19 @@ At the moment librsswitch supports the following devices:
 
 <table>
   <tr>
+    <th>Vendor ID (librsswitch)</th>
     <th>Vendor</th>
     <th>Order number</th>
     <th>Remote control encoder</th>
   </tr>
   <tr>
+    <td>0</th>
     <td>REV</td>
     <td>008345</td>
     <td>PT2260-R4S</td>
   </tr>
   <tr>
+    <td>1</th>
     <td>Pollin</td>
     <td>2605</td>
     <td>PT2262 (HX2262)</td>
