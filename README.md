@@ -6,12 +6,27 @@ The library emulates the encoder chip within the power socket remote control, so
 librsswitch is written in C and heavily inspired by [rcswitch-pi](https://github.com/r10r/rcswitch-pi), which is based
 on [rc-switch](http://code.google.com/p/rc-switch/).
 
-Encoders
+Supported devices
 -------
-At the moment librsswitch is able to emulate the following encoder chips:
+At the moment librsswitch supports the following devices:
 
-- PT2260-R4S
-- PT2262 (HX2262)
+<table>
+  <tr>
+    <th>Vendor</th>
+    <th>Order number</th>
+    <th>Remote control encoder</th>
+  </tr>
+  <tr>
+    <td>REV</td>
+    <td>008345</td>
+    <td>PT2260-R4S</td>
+  </tr>
+  <tr>
+    <td>Pollin</td>
+    <td>2605</td>
+    <td>PT2262 (HX2262)</td>
+  </tr>
+</table>
 
 Usage
 -------
