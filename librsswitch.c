@@ -1,0 +1,267 @@
+#include "librsswitch.h"
+
+static void send_tris(char *, int);
+static void send_0(void);
+static void send_1(void);
+static void send_f(void);
+static void send_sync(void);
+static void transmit(int, int);
+static int  pt2260_init(Encoder *);
+static int  pt2262_init(Encoder *);
+static int  socket_ctrl(Encoder *, uint, uint, uint);
+
+
+/**
+ * Send a code word
+ * @param codeword   /^[10FS]*$/  -> see get_codeword
+ * @param ntimes     Number of times to send the code word
+ */
+static void send_tris(char *codeword, int ntimes)
+{
+	int n;
+
+	for (n = 0; n < ntimes; n++) {
+		int i = 0;
+
+		while (codeword[i] != '\0') {
+			switch(codeword[i]) {
+			case '0':
+				send_0();
+				break;
+			case 'F':
+				send_f();
+				break;
+			case '1':
+				send_1();
+				break;
+			}
+			i++;
+		}
+		send_sync();
+	}
+}
+
+/**
+ * Sends a Tri-State "0" Bit
+ *            _     _
+ * Waveform: | |___| |___
+ */
+static void send_0(void)
+{
+	transmit(1, 3);
+	transmit(1, 3);
+}
+/**
+ * Sends a Tri-State "1" Bit
+ *            ___   ___
+ * Waveform: |   |_|   |_
+ */
+static void send_1(void)
+{
+	transmit(3, 1);
+	transmit(3, 1);
+}
+
+/**
+ * Sends a Tri-State "F" Bit
+ *            _     ___
+ * Waveform: | |___|   |_
+ */
+static void send_f(void)
+{
+	transmit(1, 3);
+	transmit(3, 1);
+}
+
+/**
+ * Sends a "Sync" Bit
+ *                       _
+ * Waveform Protocol 1: | |_______________________________
+ *                       _
+ * Waveform Protocol 2: | |__________
+ */
+
+static void send_sync(void)
+{
+	transmit(1, 31);
+}
+
+
+static void transmit(int nhigh, int nlow)
+{
+	/* 
+	 * FIXME: 350 is the pulse length in us.
+	 * This should be a parameter in the future,
+	 * depending on the encoder chip within the
+	 * remote control.
+	 */ 
+	bcm2835_gpio_write(PIN, HIGH);
+	delayMicroseconds(350 * nhigh);
+	bcm2835_gpio_write(PIN, LOW);
+	delayMicroseconds(350 * nlow);
+}
+
+/**
+ * Configure struct for the PT2260 encoder
+ * @param pt2260     Pointer to a pt2260 instance
+ */
+static int pt2260_init(Encoder *pt2260)
+{
+	char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
+	char *sockets[] = {"1FF0", "F1F0", "FF10"};
+	char *data[] = {"0001", "0010"};
+	int i;
+
+	/* Four possible switch groups */
+	pt2260->ngroups = 4;
+	pt2260->groups = malloc(pt2260->ngroups * sizeof(char *));
+	if (pt2260->groups == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+	/* Three possible switches per group */
+	pt2260->nsockets = 3;
+	pt2260->sockets = malloc(pt2260->nsockets * sizeof(char *));
+	if (pt2260->sockets == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+
+	/* Data is either "On" or "Off" */
+	pt2260->ndata = 2;
+	pt2260->data = malloc(pt2260->ndata * sizeof(char *));
+	if (pt2260->data == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+
+	for (i = 0; i < pt2260->ngroups; i++) {
+		pt2260->groups[i] = groups[i];
+	}
+
+	for (i = 0; i < pt2260->nsockets; i++) {
+		pt2260->sockets[i] =  sockets[i];
+	}
+
+
+	for (i = 0; i < pt2260->ndata; i++) {
+		pt2260->data[i] = data[i];
+	}
+
+	return 0;
+}
+
+/**
+ * Configure struct for the PT2262 encoder
+ * @param *pt2262     Pointer to a pt2262 instance
+ */
+static int pt2262_init(Encoder *pt2262)
+{
+	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF", "FF0F", "0F0F", "F00F", "000F",
+			  "FFF0", "0FF0", "F0F0", "00F0", "FF00", "0F00", "F000", "0000"};
+	char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
+	char *data[] = {"FFF0", "FF0F"};
+	int i;
+
+	/* 16 possible switch groups (A-P in Intertechno code) */
+	pt2262->ngroups = 16;
+	pt2262->groups = malloc(pt2262->ngroups * sizeof(char *));
+	if (pt2262->groups == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+	/* Four possible switches per group */
+	pt2262->nsockets = 4;
+	pt2262->sockets = malloc(pt2262->nsockets * sizeof(char *));
+	if (pt2262->sockets == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+
+	/* Data is either "On" or "Off" */
+	pt2262->ndata = 2;
+	pt2262->data = malloc(pt2262->ndata * sizeof(char *));
+	if (pt2262->data == NULL) {
+		fputs("Error: Cannot malloc\n", stdout);
+		return -1;
+	}
+
+	for (i = 0; i < pt2262->ngroups; i++) {
+		pt2262->groups[i] = groups[i];
+	}
+
+	for (i = 0; i < pt2262->nsockets; i++) {
+		pt2262->sockets[i] =  sockets[i];
+	}
+
+
+	for (i = 0; i < pt2262->ndata; i++) {
+		pt2262->data[i] = data[i];
+	}
+
+	return 0;
+}
+
+/**
+ * Emulate a encoder chip
+ * @param *enc          Pointer to a encoder instance
+ * @param uint group    Socket group
+ * @param uint socket   Socket within group
+ * @param uint data     Data to send
+ */
+static int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
+{
+	/* Calculate code word size */
+	size_t s = strlen(enc->groups[group]) +
+		strlen(enc->sockets[socket]) +
+		strlen(enc->data[data]);
+	/* Generate the code word */
+	/* 
+	 * FIXME: Why s+1 ?
+	 */
+	char codeword[s];
+	snprintf(codeword, s+1, "%s%s%s",
+		 enc->groups[group],
+		 enc->sockets[socket],
+		 enc->data[data]);
+
+#ifdef DEBUG
+		syslog(LOG_NOTICE, "codeword: %s\n", codeword);
+#endif
+
+	/* Initialize the IO pin */
+	if(!bcm2835_init()) {
+		fputs("Cannot init bcm2835\n", stdout);
+		return -1;
+	}
+	/* Set the pin to be an output */
+	bcm2835_gpio_fsel(PIN, BCM2835_GPIO_FSEL_OUTP);
+
+	/* Send the codeword */
+	send_tris(codeword, 10);
+
+	return 0;
+}
+
+int socket_send(uint dev, uint group, uint socket, uint data)
+{
+	Encoder encoder;
+
+	switch (dev) {
+	case 0:
+#ifdef DEBUG
+		syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
+		       dev, group, socket, data);
+#endif
+		pt2260_init(&encoder);
+	case 1:
+#ifdef DEBUG
+		syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
+		       dev, group, socket, data);
+#endif
+		pt2262_init(&encoder);
+	}
+
+		socket_ctrl(&encoder, group, socket, data);
+	return 0;
+}
