@@ -32,6 +32,9 @@ socket_send(uint dev, uint group, uint socket, uint data);
 
 
 [1] https://github.com/r10r/rcswitch-pi
+
 [2] http://code.google.com/p/rc-switch/
+
 [3] https://github.com/graznik/librsswitch/wiki
+
 [4] http://www.open.com.au/mikem/bcm2835/
