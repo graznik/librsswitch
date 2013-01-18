@@ -5,6 +5,7 @@ The library emulates the encoder chip within the power socket remote control, so
 
 librsswitch is written in C and heavily inspired by rcswitch-pi [1], which is based on rc-switch [2].
 
+
 Supported devices
 -----------------
 At the moment librsswitch supports the following devices:
@@ -12,9 +13,11 @@ At the moment librsswitch supports the following devices:
 - REV 008345 (PT2260-R4S)
 - Pollin 2605 (PT2262)
 
+
 Hardware setup
 --------------
 See the librsswitch Wiki [3] for a detailed description of how to set up the entire hardware.
+
 
 Software setup
 --------------
@@ -29,7 +32,6 @@ Install the bcm2835 C library [4] on your Raspberry Pi:
 
 Get the librsswitch sources:
     $ git clone https://github.com/graznik/librsswitch.git
-
 
 
 Usage
