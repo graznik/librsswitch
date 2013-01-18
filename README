@@ -16,12 +16,12 @@ Hardware setup
 --------------
 See the librsswitch Wiki [3] for a detailed description of how to set up the entire hardware.
 
-Usage
------
+Software setup
+--------------
 - Install the bcm2835 C library [4] on your Raspberry Pi
 
-API
----
+Usage
+-----
 Use function socket_send() from within your program to either switch a socket on or off.
 
 socket_send(uint dev, uint group, uint socket, uint data);
