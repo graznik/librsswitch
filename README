@@ -18,7 +18,7 @@ See the librsswitch Wiki [3] for a detailed description of how to set up the ent
 
 Software setup
 --------------
-- Install the bcm2835 C library [4] on your Raspberry Pi:
+Install the bcm2835 C library [4] on your Raspberry Pi:
     $ wget  http://www.open.com.au/mikem/bcm2835/bcm2835-1.17.tar.gz
     $ tar zxvf bcm2835-1.17.tar.gz
     $ cd bcm2835-1.17
@@ -26,6 +26,11 @@ Software setup
     $ make
     $ sudo make check
     $ sudo make install
+
+Get the librsswitch sources:
+    $ git clone https://github.com/graznik/librsswitch.git
+
+
 
 Usage
 -----
