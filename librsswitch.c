@@ -263,21 +263,21 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 {
 	Encoder encoder;
 
+#ifdef DEBUG
+	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
+	       dev, group, socket, data);
+#endif
+
 	switch (dev) {
 	case 0:
-#ifdef DEBUG
-		syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
-		       dev, group, socket, data);
-#endif
 		pt2260_init(&encoder);
+		break;
 	case 1:
-#ifdef DEBUG
-		syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
-		       dev, group, socket, data);
-#endif
 		pt2262_init(&encoder);
+		break;
 	}
 
-		socket_ctrl(&encoder, group, socket, data);
+	socket_ctrl(&encoder, group, socket, data);
+
 	return 0;
 }
