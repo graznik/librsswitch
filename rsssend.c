@@ -7,6 +7,7 @@ int main(int argc, char *argv[])
 		exit(EXIT_FAILURE);
 	}
 	/*FIXME: Check user input */
-	socket_send(argv[1], argv[2], argv[3], argv[4]);
+	socket_send(atoi(argv[1]), atoi(argv[2]),
+		    atoi(argv[3]), atoi(argv[4]));
 	return 0;
 }
