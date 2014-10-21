@@ -231,10 +231,8 @@ static int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
 	size_t s = strlen(enc->groups[group]) +
 		strlen(enc->sockets[socket]) +
 		strlen(enc->data[data]);
+
 	/* Generate the code word */
-	/* 
-	 * FIXME: Why s+1 ?
-	 */
 	char codeword[s];
 	snprintf(codeword, s+1, "%s%s%s",
 		 enc->groups[group],
