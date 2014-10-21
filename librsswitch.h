@@ -34,4 +34,13 @@ typedef struct{
 	uint pulse_len;
 } Encoder;
 
+void send_tris(char *, int);
+void send_0(void);
+void send_1(void);
+void send_f(void);
+void send_sync(void);
+void transmit(int, int);
+int  pt2260_init(Encoder *);
+int  pt2262_init(Encoder *);
+int  socket_ctrl(Encoder *, uint, uint, uint);
 int socket_send(uint, uint, uint, uint);

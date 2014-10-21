@@ -16,23 +16,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 #include "librsswitch.h"
 
-static void send_tris(char *, int);
-static void send_0(void);
-static void send_1(void);
-static void send_f(void);
-static void send_sync(void);
-static void transmit(int, int);
-static int  pt2260_init(Encoder *);
-static int  pt2262_init(Encoder *);
-static int  socket_ctrl(Encoder *, uint, uint, uint);
-
-
 /**
  * Send a code word
  * @param codeword   /^[10FS]*$/  -> see get_codeword
  * @param ntimes     Number of times to send the code word
  */
-static void send_tris(char *codeword, int ntimes)
+void send_tris(char *codeword, int ntimes)
 {
 	int n;
 
@@ -62,7 +51,7 @@ static void send_tris(char *codeword, int ntimes)
  *            _     _
  * Waveform: | |___| |___
  */
-static void send_0(void)
+void send_0(void)
 {
 	transmit(1, 3);
 	transmit(1, 3);
@@ -72,7 +61,7 @@ static void send_0(void)
  *            ___   ___
  * Waveform: |   |_|   |_
  */
-static void send_1(void)
+void send_1(void)
 {
 	transmit(3, 1);
 	transmit(3, 1);
@@ -83,7 +72,7 @@ static void send_1(void)
  *            _     ___
  * Waveform: | |___|   |_
  */
-static void send_f(void)
+void send_f(void)
 {
 	transmit(1, 3);
 	transmit(3, 1);
@@ -97,13 +86,13 @@ static void send_f(void)
  * Waveform Protocol 2: | |__________
  */
 
-static void send_sync(void)
+void send_sync(void)
 {
 	transmit(1, 31);
 }
 
 
-static void transmit(int nhigh, int nlow)
+void transmit(int nhigh, int nlow)
 {
 	/* 
 	 * FIXME: 350 is the pulse length in us.
@@ -121,7 +110,7 @@ static void transmit(int nhigh, int nlow)
  * Configure struct for the PT2260 encoder
  * @param pt2260     Pointer to a pt2260 instance
  */
-static int pt2260_init(Encoder *pt2260)
+int pt2260_init(Encoder *pt2260)
 {
 	char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
 	char *sockets[] = {"1FF0", "F1F0", "FF10"};
@@ -171,7 +160,7 @@ static int pt2260_init(Encoder *pt2260)
  * Configure struct for the PT2262 encoder
  * @param *pt2262     Pointer to a pt2262 instance
  */
-static int pt2262_init(Encoder *pt2262)
+int pt2262_init(Encoder *pt2262)
 {
 	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF", "FF0F", "0F0F", "F00F", "000F",
 			  "FFF0", "0FF0", "F0F0", "00F0", "FF00", "0F00", "F000", "0000"};
@@ -225,7 +214,7 @@ static int pt2262_init(Encoder *pt2262)
  * @param uint socket   Socket within group
  * @param uint data     Data to send
  */
-static int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
+int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
 {
 	/* Calculate code word size */
 	size_t s = strlen(enc->groups[group]) +
