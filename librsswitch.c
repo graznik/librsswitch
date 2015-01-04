@@ -263,8 +263,7 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 		pt2262_init(&encoder);
 		break;
 	}
-
 	socket_ctrl(&encoder, group, socket, data);
 
-	return 0;
+	return EXIT_SUCCESS;
 }
