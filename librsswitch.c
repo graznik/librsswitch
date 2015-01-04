@@ -94,12 +94,12 @@ void send_sync(void)
 
 void transmit(int nhigh, int nlow)
 {
-	/* 
+	/*
 	 * FIXME: 350 is the pulse length in us.
 	 * This should be a parameter in the future,
 	 * depending on the encoder chip within the
 	 * remote control.
-	 */ 
+	 */
 	bcm2835_gpio_write(PIN, HIGH);
 	delayMicroseconds(350 * nhigh);
 	bcm2835_gpio_write(PIN, LOW);
@@ -263,6 +263,7 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 		pt2262_init(&encoder);
 		break;
 	}
+
 	socket_ctrl(&encoder, group, socket, data);
 
 	return EXIT_SUCCESS;
