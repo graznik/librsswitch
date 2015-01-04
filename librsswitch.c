@@ -262,6 +262,16 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 	case 1:
 		pt2262_init(&encoder);
 		break;
+	default:
+		syslog(LOG_ERR, "Received unknown socket type %d", dev);
+		return EXIT_FAILURE;
+	}
+
+	if ((group > (encoder.ngroups - 1)) ||
+	    (socket > (encoder.nsockets - 1)) ||
+	    (data > (encoder.ndata - 1))) {
+		syslog(LOG_ERR, "Received unknown parameter");
+		return EXIT_FAILURE;
 	}
 
 	socket_ctrl(&encoder, group, socket, data);
