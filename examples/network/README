@@ -1,0 +1,61 @@
+rsswitchd
+=========
+
+rsswitchd is a Raspberry Pi network daemon process for controlling remote
+socket switches.
+
+rsswitchd links against librsswitch [1] and uses function socket_send() of
+librsswitch to switch a given socket either on or off.
+
+Installation (Raspberry Pi)
+===========================
+ $ cd librsswitch/examples/network/
+ $ make
+ # make install
+
+rsswitchd is going to be installed to /usr/local/bin.
+
+Run rsswitchd at startup
+=======================
+
+Arch Linux
+----------
+
+ # emacs /usr/lib/systemd/system/rsswitchd.service
+
+   	[Unit]
+	Description=RSS Service Daemon
+	After=network.target
+
+	[Service]
+	ExecStart=/usr/local/bin/rsswitchd
+	Type=simple
+	Nice=-20
+	
+	[Install]
+	WantedBy=multi-user.target
+
+ 
+ # systemctl daemon-reload
+ # systemctl enable rsswitchd
+
+
+Usage
+=======================
+rsswitchd is listening on port 5000 for commands from
+connected clients. It needs the following information
+to switch a socket:
+
+- dev: Vendor ID (check the wiki for the list of supported devices)
+- group: Socket group
+- socket: Socket within a socket group
+- data: 1 = On, 0 = Off
+
+See [2] for a detailed description.
+
+Netcat
+----------
+echo -n "0300" | nc 192.168.2.19 5000
+
+[2] https://github.com/graznik/librsswitch
+[3] https://github.com/graznik/librsswitch/wiki#usage
