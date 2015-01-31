@@ -1,0 +1,5 @@
+Usage (Raspberry Pi)
+--------------------
+$ cd librsswitch/examples/basic
+$ make
+$ ./rsssend 0 0 0 1
