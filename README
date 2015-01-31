@@ -63,29 +63,6 @@ socket_send(uint dev, uint group, uint socket, uint data);
 - socket: Socket within a socket group
 - data: 1 = On, 0 = Off
 
-
-Usage (Raspberry Pi)
---------------------
-
-$ git clone https://github.com/graznik/librsswitch.git
-$ cd librsswitch
-$ make
-$ ./rsssend 0 0 0 1
-
-
-Usage (cross compiling on x86_64)
----------------------------------
-$ git clone https://github.com/graznik/librsswitch.git
-$ cd librsswitch
-$ source ./setenv64.sh
-$ make
-$ file rsssend
-  rsssend: ELF 32-bit LSB  executable, ARM, EABI5 version 1 (SYSV)
-$ scp rssend user@rpi:~/
-$ ssh user@rpi
-$ ./rsssend 0 0 0 1
-
-
 [1] https://github.com/r10r/rcswitch-pi
 [2] http://code.google.com/p/rc-switch/
 [3] https://github.com/graznik/librsswitch/wiki
