@@ -1,9 +1,12 @@
 librsswitch
 ===========
-librsswitch (remote socket switch) is a Raspberry Pi Linux library for controlling remote controlled power sockets.
-The library emulates the encoder chip within the power socket remote control, so a separate 433 MHz sender is needed.
+librsswitch (remote socket switch) is a Raspberry Pi Linux library for
+controlling remote controlled power sockets. The library emulates the encoder
+chip within the power socket remote control, so a separate 433 MHz sender is
+needed.
 
-librsswitch is written in C and heavily inspired by rcswitch-pi [1], which is based on rc-switch [2].
+librsswitch is written in C and heavily inspired by rcswitch-pi [1], which is
+based on rc-switch [2].
 
 
 Supported devices
@@ -16,34 +19,71 @@ At the moment librsswitch supports the following devices:
 
 Hardware setup
 --------------
-See the librsswitch Wiki [3] for a detailed description of how to set up the entire hardware.
+See the librsswitch Wiki [3] for a detailed description of how to set up the
+entire hardware.
 
 
-Software setup
---------------
+Software setup (Raspberry Pi)
+-----------------------------
 Install the bcm2835 C library [4] on your Raspberry Pi:
-    $ wget  http://www.open.com.au/mikem/bcm2835/bcm2835-1.17.tar.gz
-    $ tar zxvf bcm2835-1.17.tar.gz
-    $ cd bcm2835-1.17
+    $ wget  http://www.open.com.au/mikem/bcm2835/bcm2835-1.38.tar.gz
+    $ tar zxvf bcm2835-1.38.tar.gz
+    $ cd bcm2835-1.38
     $ ./configure
     $ make
     $ sudo make check
     $ sudo make install
 
-Get the librsswitch sources:
-    $ git clone https://github.com/graznik/librsswitch.git
+
+Software setup (cross compiling on x86_64)
+------------------------------------------
+$ git clone https://github.com/raspberrypi/tools
+$ sudo cp -r tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64 /opt/
+$ export PATH=/opt/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
+$ export ARCH=arm
+$ export CROSS_COMPILE=arm-linux-gnueabihf-
+$ wget http://www.airspayce.com/mikem/bcm2835/bcm2835-1.38.tar.gz
+$ tar -xvf bcm2835-1.38.tar.gz
+$ cd bcm2835-1.38/
+$ ./configure --host=arm-linux-gnueabihf
+$ make
+$ su
+# export PATH=/opt/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
+# export ARCH=arm
+# export CROSS_COMPILE=arm-linux-gnueabihf-
+# make install
 
 
 Usage
 -----
-Use function socket_send() from within your program to either switch a socket on or off.
-
 socket_send(uint dev, uint group, uint socket, uint data);
 
 - dev: Vendor ID (check the table of supported devices)
 - group: Socket group
 - socket: Socket within a socket group
 - data: 1 = On, 0 = Off
+
+
+Usage (Raspberry Pi)
+--------------------
+
+$ git clone https://github.com/graznik/librsswitch.git
+$ cd librsswitch
+$ make
+$ ./rsssend 0 0 0 1
+
+
+Usage (cross compiling on x86_64)
+---------------------------------
+$ git clone https://github.com/graznik/librsswitch.git
+$ cd librsswitch
+$ source ./setenv64.sh
+$ make
+$ file rsssend
+  rsssend: ELF 32-bit LSB  executable, ARM, EABI5 version 1 (SYSV)
+$ scp rssend user@rpi:~/
+$ ssh user@rpi
+$ ./rsssend 0 0 0 1
 
 
 [1] https://github.com/r10r/rcswitch-pi
