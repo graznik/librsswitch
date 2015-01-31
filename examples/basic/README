@@ -3,3 +3,15 @@ Usage (Raspberry Pi)
 $ cd librsswitch/examples/basic
 $ make
 $ ./rsssend 0 0 0 1
+
+Usage (cross compiling on x86_64)
+---------------------------------
+$ cd librsswitch
+$ source ./setenv64.sh
+$ cd examples/basic
+$ make
+$ file rsssend
+  rsssend: ELF 32-bit LSB  executable, ARM, EABI5 version 1 (SYSV)
+$ scp rssend user@rpi:~/
+$ ssh user@rpi
+$ ./rsssend 0 0 0 1
