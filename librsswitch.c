@@ -29,7 +29,7 @@ void send_tris(char *codeword, int ntimes)
 		int i = 0;
 
 		while (codeword[i] != '\0') {
-			switch(codeword[i]) {
+			switch (codeword[i]) {
 			case '0':
 				send_0();
 				break;
@@ -140,18 +140,15 @@ int pt2260_init(Encoder *pt2260)
 		return -1;
 	}
 
-	for (i = 0; i < pt2260->ngroups; i++) {
+	for (i = 0; i < pt2260->ngroups; i++)
 		pt2260->groups[i] = groups[i];
-	}
 
-	for (i = 0; i < pt2260->nsockets; i++) {
+	for (i = 0; i < pt2260->nsockets; i++)
 		pt2260->sockets[i] =  sockets[i];
-	}
 
 
-	for (i = 0; i < pt2260->ndata; i++) {
+	for (i = 0; i < pt2260->ndata; i++)
 		pt2260->data[i] = data[i];
-	}
 
 	return 0;
 }
@@ -162,8 +159,10 @@ int pt2260_init(Encoder *pt2260)
  */
 int pt2262_init(Encoder *pt2262)
 {
-	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF", "FF0F", "0F0F", "F00F", "000F",
-			  "FFF0", "0FF0", "F0F0", "00F0", "FF00", "0F00", "F000", "0000"};
+	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
+			  "FF0F", "0F0F", "F00F", "000F",
+			  "FFF0", "0FF0", "F0F0", "00F0",
+			  "FF00", "0F00", "F000", "0000"};
 	char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
 	char *data[] = {"FFF0", "FF0F"};
 	int i;
@@ -191,18 +190,14 @@ int pt2262_init(Encoder *pt2262)
 		return -1;
 	}
 
-	for (i = 0; i < pt2262->ngroups; i++) {
+	for (i = 0; i < pt2262->ngroups; i++)
 		pt2262->groups[i] = groups[i];
-	}
 
-	for (i = 0; i < pt2262->nsockets; i++) {
+	for (i = 0; i < pt2262->nsockets; i++)
 		pt2262->sockets[i] =  sockets[i];
-	}
 
-
-	for (i = 0; i < pt2262->ndata; i++) {
+	for (i = 0; i < pt2262->ndata; i++)
 		pt2262->data[i] = data[i];
-	}
 
 	return 0;
 }
@@ -240,7 +235,7 @@ int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
 #endif
 
 	/* Initialize the IO pin */
-	if(!bcm2835_init()) {
+	if (!bcm2835_init()) {
 		fputs("Cannot init bcm2835\n", stdout);
 		return -1;
 	}
