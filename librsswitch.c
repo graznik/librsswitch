@@ -207,6 +207,13 @@ int pt2262_init(Encoder *pt2262)
 	return 0;
 }
 
+void free_encoder(Encoder *enc)
+{
+	free(enc->groups);
+	free(enc->sockets);
+	free(enc->data);
+}
+
 /**
  * Emulate a encoder chip
  * @param *enc          Pointer to a encoder instance
@@ -275,6 +282,8 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 	}
 
 	socket_ctrl(&encoder, group, socket, data);
+
+	free_encoder(&encoder);
 
 	return EXIT_SUCCESS;
 }
