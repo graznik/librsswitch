@@ -118,14 +118,14 @@ int pt2260_init(Encoder *pt2260)
 	int i;
 
 	/* Four possible switch groups */
-	pt2260->ngroups = 4;
+	pt2260->ngroups = sizeof(groups) / sizeof(groups[0]);
 	pt2260->groups = malloc(pt2260->ngroups * sizeof(char *));
 	if (pt2260->groups == NULL) {
 		fputs("Error: Cannot malloc\n", stdout);
 		return -1;
 	}
 	/* Three possible switches per group */
-	pt2260->nsockets = 3;
+	pt2260->nsockets = sizeof(sockets) / sizeof(sockets[0]);
 	pt2260->sockets = malloc(pt2260->nsockets * sizeof(char *));
 	if (pt2260->sockets == NULL) {
 		fputs("Error: Cannot malloc\n", stdout);
@@ -168,14 +168,14 @@ int pt2262_init(Encoder *pt2262)
 	int i;
 
 	/* 16 possible switch groups (A-P in Intertechno code) */
-	pt2262->ngroups = 16;
+	pt2262->ngroups = sizeof(groups) / sizeof(groups[0]);
 	pt2262->groups = malloc(pt2262->ngroups * sizeof(char *));
 	if (pt2262->groups == NULL) {
 		fputs("Error: Cannot malloc\n", stdout);
 		return -1;
 	}
 	/* Four possible switches per group */
-	pt2262->nsockets = 4;
+	pt2262->nsockets = sizeof(sockets) / sizeof(sockets[0]);
 	pt2262->sockets = malloc(pt2262->nsockets * sizeof(char *));
 	if (pt2262->sockets == NULL) {
 		fputs("Error: Cannot malloc\n", stdout);
