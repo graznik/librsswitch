@@ -107,7 +107,7 @@ void transmit(int nhigh, int nlow)
 }
 
 /**
- * Configure struct for the PT2260 encoder
+ * Configuration struct for the PT2260 encoder
  * @param pt2260     Pointer to a pt2260 instance
  */
 int pt2260_init(struct encoder *pt2260)
@@ -154,7 +154,7 @@ int pt2260_init(struct encoder *pt2260)
 }
 
 /**
- * Configure struct for the PT2262 encoder
+ * Configuration struct for the PT2262 encoder
  * @param *pt2262     Pointer to a pt2262 instance
  */
 int pt2262_init(struct encoder *pt2262)
@@ -210,8 +210,8 @@ void free_encoder(struct encoder *enc)
 }
 
 /**
- * Emulate a encoder chip
- * @param *enc          Pointer to a encoder instance
+ * Emulate an encoder chip
+ * @param *enc          Pointer to an encoder instance
  * @param uint group    Socket group
  * @param uint socket   Socket within group
  * @param uint data     Data to send
