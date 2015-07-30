@@ -24,7 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 #define PIN RPI_GPIO_P1_07 /* GPIO 4 */
 
-typedef struct{
+struct encoder {
 	char **groups;
 	uint ngroups; 
 	char **sockets;
@@ -32,7 +32,7 @@ typedef struct{
 	char **data;
 	uint ndata; 
 	uint pulse_len;
-} Encoder;
+};
 
 void send_tris(char *, int);
 void send_0(void);
@@ -40,7 +40,7 @@ void send_1(void);
 void send_f(void);
 void send_sync(void);
 void transmit(int, int);
-int  pt2260_init(Encoder *);
-int  pt2262_init(Encoder *);
-int  socket_ctrl(Encoder *, uint, uint, uint);
+int pt2260_init(struct encoder *);
+int pt2262_init(struct encoder *);
+int socket_ctrl(struct encoder *, uint, uint, uint);
 int socket_send(uint, uint, uint, uint);

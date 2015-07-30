@@ -110,7 +110,7 @@ void transmit(int nhigh, int nlow)
  * Configure struct for the PT2260 encoder
  * @param pt2260     Pointer to a pt2260 instance
  */
-int pt2260_init(Encoder *pt2260)
+int pt2260_init(struct encoder *pt2260)
 {
 	char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
 	char *sockets[] = {"1FF0", "F1F0", "FF10"};
@@ -157,7 +157,7 @@ int pt2260_init(Encoder *pt2260)
  * Configure struct for the PT2262 encoder
  * @param *pt2262     Pointer to a pt2262 instance
  */
-int pt2262_init(Encoder *pt2262)
+int pt2262_init(struct encoder *pt2262)
 {
 	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
 			  "FF0F", "0F0F", "F00F", "000F",
@@ -202,7 +202,7 @@ int pt2262_init(Encoder *pt2262)
 	return 0;
 }
 
-void free_encoder(Encoder *enc)
+void free_encoder(struct encoder *enc)
 {
 	free(enc->groups);
 	free(enc->sockets);
@@ -216,7 +216,7 @@ void free_encoder(Encoder *enc)
  * @param uint socket   Socket within group
  * @param uint data     Data to send
  */
-int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
+int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 {
 	/* Calculate code word size */
 	size_t s = strlen(enc->groups[group]) +
@@ -250,7 +250,7 @@ int socket_ctrl(Encoder *enc, uint group, uint socket, uint data)
 
 int socket_send(uint dev, uint group, uint socket, uint data)
 {
-	Encoder encoder;
+	struct encoder enc;
 
 #ifdef DEBUG
 	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
@@ -259,26 +259,26 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 
 	switch (dev) {
 	case 0:
-		pt2260_init(&encoder);
+		pt2260_init(&enc);
 		break;
 	case 1:
-		pt2262_init(&encoder);
+		pt2262_init(&enc);
 		break;
 	default:
 		syslog(LOG_ERR, "Received unknown socket type %d", dev);
 		return EXIT_FAILURE;
 	}
 
-	if ((group > (encoder.ngroups - 1)) ||
-	    (socket > (encoder.nsockets - 1)) ||
-	    (data > (encoder.ndata - 1))) {
+	if ((group > (enc.ngroups - 1)) ||
+	    (socket > (enc.nsockets - 1)) ||
+	    (data > (enc.ndata - 1))) {
 		syslog(LOG_ERR, "Received unknown parameter");
 		return EXIT_FAILURE;
 	}
 
-	socket_ctrl(&encoder, group, socket, data);
+	socket_ctrl(&enc, group, socket, data);
 
-	free_encoder(&encoder);
+	free_encoder(&enc);
 
 	return EXIT_SUCCESS;
 }
