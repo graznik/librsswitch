@@ -222,9 +222,9 @@ int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 	size_t s = strlen(enc->groups[group]) +
 		strlen(enc->sockets[socket]) +
 		strlen(enc->data[data]);
+	char codeword[s];
 
 	/* Generate the code word */
-	char codeword[s];
 	snprintf(codeword, s+1, "%s%s%s",
 		 enc->groups[group],
 		 enc->sockets[socket],
