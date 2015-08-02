@@ -33,14 +33,14 @@ int main(void)
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serv_addr.sin_port = htons(5000);
 
-	bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+	bind(listenfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
 
 	listen(listenfd, 10);
 
 	openlog("rsswitchd", 0, LOG_USER);
 
 	while(1) {
-		connfd = accept(listenfd, (struct sockaddr*)&cli_addr, &cli_len);
+		connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
 		/* Log clients IP address. */
 		inet_ntop(AF_INET, &cli_addr.sin_addr,
 			  cli_ipaddr, sizeof(cli_addr));
