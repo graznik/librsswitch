@@ -39,24 +39,23 @@ int main(void)
 
 	openlog("rsswitchd", 0, LOG_USER);
 
-	while(1) {
-		connfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
+	while (1) {
+		connfd = accept(listenfd, (struct sockaddr *)&cli_addr,
+				&cli_len);
 		/* Log clients IP address. */
 		inet_ntop(AF_INET, &cli_addr.sin_addr,
 			  cli_ipaddr, sizeof(cli_addr));
 		syslog(LOG_NOTICE, "Client from %s connected.", cli_ipaddr);
 
-		while ( (n = read(connfd, recbuf, sizeof(recbuf)-1)) > 0) {
+		while ((n = read(connfd, recbuf, sizeof(recbuf)-1)) > 0) {
 			recbuf[n] = 0;
 
-			if (n < 0) {
+			if (n < 0)
 				printf("\nRead error\n");
-			}
 
-			if (check_input(recbuf) == 0 ) {
+			if (check_input(recbuf) == 0)
 				sock_ctrl(recbuf);
 
-			}
 			close(connfd);
 			sleep(1);
 		}
@@ -67,6 +66,7 @@ static int check_input(char *input)
 {
 	/* Check if string contains only digits */
 	int i;
+
 	for (i = 0; i < CODE_LEN; i++) {
 		if (isdigit(input[i]) == 0) {
 			syslog(LOG_ERR, "Invalid input.");
