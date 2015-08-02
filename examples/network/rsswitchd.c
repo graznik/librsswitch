@@ -11,8 +11,8 @@
 
 #include "../../librsswitch.h"
 
-int check_input(char *input);
-int sock_ctrl(char *recbuf);
+static int check_input(char *input);
+static int sock_ctrl(char *recbuf);
 
 #define CODE_LEN 4
 
@@ -63,7 +63,7 @@ int main(void)
 	}
 }
 
-int check_input(char *input)
+static int check_input(char *input)
 {
 	/* Check if string contains only digits */
 	int i;
@@ -77,7 +77,7 @@ int check_input(char *input)
 	return 0;
 }
 
-int sock_ctrl(char *recbuf)
+static int sock_ctrl(char *recbuf)
 {
 	syslog(LOG_NOTICE, "RSS Control");
 #ifdef DEBUG
