@@ -56,6 +56,7 @@ void send_0(void)
 	transmit(1, 3);
 	transmit(1, 3);
 }
+
 /**
  * Sends a Tri-State "1" Bit
  *            ___   ___
@@ -90,7 +91,6 @@ void send_sync(void)
 {
 	transmit(1, 31);
 }
-
 
 void transmit(int nhigh, int nlow)
 {
@@ -225,13 +225,13 @@ int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 	char codeword[s];
 
 	/* Generate the code word */
-	snprintf(codeword, s+1, "%s%s%s",
+	snprintf(codeword, s + 1, "%s%s%s",
 		 enc->groups[group],
 		 enc->sockets[socket],
 		 enc->data[data]);
 
 #ifdef DEBUG
-		syslog(LOG_NOTICE, "codeword: %s\n", codeword);
+	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
 #endif
 
 	/* Initialize the IO pin */
