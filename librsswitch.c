@@ -21,7 +21,7 @@
  * @param codeword   /^[10FS]*$/  -> see get_codeword
  * @param ntimes     Number of times to send the code word
  */
-void send_tris(char *codeword, int ntimes)
+void send_tris(char *codeword, int ntimes, uint pulse_len)
 {
 	int n;
 
@@ -31,18 +31,18 @@ void send_tris(char *codeword, int ntimes)
 		while (codeword[i] != '\0') {
 			switch (codeword[i]) {
 			case '0':
-				send_0();
+				send_0(pulse_len);
 				break;
 			case 'F':
-				send_f();
+				send_f(pulse_len);
 				break;
 			case '1':
-				send_1();
+				send_1(pulse_len);
 				break;
 			}
 			i++;
 		}
-		send_sync();
+		send_sync(pulse_len);
 	}
 }
 
@@ -51,10 +51,10 @@ void send_tris(char *codeword, int ntimes)
  *            _     _
  * Waveform: | |___| |___
  */
-void send_0(void)
+void send_0(uint pulse_len)
 {
-	transmit(1, 3);
-	transmit(1, 3);
+	transmit(1, 3, pulse_len);
+	transmit(1, 3, pulse_len);
 }
 
 /**
@@ -62,10 +62,10 @@ void send_0(void)
  *            ___   ___
  * Waveform: |   |_|   |_
  */
-void send_1(void)
+void send_1(uint pulse_len)
 {
-	transmit(3, 1);
-	transmit(3, 1);
+	transmit(3, 1, pulse_len);
+	transmit(3, 1, pulse_len);
 }
 
 /**
@@ -73,10 +73,10 @@ void send_1(void)
  *            _     ___
  * Waveform: | |___|   |_
  */
-void send_f(void)
+void send_f(uint pulse_len)
 {
-	transmit(1, 3);
-	transmit(3, 1);
+	transmit(1, 3, pulse_len);
+	transmit(3, 1, pulse_len);
 }
 
 /**
@@ -86,24 +86,17 @@ void send_f(void)
  *                       _
  * Waveform Protocol 2: | |__________
  */
-
-void send_sync(void)
+void send_sync(uint pulse_len)
 {
-	transmit(1, 31);
+	transmit(1, 31, pulse_len);
 }
 
-void transmit(int nhigh, int nlow)
+void transmit(int nhigh, int nlow, uint pulse_len)
 {
-	/*
-	 * FIXME: 350 is the pulse length in us.
-	 * This should be a parameter in the future,
-	 * depending on the encoder chip within the
-	 * remote control.
-	 */
 	bcm2835_gpio_write(PIN, HIGH);
-	delayMicroseconds(350 * nhigh);
+	delayMicroseconds(pulse_len * nhigh);
 	bcm2835_gpio_write(PIN, LOW);
-	delayMicroseconds(350 * nlow);
+	delayMicroseconds(pulse_len * nlow);
 }
 
 /**
@@ -115,6 +108,7 @@ int pt2260_init(struct encoder *pt2260)
 	char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
 	char *sockets[] = {"1FF0", "F1F0", "FF10"};
 	char *data[] = {"0001", "0010"};
+	uint pulse_len = 350;
 	int i;
 
 	/* Four possible switch groups */
@@ -150,6 +144,8 @@ int pt2260_init(struct encoder *pt2260)
 	for (i = 0; i < pt2260->ndata; i++)
 		pt2260->data[i] = data[i];
 
+	pt2260->pulse_len = pulse_len;
+
 	return 0;
 }
 
@@ -165,6 +161,7 @@ int pt2262_init(struct encoder *pt2262)
 			  "FF00", "0F00", "F000", "0000"};
 	char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
 	char *data[] = {"FFF0", "FF0F"};
+	uint pulse_len = 350;
 	int i;
 
 	/* 16 possible switch groups (A-P in Intertechno code) */
@@ -174,6 +171,7 @@ int pt2262_init(struct encoder *pt2262)
 		fputs("Error: Cannot malloc\n", stdout);
 		return -1;
 	}
+
 	/* Four possible switches per group */
 	pt2262->nsockets = sizeof(sockets) / sizeof(sockets[0]);
 	pt2262->sockets = malloc(pt2262->nsockets * sizeof(char *));
@@ -198,6 +196,8 @@ int pt2262_init(struct encoder *pt2262)
 
 	for (i = 0; i < pt2262->ndata; i++)
 		pt2262->data[i] = data[i];
+
+	pt2262->pulse_len = pulse_len;
 
 	return 0;
 }
@@ -239,11 +239,12 @@ int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 		fputs("Cannot init bcm2835\n", stdout);
 		return -1;
 	}
+
 	/* Set the pin to be an output */
 	bcm2835_gpio_fsel(PIN, BCM2835_GPIO_FSEL_OUTP);
 
 	/* Send the codeword */
-	send_tris(codeword, 10);
+	send_tris(codeword, 10, enc->pulse_len);
 
 	return 0;
 }

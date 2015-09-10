@@ -34,12 +34,12 @@ struct encoder {
 	uint pulse_len;
 };
 
-void send_tris(char *, int);
-void send_0(void);
-void send_1(void);
-void send_f(void);
-void send_sync(void);
-void transmit(int, int);
+void send_tris(char *, int, uint);
+void send_0(uint pulse_len);
+void send_1(uint pulse_len);
+void send_f(uint pulse_len);
+void send_sync(uint pulse_len);
+void transmit(int, int, uint);
 int pt2260_init(struct encoder *);
 int pt2262_init(struct encoder *);
 int socket_ctrl(struct encoder *, uint, uint, uint);
