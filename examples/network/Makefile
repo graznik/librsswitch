@@ -15,6 +15,9 @@ rsswitchd:
 
 install: rsswitchd
 	install -m 0755 rsswitchd $(PREFIX)/bin
+	cp rsswitchd.service /etc/systemd/system/
+	systemctl enable rsswitchd
+	systemctl start rsswitchd
 
 clean:
 	-@rm -rf *.o *~ rsswitchd 2>/dev/null || true
