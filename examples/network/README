@@ -13,32 +13,8 @@ Installation (Raspberry Pi)
  $ make
  # make install
 
-rsswitchd is going to be installed to /usr/local/bin.
-
-Run rsswitchd at startup
-=======================
-
-Arch Linux
-----------
-
- # emacs /usr/lib/systemd/system/rsswitchd.service
-
-   	[Unit]
-	Description=RSS Service Daemon
-	After=network.target
-
-	[Service]
-	ExecStart=/usr/local/bin/rsswitchd
-	Type=simple
-	Nice=-20
-	
-	[Install]
-	WantedBy=multi-user.target
-
- 
- # systemctl daemon-reload
- # systemctl enable rsswitchd
-
+rsswitchd is going to be installed to /usr/local/bin and will enabled by
+default.
 
 Usage
 =======================
@@ -57,5 +33,5 @@ Netcat
 ----------
 echo -n "0300" | nc 192.168.2.19 5000
 
-[2] https://github.com/graznik/librsswitch
-[3] https://github.com/graznik/librsswitch/wiki#usage
+[1] https://github.com/graznik/librsswitch
+[2] https://github.com/graznik/librsswitch/wiki#usage
