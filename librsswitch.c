@@ -12,7 +12,7 @@
  * You should have received a copy of the GNU Lesser General Public
  * License along with this library; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
-*/
+ */
 
 #include "librsswitch.h"
 
@@ -121,9 +121,9 @@ static void transmit(int nhigh, int nlow, uint pulse_len)
  */
 static int pt2260_send(uint igroup, uint isocket, uint idata)
 {
-	const char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
-	const char *sockets[] = {"1FF0", "F1F0", "FF10"};
-	const char *data[] = {"0001", "0010"};
+	const char * const groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
+	const char * const sockets[] = {"1FF0", "F1F0", "FF10"};
+	const char * const data[] = {"0001", "0010"};
 	const uint pulse_len = 350;
 	size_t ngroups = ARRAY_SIZE(groups);
 	size_t nsockets = ARRAY_SIZE(sockets);
@@ -147,12 +147,12 @@ static int pt2260_send(uint igroup, uint isocket, uint idata)
  */
 static int pt2262_send(uint igroup, uint isocket, uint idata)
 {
-	static const char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
-				       "FF0F", "0F0F", "F00F", "000F",
-				       "FFF0", "0FF0", "F0F0", "00F0",
-				       "FF00", "0F00", "F000", "0000"};
-	const char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
-	const char *data[] = {"FFF0", "FF0F"};
+	const char *const groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
+				      "FF0F", "0F0F", "F00F", "000F",
+				      "FFF0", "0FF0", "F0F0", "00F0",
+				      "FF00", "0F00", "F000", "0000"};
+	const char * const sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
+	const char * const data[] = {"FFF0", "FF0F"};
 	const uint pulse_len = 350;
 	size_t ngroups = ARRAY_SIZE(groups);
 	size_t nsockets = ARRAY_SIZE(sockets);
