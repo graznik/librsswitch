@@ -16,16 +16,32 @@
 
 #include "librsswitch.h"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+#define MAX_CODEWORD_LEN 13
+#define NTIMES 10
+
+static void send_tris(char *codeword, uint pulse_len);
+static void send_0(uint pulse_len);
+static void send_1(uint pulse_len);
+static void send_f(uint pulse_len);
+static void send_sync(uint pulse_len);
+static void transmit(int nhigh, int nlow, uint pulse_len);
+static int pt2260_send(uint igroup, uint isocket, uint idata);
+static int pt2262_send(uint igroup, uint isocket, uint idata);
+static int socket_ctrl(const char *group, const char *socket,
+		       const char *data, uint pulse_len);
+
 /**
  * Send a code word
  * @param codeword   /^[10FS]*$/  -> see get_codeword
  * @param ntimes     Number of times to send the code word
  */
-void send_tris(char *codeword, int ntimes, uint pulse_len)
+static void send_tris(char *codeword, uint pulse_len)
 {
 	int n;
 
-	for (n = 0; n < ntimes; n++) {
+	for (n = 0; n < NTIMES; n++) {
 		int i = 0;
 
 		while (codeword[i] != '\0') {
@@ -51,7 +67,7 @@ void send_tris(char *codeword, int ntimes, uint pulse_len)
  *            _     _
  * Waveform: | |___| |___
  */
-void send_0(uint pulse_len)
+static void send_0(uint pulse_len)
 {
 	transmit(1, 3, pulse_len);
 	transmit(1, 3, pulse_len);
@@ -62,7 +78,7 @@ void send_0(uint pulse_len)
  *            ___   ___
  * Waveform: |   |_|   |_
  */
-void send_1(uint pulse_len)
+static void send_1(uint pulse_len)
 {
 	transmit(3, 1, pulse_len);
 	transmit(3, 1, pulse_len);
@@ -73,7 +89,7 @@ void send_1(uint pulse_len)
  *            _     ___
  * Waveform: | |___|   |_
  */
-void send_f(uint pulse_len)
+static void send_f(uint pulse_len)
 {
 	transmit(1, 3, pulse_len);
 	transmit(3, 1, pulse_len);
@@ -86,12 +102,12 @@ void send_f(uint pulse_len)
  *                       _
  * Waveform Protocol 2: | |__________
  */
-void send_sync(uint pulse_len)
+static void send_sync(uint pulse_len)
 {
 	transmit(1, 31, pulse_len);
 }
 
-void transmit(int nhigh, int nlow, uint pulse_len)
+static void transmit(int nhigh, int nlow, uint pulse_len)
 {
 	bcm2835_gpio_write(PIN, HIGH);
 	delayMicroseconds(pulse_len * nhigh);
@@ -103,48 +119,24 @@ void transmit(int nhigh, int nlow, uint pulse_len)
  * Configuration struct for the PT2260 encoder
  * @param pt2260     Pointer to a pt2260 instance
  */
-int pt2260_init(struct encoder *pt2260)
+static int pt2260_send(uint igroup, uint isocket, uint idata)
 {
-	char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
-	char *sockets[] = {"1FF0", "F1F0", "FF10"};
-	char *data[] = {"0001", "0010"};
-	uint pulse_len = 350;
-	int i;
+	const char *groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
+	const char *sockets[] = {"1FF0", "F1F0", "FF10"};
+	const char *data[] = {"0001", "0010"};
+	const uint pulse_len = 350;
+	size_t ngroups = ARRAY_SIZE(groups);
+	size_t nsockets = ARRAY_SIZE(sockets);
+	size_t ndata = ARRAY_SIZE(data);
 
-	/* Four possible switch groups */
-	pt2260->ngroups = sizeof(groups) / sizeof(groups[0]);
-	pt2260->groups = malloc(pt2260->ngroups * sizeof(char *));
-	if (pt2260->groups == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
-	}
-	/* Three possible switches per group */
-	pt2260->nsockets = sizeof(sockets) / sizeof(sockets[0]);
-	pt2260->sockets = malloc(pt2260->nsockets * sizeof(char *));
-	if (pt2260->sockets == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
+	if ((igroup > (ngroups - 1)) ||
+	    (isocket > (nsockets - 1)) ||
+	    (idata > (ndata - 1))) {
+		syslog(LOG_ERR, "Received unknown parameter");
+		return 1;
 	}
 
-	/* Data is either "On" or "Off" */
-	pt2260->ndata = 2;
-	pt2260->data = malloc(pt2260->ndata * sizeof(char *));
-	if (pt2260->data == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
-	}
-
-	for (i = 0; i < pt2260->ngroups; i++)
-		pt2260->groups[i] = groups[i];
-
-	for (i = 0; i < pt2260->nsockets; i++)
-		pt2260->sockets[i] =  sockets[i];
-
-
-	for (i = 0; i < pt2260->ndata; i++)
-		pt2260->data[i] = data[i];
-
-	pt2260->pulse_len = pulse_len;
+	socket_ctrl(groups[igroup], sockets[isocket], data[idata], pulse_len);
 
 	return 0;
 }
@@ -153,60 +145,29 @@ int pt2260_init(struct encoder *pt2260)
  * Configuration struct for the PT2262 encoder
  * @param *pt2262     Pointer to a pt2262 instance
  */
-int pt2262_init(struct encoder *pt2262)
+static int pt2262_send(uint igroup, uint isocket, uint idata)
 {
-	char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
-			  "FF0F", "0F0F", "F00F", "000F",
-			  "FFF0", "0FF0", "F0F0", "00F0",
-			  "FF00", "0F00", "F000", "0000"};
-	char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
-	char *data[] = {"FFF0", "FF0F"};
-	uint pulse_len = 350;
-	int i;
+	static const char *groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
+				       "FF0F", "0F0F", "F00F", "000F",
+				       "FFF0", "0FF0", "F0F0", "00F0",
+				       "FF00", "0F00", "F000", "0000"};
+	const char *sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
+	const char *data[] = {"FFF0", "FF0F"};
+	const uint pulse_len = 350;
+	size_t ngroups = ARRAY_SIZE(groups);
+	size_t nsockets = ARRAY_SIZE(sockets);
+	size_t ndata = ARRAY_SIZE(data);
 
-	/* 16 possible switch groups (A-P in Intertechno code) */
-	pt2262->ngroups = sizeof(groups) / sizeof(groups[0]);
-	pt2262->groups = malloc(pt2262->ngroups * sizeof(char *));
-	if (pt2262->groups == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
+	if ((igroup > (ngroups - 1)) ||
+	    (isocket > (nsockets - 1)) ||
+	    (idata > (ndata - 1))) {
+		syslog(LOG_ERR, "Received unknown parameter");
+		return 1;
 	}
 
-	/* Four possible switches per group */
-	pt2262->nsockets = sizeof(sockets) / sizeof(sockets[0]);
-	pt2262->sockets = malloc(pt2262->nsockets * sizeof(char *));
-	if (pt2262->sockets == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
-	}
-
-	/* Data is either "On" or "Off" */
-	pt2262->ndata = 2;
-	pt2262->data = malloc(pt2262->ndata * sizeof(char *));
-	if (pt2262->data == NULL) {
-		fputs("Error: Cannot malloc\n", stdout);
-		return -1;
-	}
-
-	for (i = 0; i < pt2262->ngroups; i++)
-		pt2262->groups[i] = groups[i];
-
-	for (i = 0; i < pt2262->nsockets; i++)
-		pt2262->sockets[i] =  sockets[i];
-
-	for (i = 0; i < pt2262->ndata; i++)
-		pt2262->data[i] = data[i];
-
-	pt2262->pulse_len = pulse_len;
+	socket_ctrl(groups[igroup], sockets[isocket], data[idata], pulse_len);
 
 	return 0;
-}
-
-void free_encoder(struct encoder *enc)
-{
-	free(enc->groups);
-	free(enc->sockets);
-	free(enc->data);
 }
 
 /**
@@ -216,19 +177,17 @@ void free_encoder(struct encoder *enc)
  * @param uint socket   Socket within group
  * @param uint data     Data to send
  */
-int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
+static int socket_ctrl(const char *group, const char *socket,
+		       const char *data, uint pulse_len)
 {
+	size_t s;
+	char codeword[MAX_CODEWORD_LEN];
+
 	/* Calculate code word size */
-	size_t s = strlen(enc->groups[group]) +
-		strlen(enc->sockets[socket]) +
-		strlen(enc->data[data]);
-	char codeword[s];
+	s = strlen(group) + strlen(socket) + strlen(data);
 
 	/* Generate the code word */
-	snprintf(codeword, s + 1, "%s%s%s",
-		 enc->groups[group],
-		 enc->sockets[socket],
-		 enc->data[data]);
+	snprintf(codeword, s + 1, "%s%s%s", group, socket, data);
 
 #ifdef DEBUG
 	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
@@ -236,7 +195,7 @@ int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 
 	/* Initialize the IO pin */
 	if (!bcm2835_init()) {
-		fputs("Cannot init bcm2835\n", stdout);
+		syslog(LOG_ERR, "Cannot init bcm2835\n");
 		return -1;
 	}
 
@@ -244,14 +203,13 @@ int socket_ctrl(struct encoder *enc, uint group, uint socket, uint data)
 	bcm2835_gpio_fsel(PIN, BCM2835_GPIO_FSEL_OUTP);
 
 	/* Send the codeword */
-	send_tris(codeword, 10, enc->pulse_len);
+	send_tris(codeword, pulse_len);
 
 	return 0;
 }
 
 int socket_send(uint dev, uint group, uint socket, uint data)
 {
-	struct encoder enc;
 
 #ifdef DEBUG
 	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
@@ -260,26 +218,15 @@ int socket_send(uint dev, uint group, uint socket, uint data)
 
 	switch (dev) {
 	case 0:
-		pt2260_init(&enc);
+		pt2260_send(group, socket, data);
 		break;
 	case 1:
-		pt2262_init(&enc);
+		pt2262_send(group, socket, data);
 		break;
 	default:
 		syslog(LOG_ERR, "Received unknown socket type %d", dev);
-		return EXIT_FAILURE;
+		return 1;
 	}
 
-	if ((group > (enc.ngroups - 1)) ||
-	    (socket > (enc.nsockets - 1)) ||
-	    (data > (enc.ndata - 1))) {
-		syslog(LOG_ERR, "Received unknown parameter");
-		return EXIT_FAILURE;
-	}
-
-	socket_ctrl(&enc, group, socket, data);
-
-	free_encoder(&enc);
-
-	return EXIT_SUCCESS;
+	return 0;
 }
