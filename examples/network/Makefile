@@ -1,4 +1,11 @@
-CFLAGS=-Wall -DDEBUG
+CFLAGS =  -DDEBUG
+CFLAGS += -Wall -Werror
+CFLAGS += -Wmissing-prototypes -Wmissing-declarations
+CFLAGS += -Wstrict-prototypes -Wpointer-arith -Wwrite-strings
+CFLAGS += -Wcast-qual -Wcast-align -Wbad-function-cast
+CFLAGS += -Wformat-security  -Wformat-nonliteral -Wmissing-format-attribute
+CFLAGS += -Winline -W -pedantic -funsigned-char
+
 ARCH := $(shell uname -m)
 PREFIX=/usr/local
 
