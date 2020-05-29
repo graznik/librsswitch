@@ -14,32 +14,78 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#ifdef DEBUG
+#include <syslog.h>
+#endif
+#ifdef RASPBERRY_PI
+#include "boards/rpi/rpi.h"
+#endif
+#ifdef BEAGLEBONE_BLACK
+#include "boards/bbb/bbb.h"
+#endif
+#ifdef STM32F4DISCOVERY
+#include "boards/stm32f4discovery/stm32f4discovery.h"
+#endif
+#ifdef STM32F0DISCOVERY
+#include "boards/stm32f0discovery/stm32f0discovery.h"
+#endif
+
 #include "librsswitch.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #define MAX_CODEWORD_LEN 13
-#define NTIMES 10
+#define MAX_LEN 100
 
-static void send_tris(char *codeword, uint pulse_len);
-static void send_0(uint pulse_len);
-static void send_1(uint pulse_len);
-static void send_f(uint pulse_len);
-static void send_sync(uint pulse_len);
-static void transmit(int nhigh, int nlow, uint pulse_len);
-static int pt2260_send(uint igroup, uint isocket, uint idata);
-static int pt2262_send(uint igroup, uint isocket, uint idata);
-static int socket_ctrl(const char *group, const char *socket,
-		       const char *data, uint pulse_len);
+static void send_tris(char *codeword, uint32_t pulse_len);
+static void send_0(uint32_t pulse_len);
+static void send_1(uint32_t pulse_len);
+static void send_f(uint32_t pulse_len);
+static void send_sync(uint32_t pulse_len);
+static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
+			       uint32_t idata);
+static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
+				uint32_t idata);
+static int32_t socket_ctrl(const char *group, const char *socket,
+		       const char *data, uint32_t pulse_len);
+#ifdef X86_64
+static void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
+static int32_t board_init(void);
+static int32_t board_exit(void);
+#endif
+
+#ifdef X86_64
+static int32_t board_init(void)
+{
+	return 0;
+}
+
+static int32_t board_exit(void)
+{
+	return 0;
+
+}
+
+static void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
+{
+	(void)nhigh;
+	(void)nlow;
+	(void)pulse_len;
+}
+#endif
 
 /**
  * Send a code word
- * @param codeword   /^[10FS]*$/  -> see get_codeword
+ * @param codeword
  * @param ntimes     Number of times to send the code word
  */
-static void send_tris(char *codeword, uint pulse_len)
+static void send_tris(char *codeword, uint32_t pulse_len)
 {
-	int n;
+	size_t n;
 
 	for (n = 0; n < NTIMES; n++) {
 		int i = 0;
@@ -67,7 +113,7 @@ static void send_tris(char *codeword, uint pulse_len)
  *            _     _
  * Waveform: | |___| |___
  */
-static void send_0(uint pulse_len)
+static void send_0(uint32_t pulse_len)
 {
 	transmit(1, 3, pulse_len);
 	transmit(1, 3, pulse_len);
@@ -78,7 +124,7 @@ static void send_0(uint pulse_len)
  *            ___   ___
  * Waveform: |   |_|   |_
  */
-static void send_1(uint pulse_len)
+static void send_1(uint32_t pulse_len)
 {
 	transmit(3, 1, pulse_len);
 	transmit(3, 1, pulse_len);
@@ -89,7 +135,7 @@ static void send_1(uint pulse_len)
  *            _     ___
  * Waveform: | |___|   |_
  */
-static void send_f(uint pulse_len)
+static void send_f(uint32_t pulse_len)
 {
 	transmit(1, 3, pulse_len);
 	transmit(3, 1, pulse_len);
@@ -102,105 +148,141 @@ static void send_f(uint pulse_len)
  *                       _
  * Waveform Protocol 2: | |__________
  */
-static void send_sync(uint pulse_len)
+static void send_sync(uint32_t pulse_len)
 {
 	transmit(1, 31, pulse_len);
-}
-
-static void transmit(int nhigh, int nlow, uint pulse_len)
-{
-	bcm2835_gpio_write(PIN, HIGH);
-	delayMicroseconds(pulse_len * nhigh);
-	bcm2835_gpio_write(PIN, LOW);
-	delayMicroseconds(pulse_len * nlow);
 }
 
 /**
  * Configuration struct for the PT2260 encoder
  * @param pt2260     Pointer to a pt2260 instance
  */
-static int pt2260_send(uint igroup, uint isocket, uint idata)
+static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
+			       uint32_t idata)
 {
 	const char * const groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
 	const char * const sockets[] = {"1FF0", "F1F0", "FF10"};
 	const char * const data[] = {"0001", "0010"};
-	const uint pulse_len = 350;
+	const uint32_t pulse_len = 350;
 	size_t ngroups = ARRAY_SIZE(groups);
 	size_t nsockets = ARRAY_SIZE(sockets);
 	size_t ndata = ARRAY_SIZE(data);
+	int32_t ret;
 
-	if ((igroup > (ngroups - 1)) ||
-	    (isocket > (nsockets - 1)) ||
-	    (idata > (ndata - 1))) {
-		syslog(LOG_ERR, "Received unknown parameter");
-		return 1;
+	if (igroup > (ngroups - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown socket group %d",  igroup);
+#endif
+		return -1;
+	}
+	if (isocket > (nsockets - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown socket %d", isocket);
+#endif
+		return -1;
 	}
 
-	socket_ctrl(groups[igroup], sockets[isocket], data[idata], pulse_len);
+	if (idata > (ndata - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown switch parameter %d", idata);
+#endif
+		return -1;
+	}
 
-	return 0;
+	ret = socket_ctrl(groups[igroup], sockets[isocket],
+			  data[idata], pulse_len);
+
+	return ret;
 }
 
 /**
  * Configuration struct for the PT2262 encoder
  * @param *pt2262     Pointer to a pt2262 instance
  */
-static int pt2262_send(uint igroup, uint isocket, uint idata)
+static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
+				uint32_t idata)
 {
-	const char *const groups[] = {"FFFF", "0FFF", "F0FF", "00FF",
-				      "FF0F", "0F0F", "F00F", "000F",
-				      "FFF0", "0FF0", "F0F0", "00F0",
-				      "FF00", "0F00", "F000", "0000"};
-	const char * const sockets[] = {"F0FF", "FF0F", "FFF0", "FFFF"};
-	const char * const data[] = {"FFF0", "FF0F"};
-	const uint pulse_len = 350;
+	const char *const groups[] = {"FFFFF", "0FFFF", "F0FFF", "00FFF",
+				      "FF0FF", "0F0FF", "F00FF", "000FF",
+				      "FFF0F", "0FF0F", "F0F0F", "00F0F",
+				      "FF00F", "0F00F", "F000F", "0000F",
+				      "FFFF0", "0FFF0", "F0FF0", "00FF0",
+				      "FF0F0", "0F0F0", "F00F0", "000F0",
+				      "FFF00", "0FF00", "F0F00", "00F00",
+				      "FF000", "0F000", "F0000", "00000"};
+	const char *const sockets[] = {"FFFFF", "0FFFF", "F0FFF", "00FFF",
+				       "FF0FF", "0F0FF", "F00FF", "000FF",
+				       "FFF0F", "0FF0F", "F0F0F", "00F0F",
+				       "FF00F", "0F00F", "F000F", "0000F",
+				       "FFFF0", "0FFF0", "F0FF0", "00FF0",
+				       "FF0F0", "0F0F0", "F00F0", "000F0",
+				       "FFF00", "0FF00", "F0F00", "00F00",
+				       "FF000", "0F000", "F0000", "00000"};
+	const char * const data[] = {"F0", "0F"}; /* Off, On */
+	const uint32_t pulse_len = 350;
 	size_t ngroups = ARRAY_SIZE(groups);
 	size_t nsockets = ARRAY_SIZE(sockets);
 	size_t ndata = ARRAY_SIZE(data);
+	int32_t ret;
 
-	if ((igroup > (ngroups - 1)) ||
-	    (isocket > (nsockets - 1)) ||
-	    (idata > (ndata - 1))) {
-		syslog(LOG_ERR, "Received unknown parameter");
-		return 1;
+	if (igroup > (ngroups - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown socket group %d",  igroup);
+#endif
+		return -1;
+	}
+	if (isocket > (nsockets - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown socket %d", isocket);
+#endif
+		return -1;
 	}
 
-	socket_ctrl(groups[igroup], sockets[isocket], data[idata], pulse_len);
+	if (idata > (ndata - 1)) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown switch parameter %d", idata);
+#endif
+		return -1;
+	}
 
-	return 0;
+	ret = socket_ctrl(groups[igroup], sockets[isocket],
+			  data[idata], pulse_len);
+
+	return ret;
 }
 
 /**
  * Emulate an encoder chip
- * @param *enc          Pointer to an encoder instance
- * @param uint group    Socket group
- * @param uint socket   Socket within group
- * @param uint data     Data to send
+ * @param uint32_t group    Socket group
+ * @param uint32_t socket   Socket within group
+ * @param uint32_t data     Data to send
  */
-static int socket_ctrl(const char *group, const char *socket,
-		       const char *data, uint pulse_len)
+static int32_t socket_ctrl(const char *group, const char *socket,
+			   const char *data, uint32_t pulse_len)
 {
 	size_t s;
+	size_t n;
 	char codeword[MAX_CODEWORD_LEN];
 
 	/* Calculate code word size */
 	s = strlen(group) + strlen(socket) + strlen(data);
 
 	/* Generate the code word */
-	snprintf(codeword, s + 1, "%s%s%s", group, socket, data);
-
-#ifdef DEBUG
-	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
+	n = snprintf(codeword, s + 1, "%s%s%s", group, socket, data);
+	if (n != s) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] snprintf()");
 #endif
-
-	/* Initialize the IO pin */
-	if (!bcm2835_init()) {
-		syslog(LOG_ERR, "Cannot init bcm2835\n");
 		return -1;
 	}
 
-	/* Set the pin to be an output */
-	bcm2835_gpio_fsel(PIN, BCM2835_GPIO_FSEL_OUTP);
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
+#endif
+
+#ifdef X86_64
+	fprintf(stdout, "%s\n", codeword);
+#endif
 
 	/* Send the codeword */
 	send_tris(codeword, pulse_len);
@@ -208,25 +290,49 @@ static int socket_ctrl(const char *group, const char *socket,
 	return 0;
 }
 
-int socket_send(uint dev, uint group, uint socket, uint data)
+int32_t socket_send(uint32_t dev, uint32_t group,
+		    uint32_t socket, uint32_t data)
 {
+	int32_t ret;
 
-#ifdef DEBUG
+	ret = board_init();
+	if (ret < 0) {
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] board_init");
+#endif
+		return ret;
+	}
+
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
 	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
 	       dev, group, socket, data);
 #endif
 
 	switch (dev) {
-	case 0:
-		pt2260_send(group, socket, data);
+	case REV_008345:
+		ret = rev_008345_send(group, socket, data);
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		if (ret < 0)
+			syslog(LOG_ERR, "[-] rev_008345_send()");
+#endif
 		break;
-	case 1:
-		pt2262_send(group, socket, data);
+	case POLLIN_2605:
+		ret = pollin_2605_send(group, socket, data);
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		if (ret < 0)
+			syslog(LOG_ERR, "[-] pollin_2605_send()");
+#endif
 		break;
 	default:
-		syslog(LOG_ERR, "Received unknown socket type %d", dev);
-		return 1;
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+		syslog(LOG_ERR, "[-] Unknown socket type %d", dev);
+#endif
+		ret = -1;
 	}
 
-	return 0;
+#if defined DEBUG && (defined(RASPBERRY_PI) || defined(BEAGLEBONE_BLACK))
+	if (board_exit() < 0)
+		syslog(LOG_ERR, "[-] board_exit");
+#endif
+	return ret;
 }
