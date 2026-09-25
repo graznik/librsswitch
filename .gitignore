@@ -1,1 +1,7 @@
-*.o *~ \#*
+*.o
+*~
+\#*
+cscope.files
+cscope.out
+examples/basic/rsssend
+examples/network/rsswitchd

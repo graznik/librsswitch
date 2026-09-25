@@ -23,35 +23,33 @@ See the librsswitch Wiki [3] for a detailed description of how to set up the
 entire hardware.
 
 
-Software setup (Raspberry Pi)
------------------------------
-Install the bcm2835 C library [4] on your Raspberry Pi:
- $ wget  http://www.open.com.au/mikem/bcm2835/bcm2835-1.38.tar.gz
- $ tar zxvf bcm2835-1.38.tar.gz
- $ cd bcm2835-1.38
- $ ./configure
- $ make
- $ sudo make check
- $ sudo make install
+Software setup (Raspberry Pi / Raspberry Pi 3)
+-----------------------------------------------
+GPIO access goes through libgpiod [4], not bcm2835 -- install the dev
+package on the Pi:
+ $ sudo apt install libgpiod-dev
+
+Build with the matching Makefile target from examples/basic/ or
+examples/network/:
+ $ make rpi     # Raspberry Pi (32-bit ARM)
+ $ make rpi3    # Raspberry Pi 3 (aarch64)
+ $ make bbb     # BeagleBone Black (sysfs GPIO, no libgpiod needed)
+ $ make x86_64  # host build, GPIO calls are stubbed out
 
 
 Software setup (cross compiling on x86_64)
 ------------------------------------------
- $ git clone https://github.com/raspberrypi/tools
- $ sudo cp -r tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64 /opt/
- $ export PATH=/opt/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
- $ export ARCH=arm
- $ export CROSS_COMPILE=arm-linux-gnueabihf-
- $ wget http://www.airspayce.com/mikem/bcm2835/bcm2835-1.38.tar.gz
- $ tar -xvf bcm2835-1.38.tar.gz
- $ cd bcm2835-1.38/
- $ ./configure --host=arm-linux-gnueabihf
- $ make
- $ su
- # export PATH=/opt/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin:$PATH
- # export ARCH=arm
- # export CROSS_COMPILE=arm-linux-gnueabihf-
- # make install
+Install an ARM/aarch64 cross toolchain (e.g. via your distro's
+gcc-arm-linux-gnueabihf / gcc-aarch64-linux-gnu packages), then build
+with the matching target -- the Makefile sets CROSS_COMPILE for you
+based on the target and picks up libgpiod headers from
+/usr/include and /usr/local/include:
+ $ make rpi     # arm-linux-gnueabihf-gcc
+ $ make rpi3    # aarch64-linux-gnu-gcc
+
+libgpiod itself (headers + library) needs to be available for the
+target architecture in your cross sysroot -- either cross-build it
+from source or install your distro's cross-dev variant if one exists.
 
 
 Usage
@@ -66,4 +64,4 @@ socket_send(uint dev, uint group, uint socket, uint data);
 [1] https://github.com/r10r/rcswitch-pi
 [2] http://code.google.com/p/rc-switch/
 [3] https://github.com/graznik/librsswitch/wiki
-[4] http://www.open.com.au/mikem/bcm2835/
+[4] https://git.kernel.org/pub/scm/libs/libgpiod/libgpiod.git/
