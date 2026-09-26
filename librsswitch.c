@@ -92,9 +92,12 @@ static int32_t tristate_check(const char *codeword)
 }
 
 /**
- * Send a code word
- * @param codeword
- * @param ntimes     Number of times to send the code word
+ * Sends a tri-state code word NTIMES times, each repetition followed
+ * by a sync pulse.
+ * @param codeword     NUL-terminated string of '0', '1' and 'F'
+ * @param pulse_len    Pulse length in microseconds
+ * @return 0 on success, -1 for an invalid codeword or a failing
+ *         transmit()
  */
 static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 {
@@ -170,10 +173,8 @@ static int32_t send_f(uint32_t pulse_len)
 
 /**
  * Sends a "Sync" Bit
- *                       _
- * Waveform Protocol 1: | |_______________________________
- *                       _
- * Waveform Protocol 2: | |__________
+ *            _
+ * Waveform: | |_______________________________
  */
 static int32_t send_sync(uint32_t pulse_len)
 {
@@ -181,8 +182,12 @@ static int32_t send_sync(uint32_t pulse_len)
 }
 
 /**
- * Configuration struct for the PT2260 encoder
- * @param pt2260     Pointer to a pt2260 instance
+ * Emulates the PT2260 encoder used by REV 008345.
+ * @param igroup    Socket group, valid range 0-3
+ * @param isocket   Socket within the group, valid range 0-2
+ * @param idata     0 = off, 1 = on
+ * @return 0 on success, -1 for an out-of-range parameter or a
+ *         failing send_tris()
  */
 static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 			       uint32_t idata)
@@ -218,8 +223,12 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 }
 
 /**
- * Configuration struct for the PT2262 encoder
- * @param *pt2262     Pointer to a pt2262 instance
+ * Emulates the PT2262 encoder used by Pollin 2605.
+ * @param igroup    Socket group, valid range 0-31
+ * @param isocket   Socket within the group, valid range 0-31
+ * @param idata     0 = off, 1 = on
+ * @return 0 on success, -1 for an out-of-range parameter or a
+ *         failing send_tris()
  */
 static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata)
@@ -269,10 +278,13 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 }
 
 /**
- * Emulate an encoder chip
- * @param uint32_t group    Socket group
- * @param uint32_t socket   Socket within group
- * @param uint32_t data     Data to send
+ * Assembles a tri-state codeword from its three parts and sends it.
+ * @param group      Socket group code-word part
+ * @param socket     Socket-within-group code-word part
+ * @param data       On/off code-word part
+ * @param pulse_len  Pulse length in microseconds
+ * @return 0 on success, -1 if the assembled codeword does not fit or
+ *         a failing send_tris()
  */
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len)
