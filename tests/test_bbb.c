@@ -246,9 +246,11 @@ static void fake_cleanup(void)
 }
 
 /*
- * Baseline: with gpio49 pre-created (simulating a udev-managed
- * board), board_init()/transmit()/board_exit() run end to end and
- * leave the expected content in each sysfs file.
+ * Baseline: with gpio49 pre-created (simulating a pin already
+ * exported by udev or an administrator), board_init()/transmit()/
+ * board_exit() run end to end, skipping the export write and the
+ * later unexport -- export and unexport stay empty, since this
+ * session never owned the export (D-17).
  */
 static void test_lifecycle_with_fake_sysfs(void)
 {
@@ -259,7 +261,7 @@ static void test_lifecycle_with_fake_sysfs(void)
 
 	CHECK_EQ(board_init(NULL), 0);
 	fake_read("/export", buf, sizeof(buf));
-	CHECK_EQ(strcmp(buf, "49"), 0);
+	CHECK_EQ(strcmp(buf, ""), 0);
 	fake_read("/gpio49/direction", buf, sizeof(buf));
 	CHECK_EQ(strcmp(buf, "out"), 0);
 
@@ -269,7 +271,7 @@ static void test_lifecycle_with_fake_sysfs(void)
 
 	CHECK_EQ(board_exit(), 0);
 	fake_read("/unexport", buf, sizeof(buf));
-	CHECK_EQ(strcmp(buf, "49"), 0);
+	CHECK_EQ(strcmp(buf, ""), 0);
 }
 
 /* A missing export file makes board_init() fail and log an error. */
@@ -326,17 +328,29 @@ static void test_transmit_missing_value_returns(void)
 /*
  * An unexport file replaced by a symlink to /dev/full makes
  * board_exit()'s write() fail (ENOSPC), returning -1 instead of
- * terminating the process.
+ * terminating the process. board_exit() only attempts an unexport
+ * when this session owns the export (pin_exported), which the fake
+ * tree cannot arrange together with a fully successful session --
+ * nothing creates gpio<pin> in response to writing export, so a
+ * board_init() that performs its own export always then fails
+ * opening direction (see the D-17 backstop truths in
+ * 01-CONTEXT.md). pin_exported is set directly here (this file
+ * includes boards/bbb/bbb.c, so its statics are reachable) to
+ * exercise the unexport-write-failure path regardless.
  */
 static void test_board_exit_unexport_failure_returns(void)
 {
 	fake_reset();
 	fake_add_pin("49");
 	CHECK_EQ(board_init(NULL), 0);
+	pin_exported = 1;
 
 	fake_to_dev_full("/unexport");
+	captured_reset();
 	CHECK_EQ(board_exit(), -1);
 	CHECK(captured_count() > 0);
+
+	pin_exported = 0;
 }
 
 /*
@@ -383,10 +397,12 @@ static void test_error_messages_follow_convention(void)
 	fake_reset();
 	fake_add_pin("49");
 	CHECK_EQ(board_init(NULL), 0);
+	pin_exported = 1;
 	fake_to_dev_full("/unexport");
 	captured_reset();
 	CHECK_EQ(board_exit(), -1);
 	check_messages_follow_convention();
+	pin_exported = 0;
 }
 
 /*
@@ -545,6 +561,74 @@ static void test_session_after_transmit_failure(void)
 	CHECK_EQ(board_exit(), 0);
 }
 
+/*
+ * With gpio49 already present, board_init() skips the export write,
+ * transmit() still works, and board_exit() leaves unexport and the
+ * gpio49 directory untouched (D-17).
+ */
+static void test_already_exported_pin_left_alone(void)
+{
+	char buf[MAX_LEN];
+	char gpio_dir[MAX_LEN];
+	struct stat st;
+
+	fake_reset();
+	fake_add_pin("49");
+
+	CHECK_EQ(board_init(NULL), 0);
+	fake_read("/export", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+
+	CHECK_EQ(transmit(1, 1, 1), 0);
+
+	CHECK_EQ(board_exit(), 0);
+	fake_read("/unexport", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+
+	snprintf(gpio_dir, sizeof(gpio_dir), "%s/gpio49", BBB_SYSFS_GPIO_DIR);
+	CHECK_EQ(stat(gpio_dir, &st), 0);
+	CHECK(S_ISDIR(st.st_mode));
+}
+
+/*
+ * When board_init() wrote the pin to export itself (no gpio49
+ * present) and then fails opening direction, it writes the pin to
+ * unexport before returning -1, and leaks no fd (D-17).
+ */
+static void test_own_export_undone_on_failure(void)
+{
+	char buf[MAX_LEN];
+	long before;
+
+	fake_reset();
+
+	before = count_open_fds();
+	captured_reset();
+	CHECK_EQ(board_init(NULL), -1);
+	CHECK(captured_count() > 0);
+	CHECK_EQ(count_open_fds(), before);
+
+	fake_read("/export", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "49"), 0);
+	fake_read("/unexport", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "49"), 0);
+}
+
+/* board_exit() with no open session returns 0 and touches no sysfs
+ * file (D-17).
+ */
+static void test_exit_without_session(void)
+{
+	char buf[MAX_LEN];
+
+	fake_reset();
+	fake_add_pin("49");
+
+	CHECK_EQ(board_exit(), 0);
+	fake_read("/unexport", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+}
+
 int main(void)
 {
 	int ret;
@@ -561,6 +645,9 @@ int main(void)
 	test_transmit_outside_session();
 	test_failed_init_leaks_no_fd();
 	test_session_after_transmit_failure();
+	test_already_exported_pin_left_alone();
+	test_own_export_undone_on_failure();
+	test_exit_without_session();
 
 	ret = MT_REPORT();
 	fake_cleanup();
