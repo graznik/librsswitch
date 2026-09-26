@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
@@ -38,51 +39,51 @@ int32_t board_init(const char *config)
 
 	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/export");
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
-		syslog(LOG_ERR, "Path too long\n");
+		syslog(LOG_ERR, "[-] Path too long: %s", path);
 		return -1;
 	}
 
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		syslog(LOG_ERR, "Cannot open /sys/class/gpio/export\n");
+		syslog(LOG_ERR, "[-] Cannot open %s: %s", path, strerror(errno));
 		return -1;
 	}
 
 	n = write(fd, pin, strlen(pin));
 	if (n != strlen(pin)) {
 		close(fd);
-		syslog(LOG_ERR, "Cannot configure GPIO\n");
+		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
 	}
 
 	ret = close(fd);
 	if (ret == -1) {
-		syslog(LOG_ERR, "Cannot close /sys/class/gpio/export\n");
+		syslog(LOG_ERR, "[-] Cannot close %s: %s", path, strerror(errno));
 		return -1;
 	}
 
 	ret = snprintf(path, sizeof(path),
 			BBB_SYSFS_GPIO_DIR "/gpio%s/direction", pin);
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
-		syslog(LOG_ERR, "Path too long\n");
+		syslog(LOG_ERR, "[-] Path too long: %s", path);
 		return -1;
 	}
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		syslog(LOG_ERR, "Cannot open %s\n", path);
+		syslog(LOG_ERR, "[-] Cannot open %s: %s", path, strerror(errno));
 		return -1;
 	}
 
 	n = write(fd, "out", strlen("out"));
 	if (n != strlen("out")) {
-		syslog(LOG_ERR, "Cannot configure GPIO as output\n");
+		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		close(fd);
 		return -1;
 	}
 
 	ret = close(fd);
 	if (ret == -1) {
-		syslog(LOG_ERR, "Cannot close %s\n", path);
+		syslog(LOG_ERR, "[-] Cannot close %s: %s", path, strerror(errno));
 		return -1;
 	}
 
@@ -98,25 +99,25 @@ int32_t board_exit(void)
 
 	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/unexport");
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
-		syslog(LOG_ERR, "Path too long\n");
+		syslog(LOG_ERR, "[-] Path too long: %s", path);
 		return -1;
 	}
 
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		syslog(LOG_ERR, "Cannot open /sys/class/gpio/unexport\n");
+		syslog(LOG_ERR, "[-] Cannot open %s: %s", path, strerror(errno));
 		return -1;
 	}
 
 	n = write(fd, pin, strlen(pin));
 	if (n != strlen(pin)) {
 		close(fd);
-		syslog(LOG_ERR, "Cannot unexport GPIO\n");
+		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
 	}
 	ret = close(fd);
 	if (ret == -1) {
-		syslog(LOG_ERR, "Cannot close %s\n", path);
+		syslog(LOG_ERR, "[-] Cannot close %s: %s", path, strerror(errno));
 		return -1;
 	}
 
@@ -133,18 +134,18 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/gpio%s/value",
 			pin);
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
-		syslog(LOG_ERR, "Path too long\n");
+		syslog(LOG_ERR, "[-] Path too long: %s", path);
 		return -1;
 	}
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
-		syslog(LOG_ERR, "Cannot open %s\n", path);
+		syslog(LOG_ERR, "[-] Cannot open %s: %s", path, strerror(errno));
 		return -1;
 	}
 	n = write(fd, "1", 1);
 	if (n != strlen("1")) {
 		close(fd);
-		syslog(LOG_ERR, "Cannot write\n");
+		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
 	}
 	usleep(pulse_len * nhigh);
@@ -152,14 +153,14 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	n = write(fd, "0", 1);
 	if (n != strlen("0")) {
 		close(fd);
-		syslog(LOG_ERR, "Cannot write\n");
+		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
 	}
 	usleep(pulse_len * nlow);
 
 	ret = close(fd);
 	if (ret == -1) {
-		syslog(LOG_ERR, "Cannot close %s\n", path);
+		syslog(LOG_ERR, "[-] Cannot close %s: %s", path, strerror(errno));
 		return -1;
 	}
 

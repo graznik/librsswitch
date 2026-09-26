@@ -306,6 +306,58 @@ static void test_board_exit_unexport_failure_returns(void)
 	CHECK(captured_count() > 0);
 }
 
+/*
+ * Every captured LOG_ERR message starts with "[-] ", names the path
+ * it refers to, and contains no embedded newline (D-19).
+ */
+static void check_messages_follow_convention(void)
+{
+	size_t i;
+
+	for (i = 0; i < captured_n; i++) {
+		CHECK(strncmp(captured[i].text, "[-] ", 4) == 0);
+		CHECK(strstr(captured[i].text, BBB_SYSFS_GPIO_DIR) != NULL);
+		CHECK(strchr(captured[i].text, '\n') == NULL);
+	}
+}
+
+/* Re-runs the Task 1 failure scenarios, checking every message
+ * captured along the way against the D-19 logging convention.
+ */
+static void test_error_messages_follow_convention(void)
+{
+	fake_reset();
+	(void)unlink(BBB_SYSFS_GPIO_DIR "/export");
+	CHECK_EQ(board_init(NULL), -1);
+	check_messages_follow_convention();
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+	fake_to_dev_full("/gpio49/value");
+	captured_reset();
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	check_messages_follow_convention();
+	CHECK_EQ(board_exit(), 0);
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+	(void)unlink(BBB_SYSFS_GPIO_DIR "/gpio49/value");
+	captured_reset();
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	check_messages_follow_convention();
+	CHECK_EQ(board_exit(), 0);
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+	fake_to_dev_full("/unexport");
+	captured_reset();
+	CHECK_EQ(board_exit(), -1);
+	check_messages_follow_convention();
+}
+
 int main(void)
 {
 	int ret;
@@ -315,6 +367,7 @@ int main(void)
 	test_transmit_write_failure_returns();
 	test_transmit_missing_value_returns();
 	test_board_exit_unexport_failure_returns();
+	test_error_messages_follow_convention();
 
 	ret = MT_REPORT();
 	fake_cleanup();
