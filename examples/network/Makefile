@@ -20,6 +20,7 @@ endif
 
 ARCH := $(shell uname -m)
 PREFIX=/usr/local
+SYSTEMD_UNIT_DIR=/etc/systemd/system
 
 ifeq ($(ARCH),x86_64)
 ifeq ($(MAKECMDGOALS), x86_64)
@@ -79,10 +80,12 @@ install:
 		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
 		exit 1; \
 	fi
-	install -m 0755 rsswitchd $(PREFIX)/bin
-	cp rsswitchd.service /etc/systemd/system/
-	systemctl enable rsswitchd
-	systemctl start rsswitchd
+	install -D -m 0755 rsswitchd $(DESTDIR)$(PREFIX)/bin/rsswitchd
+	install -D -m 0644 rsswitchd.service $(DESTDIR)$(SYSTEMD_UNIT_DIR)/rsswitchd.service
+	@if [ -z "$(DESTDIR)" ]; then \
+		systemctl enable rsswitchd; \
+		systemctl start rsswitchd; \
+	fi
 
 clean:
 	-@rm -rf *.o *~ rsswitchd 2>/dev/null || true
