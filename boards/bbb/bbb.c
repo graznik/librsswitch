@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/types.h>
@@ -86,6 +87,57 @@ static void undo_own_export(void)
 	close(fd);
 }
 
+/*
+ * Parses config as a decimal GPIO number and writes the canonical
+ * form (no leading zeros) into pin. NULL uses the compiled-in
+ * default (49). A non-NULL config must be non-empty, contain only
+ * the digits '0'-'9' (rejecting a sign, whitespace, a hex prefix or
+ * a path separator before it ever reaches strtoul()), and parse to
+ * a value that fits an int (the kernel numbers GPIOs with int, per
+ * Pitfall 4's overflow/trailing-garbage idiom). Returns 0 on
+ * success, -1 (with an error logged, and no sysfs access attempted)
+ * on a rejected config.
+ */
+static int32_t parse_pin(const char *config)
+{
+	const char *p;
+	char *end;
+	unsigned long val;
+
+	if (config == NULL) {
+		snprintf(pin, sizeof(pin), "%s", DEFAULT_PIN);
+		return 0;
+	}
+
+	if (config[0] == '\0')
+		goto invalid;
+
+	for (p = config; *p != '\0'; p++) {
+		if (*p < '0' || *p > '9')
+			goto invalid;
+	}
+
+	errno = 0;
+	val = strtoul(config, &end, 10);
+	if (*end != '\0' || errno == ERANGE || val > INT_MAX)
+		goto invalid;
+
+	snprintf(pin, sizeof(pin), "%lu", val);
+
+	return 0;
+
+invalid:
+	syslog(LOG_ERR, "[-] Invalid GPIO number '%s'", config);
+	return -1;
+}
+
+/*
+ * config: a decimal GPIO number (default 49 when config is NULL;
+ * leading zeros allowed, e.g. "049"; at most INT_MAX). A pin that is
+ * already exported (gpio<pin> already exists) is used as is and
+ * never unexported by board_exit(). A pin this call exports itself
+ * is unexported by board_exit().
+ */
 int32_t board_init(const char *config)
 {
 	int fd;
@@ -94,7 +146,8 @@ int32_t board_init(const char *config)
 	char path[MAX_LEN] = {'\0'};
 	struct stat st;
 
-	snprintf(pin, sizeof(pin), "%s", config ? config : DEFAULT_PIN);
+	if (parse_pin(config) == -1)
+		return -1;
 	pin_exported = 0;
 
 	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/gpio%s", pin);

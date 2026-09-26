@@ -56,6 +56,8 @@ static void capture_syslog(int priority, const char *fmt, ...)
 #include "minitest.h"
 #include "../boards/bbb/bbb.c"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 #define CAPTURE_MAX_MESSAGES 64
 #define CAPTURE_MSG_LEN 256
 
@@ -243,6 +245,29 @@ static void fake_cleanup(void)
 	(void)unlink(BBB_SYSFS_GPIO_DIR "/export");
 	(void)unlink(BBB_SYSFS_GPIO_DIR "/unexport");
 	(void)rmdir(BBB_SYSFS_GPIO_DIR);
+}
+
+/* Returns 1 if the fake tree contains any gpio* entry, 0 otherwise. */
+static int fake_has_any_gpio_dir(void)
+{
+	DIR *d;
+	struct dirent *de;
+	int found = 0;
+
+	d = opendir(BBB_SYSFS_GPIO_DIR);
+	if (d == NULL)
+		return 0;
+
+	while ((de = readdir(d)) != NULL) {
+		if (strncmp(de->d_name, "gpio", 4) == 0) {
+			found = 1;
+			break;
+		}
+	}
+
+	closedir(d);
+
+	return found;
 }
 
 /*
@@ -629,6 +654,49 @@ static void test_exit_without_session(void)
 	CHECK_EQ(strcmp(buf, ""), 0);
 }
 
+/*
+ * Every config that is not a plain decimal GPIO number is rejected
+ * by board_init() before any sysfs write: export stays empty, and
+ * no gpio* directory appears in the fake tree (D-18).
+ */
+static const char * const invalid_configs[] = {
+	"", "abc", "-1", "+49", " 49", "49 ", "49x", "../49", "4/9",
+	"0x31", "2147483648", "99999999999999999999",
+};
+
+static void test_invalid_configs_rejected_before_sysfs(void)
+{
+	char buf[MAX_LEN];
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(invalid_configs); i++) {
+		fake_reset();
+
+		captured_reset();
+		CHECK_EQ(board_init(invalid_configs[i]), -1);
+		CHECK(captured_count() > 0);
+
+		fake_read("/export", buf, sizeof(buf));
+		CHECK_EQ(strcmp(buf, ""), 0);
+		CHECK_EQ(fake_has_any_gpio_dir(), 0);
+	}
+}
+
+/*
+ * "049" is accepted and canonicalised to "49" before it ever reaches
+ * a sysfs path, so a pre-created gpio49 (not gpio049) is found
+ * (D-18).
+ */
+static void test_numeric_config_canonicalised(void)
+{
+	fake_reset();
+	fake_add_pin("49");
+
+	CHECK_EQ(board_init("049"), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	CHECK_EQ(board_exit(), 0);
+}
+
 int main(void)
 {
 	int ret;
@@ -648,6 +716,8 @@ int main(void)
 	test_already_exported_pin_left_alone();
 	test_own_export_undone_on_failure();
 	test_exit_without_session();
+	test_invalid_configs_rejected_before_sysfs();
+	test_numeric_config_canonicalised();
 
 	ret = MT_REPORT();
 	fake_cleanup();
