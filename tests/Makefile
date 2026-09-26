@@ -28,11 +28,12 @@ endif
 
 .PHONY: test clean tsan
 
-test: $(TESTS)
+test: $(TESTS) test_rsssend_bin
 	@status=0; \
 	for t in $(TESTS); do \
 		./$$t > /dev/null || status=1; \
 	done; \
+	sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
 	exit $$status
 
 test_socket_send: test_socket_send.c $(TEST_DEPS)
@@ -46,6 +47,14 @@ test_concurrency: test_concurrency.c $(TEST_DEPS)
 
 test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c
+
+# Builds ../examples/basic/rsssend.c against the x86_64 board, so
+# test_rsssend.sh can drive the real CLI (argument parsing, exit
+# codes, stdout/stderr) end to end without any hardware. Not part of
+# $(TESTS): it is a shell script, not a minitest binary, so `test`
+# runs it explicitly below.
+test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c $(LIB_SRCS)
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
 # ..., data: ..." line in socket_send() is exercised (LIB-02).
@@ -92,5 +101,5 @@ test_concurrency_tsan: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) -fsanitize=thread -g -O1 $(INCLUDES) -o test_concurrency_tsan test_concurrency.c $(LIB_SRCS)
 
 clean:
-	-@rm -f $(TESTS) test_concurrency_tsan 2>/dev/null || true
+	-@rm -f $(TESTS) test_rsssend_bin test_concurrency_tsan 2>/dev/null || true
 	-@rm -rf test_bbb_sysfs /tmp/librsswitch-test-bbb-sysfs 2>/dev/null || true
