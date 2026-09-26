@@ -17,6 +17,14 @@
  * board_exit()), and on tests reading it only after all senders for
  * the current test have finished. It must never be called
  * concurrently with a send in flight.
+ *
+ * board_init()/board_exit() also track how many board sessions are
+ * currently open and count every board_init() that finds one already
+ * open. Like the recorder, these counters do no locking of their own
+ * and rely on the library serializing board_init() through
+ * board_exit() -- they exist to make a missing or too-narrow lock
+ * visible to a concurrency test instead of relying on luck to
+ * interleave unsynchronized callers.
  */
 #include <stddef.h>
 
@@ -68,5 +76,15 @@ size_t x86_64_board_exit_count(void);
  * forever. x86_64_recorder_reset() also disarms it.
  */
 void x86_64_recorder_fail_at(size_t index);
+
+/*
+ * Number of board_init() calls, since the last reset, that found a
+ * board session already open (i.e. a board_init() with no matching
+ * board_exit() yet in between). Zero means every board session seen
+ * so far was properly serialized; a caller holding the library's lock
+ * for the full board_init() -> board_exit() span keeps this at zero
+ * even under concurrent callers.
+ */
+size_t x86_64_board_overlap_count(void);
 
 #endif /* X86_64_H */

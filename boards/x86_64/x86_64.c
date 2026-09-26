@@ -14,6 +14,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <sched.h>
 #include <stdint.h>
 
 #include "x86_64.h"
@@ -24,16 +25,24 @@ static int recorder_overflow;
 static size_t init_count;
 static size_t exit_count;
 static size_t fail_at_index = SIZE_MAX;
+static size_t open_sessions;
+static size_t overlap_count;
 
 int32_t board_init(const char *config)
 {
 	(void)config;
+	if (open_sessions > 0)
+		overlap_count++;
+	open_sessions++;
 	init_count++;
+	sched_yield();
 	return 0;
 }
 
 int32_t board_exit(void)
 {
+	if (open_sessions > 0)
+		open_sessions--;
 	exit_count++;
 	return 0;
 }
@@ -42,11 +51,13 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	if (recorder_count == fail_at_index) {
 		fail_at_index = SIZE_MAX;
+		sched_yield();
 		return -1;
 	}
 
 	if (recorder_count >= X86_64_RECORDER_MAX_PULSES) {
 		recorder_overflow = 1;
+		sched_yield();
 		return 0;
 	}
 
@@ -54,6 +65,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	recorder[recorder_count].nlow = nlow;
 	recorder[recorder_count].pulse_len = pulse_len;
 	recorder_count++;
+	sched_yield();
 	return 0;
 }
 
@@ -64,6 +76,8 @@ void x86_64_recorder_reset(void)
 	init_count = 0;
 	exit_count = 0;
 	fail_at_index = SIZE_MAX;
+	open_sessions = 0;
+	overlap_count = 0;
 }
 
 size_t x86_64_recorder_count(void)
@@ -97,4 +111,9 @@ size_t x86_64_board_exit_count(void)
 void x86_64_recorder_fail_at(size_t index)
 {
 	fail_at_index = index;
+}
+
+size_t x86_64_board_overlap_count(void)
+{
+	return overlap_count;
 }
