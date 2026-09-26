@@ -34,6 +34,7 @@
  * folder) that refuses to create symlinks at all ("Operation not
  * permitted"), while /tmp is a normal filesystem that supports them.
  */
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -207,6 +208,33 @@ static void fake_read(const char *relpath, char *buf, size_t len)
 	close(fd);
 }
 
+/*
+ * Counts this process's open file descriptors via /proc/self/fd, so
+ * a test can assert a session leaves no fd behind (BRD-02).
+ */
+static long count_open_fds(void)
+{
+	DIR *d;
+	struct dirent *de;
+	long n = 0;
+
+	d = opendir("/proc/self/fd");
+	if (d == NULL) {
+		fprintf(stderr, "count_open_fds: opendir: %s\n",
+			strerror(errno));
+		return -1;
+	}
+
+	while ((de = readdir(d)) != NULL) {
+		if (de->d_name[0] != '.')
+			n++;
+	}
+
+	closedir(d);
+
+	return n;
+}
+
 static void fake_cleanup(void)
 {
 	(void)unlink(BBB_SYSFS_GPIO_DIR "/gpio49/direction");
@@ -258,15 +286,20 @@ static void test_missing_export_file(void)
 /*
  * A value file replaced by a symlink to /dev/full makes transmit()
  * fail on its first write() (ENOSPC) instead of terminating the
- * process; the test keeps running afterwards.
+ * process; the test keeps running afterwards. The symlink is put in
+ * place before board_init(), which now opens the value fd for the
+ * whole session (BRD-02) -- replacing the file afterwards would
+ * leave the already-open fd pointing at the original (now unlinked)
+ * file instead of at /dev/full.
  */
 static void test_transmit_write_failure_returns(void)
 {
 	fake_reset();
 	fake_add_pin("49");
-	CHECK_EQ(board_init(NULL), 0);
-
 	fake_to_dev_full("/gpio49/value");
+
+	CHECK_EQ(board_init(NULL), 0);
+	captured_reset();
 	CHECK_EQ(transmit(1, 1, 1), -1);
 	CHECK(captured_count() > 0);
 
@@ -274,20 +307,20 @@ static void test_transmit_write_failure_returns(void)
 }
 
 /*
- * A missing value file makes transmit()'s open() fail, returning -1
- * instead of terminating the process.
+ * A missing value file makes board_init()'s open() fail, returning
+ * -1 instead of terminating the process. Since board_init() now
+ * opens the value fd for the whole session (BRD-02), a missing
+ * value file is caught there rather than by a later transmit().
  */
 static void test_transmit_missing_value_returns(void)
 {
 	fake_reset();
 	fake_add_pin("49");
-	CHECK_EQ(board_init(NULL), 0);
-
 	(void)unlink(BBB_SYSFS_GPIO_DIR "/gpio49/value");
-	CHECK_EQ(transmit(1, 1, 1), -1);
-	CHECK(captured_count() > 0);
 
-	CHECK_EQ(board_exit(), 0);
+	captured_reset();
+	CHECK_EQ(board_init(NULL), -1);
+	CHECK(captured_count() > 0);
 }
 
 /*
@@ -333,8 +366,8 @@ static void test_error_messages_follow_convention(void)
 
 	fake_reset();
 	fake_add_pin("49");
-	CHECK_EQ(board_init(NULL), 0);
 	fake_to_dev_full("/gpio49/value");
+	CHECK_EQ(board_init(NULL), 0);
 	captured_reset();
 	CHECK_EQ(transmit(1, 1, 1), -1);
 	check_messages_follow_convention();
@@ -342,12 +375,10 @@ static void test_error_messages_follow_convention(void)
 
 	fake_reset();
 	fake_add_pin("49");
-	CHECK_EQ(board_init(NULL), 0);
 	(void)unlink(BBB_SYSFS_GPIO_DIR "/gpio49/value");
 	captured_reset();
-	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK_EQ(board_init(NULL), -1);
 	check_messages_follow_convention();
-	CHECK_EQ(board_exit(), 0);
 
 	fake_reset();
 	fake_add_pin("49");
@@ -356,6 +387,162 @@ static void test_error_messages_follow_convention(void)
 	captured_reset();
 	CHECK_EQ(board_exit(), -1);
 	check_messages_follow_convention();
+}
+
+/*
+ * One session with 3 transmit() calls leaves value == "101010", in
+ * call order, proving the value fd is opened once and not reset
+ * between calls (BRD-02).
+ */
+static void test_value_fd_opened_once(void)
+{
+	char buf[MAX_LEN];
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "101010"), 0);
+
+	CHECK_EQ(board_exit(), 0);
+}
+
+/*
+ * A session with no transmit() call leaves value empty and the open
+ * fd count unchanged once the session closes.
+ */
+static void test_empty_session(void)
+{
+	char buf[MAX_LEN];
+	long before;
+
+	fake_reset();
+	fake_add_pin("49");
+
+	before = count_open_fds();
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(board_exit(), 0);
+	CHECK_EQ(count_open_fds(), before);
+
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+}
+
+/*
+ * Two back-to-back sessions each open and close the value fd once:
+ * the open fd count is equal before the first session and after the
+ * second, and the second session's transmit() writes "10" on its
+ * own once the test truncates value between sessions.
+ */
+static void test_back_to_back_sessions(void)
+{
+	char buf[MAX_LEN];
+	long before;
+
+	fake_reset();
+	fake_add_pin("49");
+
+	before = count_open_fds();
+
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	CHECK_EQ(board_exit(), 0);
+
+	fake_write_file(BBB_SYSFS_GPIO_DIR "/gpio49/value", "");
+
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	CHECK_EQ(board_exit(), 0);
+
+	CHECK_EQ(count_open_fds(), before);
+
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "10"), 0);
+}
+
+/*
+ * transmit() before board_init() and after board_exit() both return
+ * -1 and write nothing, since there is no open session.
+ */
+static void test_transmit_outside_session(void)
+{
+	char buf[MAX_LEN];
+
+	fake_reset();
+	fake_add_pin("49");
+
+	captured_reset();
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK(captured_count() > 0);
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(board_exit(), 0);
+
+	captured_reset();
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK(captured_count() > 0);
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, ""), 0);
+}
+
+/*
+ * A board_init() that fails at the direction write (direction ->
+ * /dev/full) never reaches the value-fd open, so it leaves the open
+ * fd count unchanged.
+ */
+static void test_failed_init_leaks_no_fd(void)
+{
+	long before;
+
+	fake_reset();
+	fake_add_pin("49");
+	fake_to_dev_full("/gpio49/direction");
+
+	before = count_open_fds();
+	captured_reset();
+	CHECK_EQ(board_init(NULL), -1);
+	CHECK(captured_count() > 0);
+	CHECK_EQ(count_open_fds(), before);
+}
+
+/*
+ * After a transmit() failure (value -> /dev/full), board_exit()
+ * still closes the value fd, restoring the open fd count, and an
+ * immediately following session on a healthy fake tree succeeds.
+ */
+static void test_session_after_transmit_failure(void)
+{
+	char buf[MAX_LEN];
+	long before;
+
+	fake_reset();
+	fake_add_pin("49");
+	fake_to_dev_full("/gpio49/value");
+
+	before = count_open_fds();
+
+	CHECK_EQ(board_init(NULL), 0);
+	captured_reset();
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK(captured_count() > 0);
+
+	CHECK_EQ(board_exit(), 0);
+	CHECK_EQ(count_open_fds(), before);
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "10"), 0);
+	CHECK_EQ(board_exit(), 0);
 }
 
 int main(void)
@@ -368,6 +555,12 @@ int main(void)
 	test_transmit_missing_value_returns();
 	test_board_exit_unexport_failure_returns();
 	test_error_messages_follow_convention();
+	test_value_fd_opened_once();
+	test_empty_session();
+	test_back_to_back_sessions();
+	test_transmit_outside_session();
+	test_failed_init_leaks_no_fd();
+	test_session_after_transmit_failure();
 
 	ret = MT_REPORT();
 	fake_cleanup();
