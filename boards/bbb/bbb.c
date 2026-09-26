@@ -31,7 +31,7 @@ static char pin[16];
 int32_t board_init(const char *config)
 {
 	int fd;
-	size_t n;
+	ssize_t n;
 	int ret;
 	char path[MAX_LEN] = {'\0'};
 
@@ -50,7 +50,7 @@ int32_t board_init(const char *config)
 	}
 
 	n = write(fd, pin, strlen(pin));
-	if (n != strlen(pin)) {
+	if (n != (ssize_t)strlen(pin)) {
 		close(fd);
 		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
@@ -75,7 +75,7 @@ int32_t board_init(const char *config)
 	}
 
 	n = write(fd, "out", strlen("out"));
-	if (n != strlen("out")) {
+	if (n != (ssize_t)strlen("out")) {
 		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		close(fd);
 		return -1;
@@ -93,7 +93,7 @@ int32_t board_init(const char *config)
 int32_t board_exit(void)
 {
 	int fd;
-	size_t n;
+	ssize_t n;
 	int ret;
 	char path[MAX_LEN] = {0};
 
@@ -110,7 +110,7 @@ int32_t board_exit(void)
 	}
 
 	n = write(fd, pin, strlen(pin));
-	if (n != strlen(pin)) {
+	if (n != (ssize_t)strlen(pin)) {
 		close(fd);
 		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
@@ -127,7 +127,7 @@ int32_t board_exit(void)
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	int fd;
-	size_t n;
+	ssize_t n;
 	int ret;
 	char path[MAX_LEN] = {0};
 
@@ -143,7 +143,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		return -1;
 	}
 	n = write(fd, "1", 1);
-	if (n != strlen("1")) {
+	if (n != (ssize_t)strlen("1")) {
 		close(fd);
 		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
@@ -151,7 +151,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	usleep(pulse_len * nhigh);
 
 	n = write(fd, "0", 1);
-	if (n != strlen("0")) {
+	if (n != (ssize_t)strlen("0")) {
 		close(fd);
 		syslog(LOG_ERR, "[-] Cannot write %s: %s", path, strerror(errno));
 		return -1;
