@@ -1,4 +1,4 @@
-CFLAGS += -Werror -Wall -W -pedantic -DX86_64
+CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
 TESTS = test_socket_send test_codewords test_concurrency

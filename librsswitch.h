@@ -20,6 +20,28 @@
 #include <stdint.h>
 
 /*
+ * Thread safety
+ *
+ * socket_send() and socket_gpio_config() (and, once added,
+ * socket_send_codeword()) are safe to call concurrently from multiple
+ * threads of the same process. Every send session -- board_init(),
+ * all repetitions, board_exit() -- is serialized by one library-wide
+ * lock, so concurrent sends never interleave their pulses; a calling
+ * thread simply blocks until the previous send session completes.
+ * socket_gpio_config() takes the same lock around its store, so a
+ * config change is ordered against sends that start after it returns
+ * (it does not affect a session already in progress).
+ *
+ * This guarantee is process-local only: two separate processes
+ * driving the same GPIO line (for example rsssend run once while
+ * rsswitchd is active) are not serialized against each other.
+ *
+ * The library is not async-signal-safe -- never call any of these
+ * functions from a signal handler. Cancelling a thread while it is
+ * inside a send is not supported; doing so may leave the lock held.
+ */
+
+/*
  * Sets the GPIO config string passed to board_init() on every
  * subsequent socket_send() call. NULL (the default, if never called)
  * means "use this board's compiled-in default". Format is board-

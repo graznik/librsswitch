@@ -21,10 +21,32 @@
  * serialized with a mutex, that concurrent callers from multiple
  * threads always produce whole, non-interleaved codewords.
  */
+#include <pthread.h>
+#include <string.h>
+
 #include "minitest.h"
 #include "pulse_decode.h"
 #include "../librsswitch.h"
 #include "../boards/x86_64/x86_64.h"
+
+#define NTHREADS 6
+#define NSENDS 10
+#define NROUNDS 4
+
+/* group = 5t+1, socket = 31-4t, data = t%2, for t = 0..NTHREADS-1 */
+static const uint32_t addr_group[NTHREADS] = {1, 6, 11, 16, 21, 26};
+static const uint32_t addr_socket[NTHREADS] = {31, 27, 23, 19, 15, 11};
+static const uint32_t addr_data[NTHREADS] = {0, 1, 0, 1, 0, 1};
+
+static char ref[NTHREADS][PULSE_DECODE_MAX_FRAME_LEN];
+
+struct worker_ctx {
+	uint32_t group;
+	uint32_t socket;
+	uint32_t data;
+	int is_thread0;
+	int ok;
+};
 
 static void test_overlap_detector_is_not_vacuous(void)
 {
@@ -40,9 +62,142 @@ static void test_overlap_detector_is_not_vacuous(void)
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 }
 
+/*
+ * Records one reference codeword per thread address, single-threaded,
+ * by sending once and decoding the result with next_transmission().
+ * Every round below then only needs to compare against these.
+ */
+static void compute_references(void)
+{
+	int t;
+
+	for (t = 0; t < NTHREADS; t++) {
+		size_t pos = 0;
+		uint32_t pulse_len;
+
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(POLLIN_2605, addr_group[t],
+				      addr_socket[t], addr_data[t]), 0);
+		CHECK_EQ(next_transmission(&pos, ref[t], sizeof(ref[t]),
+					    &pulse_len), 0);
+		CHECK_EQ(pulse_len, (uint32_t)350);
+	}
+}
+
+static void *worker_main(void *arg)
+{
+	struct worker_ctx *ctx = arg;
+	int i;
+
+	for (i = 0; i < NSENDS; i++) {
+		if (socket_send(POLLIN_2605, ctx->group, ctx->socket,
+				ctx->data) != 0)
+			ctx->ok = 0;
+
+		/* Thread 0 also sends a rejected address between sends. */
+		if (ctx->is_thread0 && i == 4) {
+			if (socket_send(POLLIN_2605, 32, 0, 0) != -1)
+				ctx->ok = 0;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * One round: NTHREADS threads each send their own address NSENDS
+ * times through socket_send() (thread 0 also sends one rejected
+ * address in between); after joining, the whole recording must
+ * decode into whole, non-interleaved NTIMES-frame transmissions, each
+ * matching exactly one thread's reference codeword exactly NSENDS
+ * times, with no overlap and a matching board_init()/board_exit()
+ * count.
+ *
+ * NTHREADS * NSENDS + 1 counts every socket_send() call made this
+ * round, including thread 0's one rejected address: board_init() and
+ * board_exit() run unconditionally for every socket_send() call
+ * (accepted or rejected) in the current, unchanged control flow --
+ * only the codeword generation in between is skipped for a rejected
+ * address.
+ */
+static void run_round(void)
+{
+	pthread_t tid[NTHREADS];
+	struct worker_ctx ctx[NTHREADS];
+	size_t counts[NTHREADS];
+	size_t pos;
+	int t;
+
+	x86_64_recorder_reset();
+
+	for (t = 0; t < NTHREADS; t++) {
+		ctx[t].group = addr_group[t];
+		ctx[t].socket = addr_socket[t];
+		ctx[t].data = addr_data[t];
+		ctx[t].is_thread0 = (t == 0);
+		ctx[t].ok = 1;
+		counts[t] = 0;
+	}
+
+	for (t = 0; t < NTHREADS; t++)
+		CHECK_EQ(pthread_create(&tid[t], NULL, worker_main, &ctx[t]), 0);
+
+	for (t = 0; t < NTHREADS; t++)
+		CHECK_EQ(pthread_join(tid[t], NULL), 0);
+
+	for (t = 0; t < NTHREADS; t++)
+		CHECK(ctx[t].ok);
+
+	pos = 0;
+	while (pos < x86_64_recorder_count()) {
+		char frame[PULSE_DECODE_MAX_FRAME_LEN];
+		uint32_t pulse_len;
+		int matched = -1;
+		int decoded = (next_transmission(&pos, frame, sizeof(frame),
+						  &pulse_len) == 0);
+
+		CHECK(decoded);
+		if (!decoded)
+			break;
+
+		CHECK_EQ(pulse_len, (uint32_t)350);
+
+		for (t = 0; t < NTHREADS; t++) {
+			if (strcmp(frame, ref[t]) == 0) {
+				matched = t;
+				break;
+			}
+		}
+		CHECK(matched >= 0);
+		if (matched >= 0)
+			counts[matched]++;
+	}
+
+	CHECK_EQ(pos, x86_64_recorder_count());
+
+	for (t = 0; t < NTHREADS; t++)
+		CHECK_EQ(counts[t], (size_t)NSENDS);
+
+	CHECK(!x86_64_recorder_overflowed());
+	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)(NTHREADS * NSENDS + 1));
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)(NTHREADS * NSENDS + 1));
+}
+
+static void test_concurrent_socket_send(void)
+{
+	int round;
+
+	compute_references();
+
+	for (round = 0; round < NROUNDS; round++)
+		run_round();
+}
+
 int main(void)
 {
 	test_overlap_detector_is_not_vacuous();
+	test_concurrent_socket_send();
 
 	return MT_REPORT();
 }

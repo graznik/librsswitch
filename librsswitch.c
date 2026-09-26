@@ -14,6 +14,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -54,6 +55,14 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len);
 
 static const char *gpio_config;
+
+/*
+ * Serializes every send session (board_init() through board_exit(),
+ * including all NTIMES repetitions) across socket_send() and
+ * socket_send_codeword(), and also guards gpio_config -- see the
+ * "Thread safety" comment in librsswitch.h.
+ */
+static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /**
  * Send a code word
@@ -265,7 +274,12 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 
 void socket_gpio_config(const char *config)
 {
+	if (pthread_mutex_lock(&send_lock) != 0) {
+		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		return;
+	}
 	gpio_config = config;
+	pthread_mutex_unlock(&send_lock);
 }
 
 int32_t socket_send(uint32_t dev, uint32_t group,
@@ -273,14 +287,20 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 {
 	int32_t ret;
 
+	if (pthread_mutex_lock(&send_lock) != 0) {
+		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		return -1;
+	}
+
 	ret = board_init(gpio_config);
 	if (ret < 0) {
 		syslog(LOG_ERR, "[-] board_init");
+		pthread_mutex_unlock(&send_lock);
 		return ret;
 	}
 
 #ifdef DEBUG
-	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
+	syslog(LOG_NOTICE, "dev: %u, group: %u, socket: %u, data: %u",
 	       dev, group, socket, data);
 #endif
 
@@ -296,12 +316,13 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 			syslog(LOG_ERR, "[-] pollin_2605_send()");
 		break;
 	default:
-		syslog(LOG_ERR, "[-] Unknown socket type %d", dev);
+		syslog(LOG_ERR, "[-] Unknown socket type %u", dev);
 		ret = -1;
 	}
 
 	if (board_exit() < 0)
 		syslog(LOG_ERR, "[-] board_exit");
 
+	pthread_mutex_unlock(&send_lock);
 	return ret;
 }

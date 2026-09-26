@@ -1,5 +1,6 @@
 CFLAGS =  -DDEBUG
 CFLAGS +=  -Werror -Wall -W -pedantic
+CFLAGS += -pthread
 CFLAGS += -D_FORTIFY_SOURCE=2 -O2
 CFLAGS += -funsigned-char -Wpointer-arith
 CFLAGS += -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes
