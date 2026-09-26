@@ -8,6 +8,10 @@ CFLAGS += -Wbad-function-cast -Wformat-security -Wformat-nonliteral
 CFLAGS += -Wmissing-format-attribute -Winline
 CFLAGS += -Wformat -Werror=format-security -Werror=array-bounds
 
+ifeq ($(DEBUG),1)
+CFLAGS += -DDEBUG
+endif
+
 .PHONY: rpi rpi3 bbb x86_64 clean
 
 ifeq ($(MAKECMDGOALS), )

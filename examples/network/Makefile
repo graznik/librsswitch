@@ -1,5 +1,4 @@
-CFLAGS =  -DDEBUG
-CFLAGS +=  -Werror -Wall -W -pedantic
+CFLAGS += -Werror -Wall -W -pedantic
 CFLAGS += -pthread
 CFLAGS += -D_FORTIFY_SOURCE=2 -O2
 CFLAGS += -funsigned-char -Wpointer-arith
@@ -8,6 +7,10 @@ CFLAGS += -Wpointer-arith -Wwrite-strings -Wcast-qual -Wcast-align
 CFLAGS += -Wbad-function-cast -Wformat-security -Wformat-nonliteral
 CFLAGS += -Wmissing-format-attribute -Winline
 CFLAGS += -Wformat -Werror=format-security -Werror=array-bounds
+
+ifeq ($(DEBUG),1)
+CFLAGS += -DDEBUG
+endif
 
 .PHONY: rpi rpi3 bbb x86_64 install clean
 
