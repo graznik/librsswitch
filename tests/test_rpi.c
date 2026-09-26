@@ -47,6 +47,8 @@ static void capture_syslog(int priority, const char *fmt, ...)
 #include "minitest.h"
 #include "../boards/rpi/rpi.c"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 #define CAPTURE_MAX_MESSAGES 64
 #define CAPTURE_MSG_LEN 256
 
@@ -181,10 +183,63 @@ static void test_exit_without_open_chip(void)
 	CHECK_EQ(board_exit(), 0);
 }
 
+/*
+ * A malformed config falls all the way back to the compiled-in
+ * default (gpiochip0:17), and one "[-] Malformed GPIO config" message
+ * is logged.
+ */
+static void check_parse_config_default(const char *config)
+{
+	char chipname[MAX_CHIPNAME_LEN];
+	unsigned int line_offset;
+
+	captured_reset();
+	parse_config(config, chipname, sizeof(chipname), &line_offset);
+
+	CHECK(strcmp(chipname, DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(line_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+	CHECK(captured_find("[-] Malformed GPIO config"));
+}
+
+static void test_parse_config(void)
+{
+	char chipname[MAX_CHIPNAME_LEN];
+	unsigned int line_offset;
+	static const char * const malformed[] = {
+		"gpiochip3:17x", "gpiochip3:", "gpiochip3:-1",
+		"gpiochip3:+5", "gpiochip3: 5", "gpiochip3:4294967296",
+		"gpiochip3:99999999999999999999", "nocolon", ":17",
+	};
+	size_t i;
+
+	/* NULL config: default, no log. */
+	captured_reset();
+	parse_config(NULL, chipname, sizeof(chipname), &line_offset);
+	CHECK(strcmp(chipname, DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(line_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+
+	/* Well-formed configs: chip and line taken from the string. */
+	captured_reset();
+	parse_config("gpiochip3:5", chipname, sizeof(chipname), &line_offset);
+	CHECK(strcmp(chipname, "gpiochip3") == 0);
+	CHECK_EQ(line_offset, 5U);
+
+	captured_reset();
+	parse_config("gpiochip3:007", chipname, sizeof(chipname),
+		     &line_offset);
+	CHECK(strcmp(chipname, "gpiochip3") == 0);
+	CHECK_EQ(line_offset, 7U);
+
+	/* Every malformed form falls back to gpiochip0:17, logged. */
+	for (i = 0; i < ARRAY_SIZE(malformed); i++)
+		check_parse_config_default(malformed[i]);
+}
+
 int main(void)
 {
 	test_missing_chip_logs_to_syslog();
 	test_exit_without_open_chip();
+	test_parse_config();
 
 	return MT_REPORT();
 }

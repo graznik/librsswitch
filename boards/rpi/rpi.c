@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <gpiod.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,15 +17,23 @@ static struct gpiod_chip *chip;
 static struct gpiod_line *line;
 
 /*
- * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL or an
- * unparseable string falls back to gpiochip0:17 (this board's
- * previous hardcoded behaviour).
+ * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL, or a
+ * config whose chip or line part cannot be parsed, falls back to
+ * gpiochip0:17 (this board's previous hardcoded behaviour). The line
+ * part is accepted only as a non-empty string of the digits 0-9, with
+ * no sign, no surrounding whitespace and no trailing garbage --
+ * anything strtoul() would otherwise parse leniently (Pitfall 4) is
+ * rejected instead of silently misread.
  */
 static void parse_config(const char *config, char *chipname_out,
 			 size_t chipname_out_len, unsigned int *line_out)
 {
 	const char *sep;
+	const char *linestr;
 	size_t chiplen;
+	size_t i;
+	unsigned long parsed_line;
+	char *end;
 
 	snprintf(chipname_out, chipname_out_len, "%s", DEFAULT_CHIPNAME);
 	*line_out = DEFAULT_LINE_OFFSET;
@@ -48,9 +57,32 @@ static void parse_config(const char *config, char *chipname_out,
 		return;
 	}
 
+	linestr = sep + 1;
+	if (linestr[0] == '\0')
+		goto bad_line;
+	for (i = 0; linestr[i] != '\0'; i++) {
+		if (linestr[i] < '0' || linestr[i] > '9')
+			goto bad_line;
+	}
+
+	errno = 0;
+	parsed_line = strtoul(linestr, &end, 10);
+	if (errno == ERANGE)
+		goto bad_line;
+	if (parsed_line > UINT_MAX)
+		goto bad_line;
+	if (*end != '\0')
+		goto bad_line;
+
 	memcpy(chipname_out, config, chiplen);
 	chipname_out[chiplen] = '\0';
-	*line_out = (unsigned int)strtoul(sep + 1, NULL, 10);
+	*line_out = (unsigned int)parsed_line;
+	return;
+
+bad_line:
+	syslog(LOG_ERR,
+	       "[-] Malformed GPIO config '%s' (bad line number), using default",
+	       config);
 }
 
 int32_t board_init(const char *config)
