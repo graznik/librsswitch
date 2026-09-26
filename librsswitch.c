@@ -24,9 +24,6 @@
 #ifdef RASPBERRY_PI
 #include "boards/rpi/rpi.h"
 #endif
-#ifdef RASPBERRY_PI3
-#include "boards/rpi/rpi3.h"
-#endif
 #ifdef BEAGLEBONE_BLACK
 #include "boards/bbb/bbb.h"
 #endif

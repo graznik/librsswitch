@@ -34,7 +34,7 @@ ifeq ($(MAKECMDGOALS), rpi)
 CFLAGS += -DRASPBERRY_PI
 LFLAGS = -l rt -l gpiod
 else ifeq ($(MAKECMDGOALS), rpi3)
-CFLAGS += -DRASPBERRY_PI3
+CFLAGS += -DRASPBERRY_PI
 LFLAGS = -l rt -l gpiod
 else ifeq ($(MAKECMDGOALS), bbb)
 CFLAGS += -DBEAGLEBONE_BLACK
@@ -50,7 +50,7 @@ rpi:
 	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
 
 rpi3:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/rpi/rpi3.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
 
 bbb:
 	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
