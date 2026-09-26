@@ -1,7 +1,7 @@
 CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
-TESTS = test_socket_send test_codewords test_concurrency
+TESTS = test_socket_send test_codewords test_concurrency test_codeword_api
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
@@ -23,6 +23,9 @@ test_codewords: test_codewords.c $(TEST_DEPS)
 
 test_concurrency: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_concurrency test_concurrency.c $(LIB_SRCS)
+
+test_codeword_api: test_codeword_api.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c
 
 clean:
 	-@rm -f $(TESTS) 2>/dev/null || true

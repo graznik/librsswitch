@@ -42,7 +42,8 @@
 #define MAX_LEN 100
 
 
-static int32_t send_tris(char *codeword, uint32_t pulse_len);
+static int32_t tristate_check(const char *codeword);
+static int32_t send_tris(const char *codeword, uint32_t pulse_len);
 static int32_t send_0(uint32_t pulse_len);
 static int32_t send_1(uint32_t pulse_len);
 static int32_t send_f(uint32_t pulse_len);
@@ -64,14 +65,43 @@ static const char *gpio_config;
  */
 static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
 
+/*
+ * Rejects codeword unless every byte before the first NUL is one of
+ * '0', '1' or uppercase 'F'. Also rejects NULL and the empty string.
+ * Called before the first transmit() so a corrupted or malformed
+ * codeword never reaches the GPIO, not even partially.
+ */
+static int32_t tristate_check(const char *codeword)
+{
+	size_t i;
+
+	if (!codeword || codeword[0] == '\0') {
+		syslog(LOG_ERR, "[-] Invalid tristate codeword");
+		return -1;
+	}
+
+	for (i = 0; codeword[i] != '\0'; i++) {
+		if (codeword[i] != '0' && codeword[i] != '1' &&
+		    codeword[i] != 'F') {
+			syslog(LOG_ERR, "[-] Invalid tristate codeword");
+			return -1;
+		}
+	}
+
+	return 0;
+}
+
 /**
  * Send a code word
  * @param codeword
  * @param ntimes     Number of times to send the code word
  */
-static int32_t send_tris(char *codeword, uint32_t pulse_len)
+static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 {
 	size_t n;
+
+	if (tristate_check(codeword) < 0)
+		return -1;
 
 	for (n = 0; n < NTIMES; n++) {
 		int i = 0;
@@ -90,8 +120,7 @@ static int32_t send_tris(char *codeword, uint32_t pulse_len)
 				ret = send_1(pulse_len);
 				break;
 			default:
-				ret = 0;
-				break;
+				return -1;
 			}
 			if (ret < 0)
 				return -1;
