@@ -72,6 +72,7 @@ int32_t board_init(const char *config)
 		syslog(LOG_ERR, "[-] Failed to get GPIO line %u: %s",
 		       line_offset, strerror(errno));
 		gpiod_chip_close(chip);
+		chip = NULL;
 		return -1;
 	}
 
@@ -80,6 +81,8 @@ int32_t board_init(const char *config)
 		       "[-] Failed to request GPIO line %u as output: %s",
 		       line_offset, strerror(errno));
 		gpiod_chip_close(chip);
+		chip = NULL;
+		line = NULL;
 		return -1;
 	}
 
@@ -88,7 +91,14 @@ int32_t board_init(const char *config)
 
 int32_t board_exit(void)
 {
+	if (!chip)
+		return 0;
+
+	gpiod_line_release(line);
 	gpiod_chip_close(chip);
+	chip = NULL;
+	line = NULL;
+
 	return 0;
 }
 

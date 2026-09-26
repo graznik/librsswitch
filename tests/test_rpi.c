@@ -164,9 +164,27 @@ static void test_missing_chip_logs_to_syslog(void)
 	CHECK(captured_find("[-]"));
 }
 
+/*
+ * board_exit() is safe to call after a failed board_init(), and safe
+ * to call a second time -- neither call crashes, and both return 0.
+ */
+static void test_exit_without_open_chip(void)
+{
+	int32_t ret;
+
+	captured_reset();
+	(void)call_board_init_capturing_stderr(
+		"librsswitch-test-nonexistent:17", &ret);
+	CHECK_EQ(ret, -1);
+
+	CHECK_EQ(board_exit(), 0);
+	CHECK_EQ(board_exit(), 0);
+}
+
 int main(void)
 {
 	test_missing_chip_logs_to_syslog();
+	test_exit_without_open_chip();
 
 	return MT_REPORT();
 }
