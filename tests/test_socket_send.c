@@ -26,6 +26,8 @@
 #include "../boards/x86_64/x86_64.h"
 #include "pulse_decode.h"
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
 static void test_rev_008345_valid(void)
 {
 	uint32_t group, socket, data;
@@ -112,6 +114,34 @@ static void test_rejected_sends_transmit_nothing(void)
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 }
 
+/*
+ * A failing transmit() must abort the rest of the codeword: no pulse
+ * after the failing one is recorded, board_exit() still runs exactly
+ * once, and socket_send() returns -1. Exercised at four points across
+ * a 12-symbol, 10-repetition POLLIN_2605 codeword: the very first
+ * pulse, inside a symbol, at the first sync pulse, and inside the
+ * second frame.
+ */
+static void test_transmit_failure_aborts_codeword(void)
+{
+	static const size_t fail_points[] = {0, 5, 24, 30};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(fail_points); i++) {
+		size_t idx = fail_points[i];
+
+		x86_64_recorder_reset();
+		x86_64_recorder_fail_at(idx);
+		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+		CHECK_EQ(x86_64_recorder_count(), idx);
+		CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
+	}
+
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
+}
+
 int main(void)
 {
 	test_rev_008345_valid();
@@ -122,6 +152,7 @@ int main(void)
 	test_pollin_2605_boundary();
 	test_unknown_device();
 	test_rejected_sends_transmit_nothing();
+	test_transmit_failure_aborts_codeword();
 
 	return MT_REPORT();
 }

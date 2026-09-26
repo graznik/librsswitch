@@ -14,6 +14,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <stdint.h>
+
 #include "x86_64.h"
 
 static struct x86_64_pulse recorder[X86_64_RECORDER_MAX_PULSES];
@@ -21,6 +23,7 @@ static size_t recorder_count;
 static int recorder_overflow;
 static size_t init_count;
 static size_t exit_count;
+static size_t fail_at_index = SIZE_MAX;
 
 int32_t board_init(const char *config)
 {
@@ -37,6 +40,11 @@ int32_t board_exit(void)
 
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
+	if (recorder_count == fail_at_index) {
+		fail_at_index = SIZE_MAX;
+		return -1;
+	}
+
 	if (recorder_count >= X86_64_RECORDER_MAX_PULSES) {
 		recorder_overflow = 1;
 		return 0;
@@ -55,6 +63,7 @@ void x86_64_recorder_reset(void)
 	recorder_overflow = 0;
 	init_count = 0;
 	exit_count = 0;
+	fail_at_index = SIZE_MAX;
 }
 
 size_t x86_64_recorder_count(void)
@@ -83,4 +92,9 @@ size_t x86_64_board_init_count(void)
 size_t x86_64_board_exit_count(void)
 {
 	return exit_count;
+}
+
+void x86_64_recorder_fail_at(size_t index)
+{
+	fail_at_index = index;
 }

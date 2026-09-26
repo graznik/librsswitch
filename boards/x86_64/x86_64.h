@@ -59,4 +59,14 @@ size_t x86_64_board_init_count(void);
 /* Number of board_exit() calls since the last reset. */
 size_t x86_64_board_exit_count(void);
 
+/*
+ * Arms one-shot failure injection: once the recorder holds index
+ * pulses, the next transmit() call returns -1 without recording and
+ * disarms itself, so a caller that (incorrectly) ignores the error
+ * and keeps sending observably diverges from one that aborts -- later
+ * pulses are then recorded again instead of every call failing
+ * forever. x86_64_recorder_reset() also disarms it.
+ */
+void x86_64_recorder_fail_at(size_t index);
+
 #endif /* X86_64_H */
