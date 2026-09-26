@@ -40,6 +40,18 @@ else ifeq ($(MAKECMDGOALS), bbb)
 CFLAGS += -DBEAGLEBONE_BLACK
 endif
 
+# Forces boards/rpi/rpi.c's libgpiod API choice when its header probe
+# picks the wrong one (e.g. cross-compiling against a sysroot whose
+# gpiod.h can't be told apart from the probe alone). 1 = libgpiod 1.x
+# (gpiod_line_*), 2 = libgpiod 2.x (gpiod_line_request_*). Unset (the
+# default) leaves the probe in charge.
+ifneq ($(LIBGPIOD_VERSION),)
+ifeq ($(filter $(LIBGPIOD_VERSION),1 2),)
+$(error LIBGPIOD_VERSION must be 1 or 2)
+endif
+CFLAGS += -DLIBRSSWITCH_GPIOD_VERSION=$(LIBGPIOD_VERSION)
+endif
+
 CC=$(CROSS_COMPILE)gcc
 INCLUDES = -I/usr/include/
 INCLUDES += -I/usr/local/include/

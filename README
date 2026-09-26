@@ -29,6 +29,19 @@ GPIO access goes through libgpiod [4], not bcm2835 -- install the dev
 package on the Pi:
  $ sudo apt install libgpiod-dev
 
+rpi and rpi3 build the exact same board source (boards/rpi/rpi.c) and
+differ only in the cross toolchain (32-bit arm-linux-gnueabihf- vs.
+aarch64-linux-gnu- when cross compiling; both use the native gcc on a
+Pi). libgpiod 1.x and 2.x are both supported: the board picks its API
+from the installed gpiod.h at compile time (gpiod.h from 1.x defines
+GPIOD_LINE_BULK_MAX_LINES, the 2.x header does not), so a plain build
+just works with whichever libgpiod-dev is installed. If the probe ever
+picks the wrong one, force it with LIBGPIOD_VERSION:
+ $ make LIBGPIOD_VERSION=1 rpi   # force the libgpiod 1.x (gpiod_line_*) API
+ $ make LIBGPIOD_VERSION=2 rpi   # force the libgpiod 2.x (gpiod_line_request_*) API
+The "chip:line" config format (see "GPIO configuration" below) is the
+same for both versions.
+
 Build with the matching Makefile target from examples/basic/ or
 examples/network/:
  $ make rpi     # Raspberry Pi (32-bit ARM)
