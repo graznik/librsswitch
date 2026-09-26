@@ -38,7 +38,6 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
-#define MAX_CODEWORD_LEN 13
 #define NTIMES 10
 #define MAX_LEN 100
 
@@ -278,17 +277,19 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len)
 {
-	size_t s;
-	size_t n;
-	char codeword[MAX_CODEWORD_LEN];
-
-	/* Calculate code word size */
-	s = strlen(group) + strlen(socket) + strlen(data);
+	int n;
+	char codeword[SOCKET_CODEWORD_MAX_LEN + 1];
 
 	/* Generate the code word */
-	n = snprintf(codeword, s + 1, "%s%s%s", group, socket, data);
-	if (n != s) {
-		syslog(LOG_ERR, "[-] snprintf()");
+	n = snprintf(codeword, sizeof(codeword), "%s%s%s", group, socket,
+		     data);
+	if (n < 0) {
+		syslog(LOG_ERR, "[-] snprintf() failed");
+		return -1;
+	}
+	if ((size_t)n >= sizeof(codeword)) {
+		syslog(LOG_ERR, "[-] Codeword too long (%zu characters)",
+		       (size_t)n);
 		return -1;
 	}
 

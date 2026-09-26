@@ -148,10 +148,42 @@ static void test_uint32_values_logged_unsigned(void)
 	CHECK(captured_find("4294967295"));
 }
 
+/*
+ * socket_ctrl() must tell a too-long assembled codeword apart from a
+ * genuine snprintf() failure, and it must reject both a wildly
+ * oversized input (17 characters) and one just one byte over the
+ * limit (13 characters) without transmitting anything (LIB-03).
+ */
+static void test_socket_ctrl_truncation(void)
+{
+	captured_reset();
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_ctrl("1FFF1FF0", "00010", "FFFF", 350), -1);
+	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK(captured_find("Codeword too long"));
+	CHECK_EQ(captured_find("snprintf() failed"), 0);
+
+	captured_reset();
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_ctrl("1FFF", "1FF0", "00010", 350), -1);
+	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK(captured_find("Codeword too long"));
+}
+
+/* An exactly-12-character assembled codeword is accepted and sent. */
+static void test_socket_ctrl_max_length(void)
+{
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_ctrl("1FFF", "1FF0", "0001", 350), 0);
+	CHECK_EQ(expect_transmission("1FFF1FF00001", 350), 0);
+}
+
 int main(void)
 {
 	test_capture_is_not_vacuous();
 	test_uint32_values_logged_unsigned();
+	test_socket_ctrl_truncation();
+	test_socket_ctrl_max_length();
 
 	return MT_REPORT();
 }
