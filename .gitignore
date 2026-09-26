@@ -5,3 +5,6 @@ cscope.files
 cscope.out
 examples/basic/rsssend
 examples/network/rsswitchd
+tests/test_*
+!tests/test_*.c
+!tests/test_*.sh
