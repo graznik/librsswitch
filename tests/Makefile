@@ -7,6 +7,25 @@ LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
 
+# test_rpi links against libgpiod, whose headers are not guaranteed to
+# be installed on every host that runs `make test`. GPIOD_CFLAGS/
+# GPIOD_LIBS let a caller point at a different libgpiod (see the D-15
+# verification in 01-05-SUMMARY.md); by default they use the installed
+# system headers/library. Probed once, at parse time, by asking the
+# compiler whether it can preprocess a one-line <gpiod.h> include; if
+# it can't, test_rpi is left out of TESTS and a SKIP line is printed,
+# instead of failing the whole `make test` run.
+GPIOD_CFLAGS ?=
+GPIOD_LIBS ?= -lgpiod
+GPIOD_AVAILABLE := $(shell printf '\#include <gpiod.h>\n' | \
+	$(CC) $(GPIOD_CFLAGS) -E - >/dev/null 2>&1 && echo yes)
+
+ifeq ($(GPIOD_AVAILABLE),yes)
+TESTS += test_rpi
+else
+$(warning SKIP test_rpi: gpiod.h not found)
+endif
+
 .PHONY: test clean tsan
 
 test: $(TESTS)
@@ -42,6 +61,16 @@ test_logging: test_logging.c $(TEST_DEPS)
 test_bbb: test_bbb.c minitest.h ../boards/bbb/bbb.c ../boards/bbb/bbb.h \
 	  ../boards/board.h
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_bbb test_bbb.c
+
+# Includes ../boards/rpi/rpi.c directly (like test_bbb includes
+# ../boards/bbb/bbb.c), so it can drive board_init()/board_exit() and
+# parse_config() and their static state. Only ever names a chip that
+# cannot exist, so it never opens a real GPIO line. Links no other
+# source; GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod headers
+# and library it builds and links against.
+test_rpi: test_rpi.c minitest.h ../boards/rpi/rpi.c ../boards/rpi/rpi.h \
+	  ../boards/board.h
+	$(CC) $(CFLAGS) $(GPIOD_CFLAGS) $(INCLUDES) -o test_rpi test_rpi.c $(GPIOD_LIBS)
 
 # Optional ThreadSanitizer target (D-10). `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into

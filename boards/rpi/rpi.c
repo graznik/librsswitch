@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <gpiod.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -61,19 +62,23 @@ int32_t board_init(const char *config)
 
 	chip = gpiod_chip_open_by_name(chipname);
 	if (!chip) {
-		perror("Failed to open GPIO chip");
+		syslog(LOG_ERR, "[-] Failed to open GPIO chip %s: %s",
+		       chipname, strerror(errno));
 		return -1;
 	}
 
 	line = gpiod_chip_get_line(chip, line_offset);
 	if (!line) {
-		perror("Failed to get GPIO line");
+		syslog(LOG_ERR, "[-] Failed to get GPIO line %u: %s",
+		       line_offset, strerror(errno));
 		gpiod_chip_close(chip);
 		return -1;
 	}
 
 	if (gpiod_line_request_output(line, "librsswitch", 0) < 0) {
-		perror("Failed to request GPIO line as output");
+		syslog(LOG_ERR,
+		       "[-] Failed to request GPIO line %u as output: %s",
+		       line_offset, strerror(errno));
 		gpiod_chip_close(chip);
 		return -1;
 	}
