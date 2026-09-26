@@ -19,13 +19,20 @@
  * error handling can be exercised on any Linux host without a real
  * BeagleBone. BBB_SYSFS_GPIO_DIR is defined below, before including
  * the board source, redirecting every sysfs path this board touches
- * under test_bbb_sysfs/ (relative to the working directory, i.e.
- * tests/ under `make test`). syslog is captured the same way
+ * under a scratch directory. syslog is captured the same way
  * tests/test_logging.c captures it -- #undef/#define syslog before
  * including the source -- so error messages can be asserted on
  * directly. Included, not linked, like test_logging.c and
  * test_codeword_api.c, so this file can also reach board_init(),
  * board_exit() and transmit() and their static state.
+ *
+ * The fake tree lives under /tmp rather than relative to the
+ * working directory: some of the failure scenarios below replace a
+ * fake sysfs file with a symlink to /dev/full to inject a
+ * deterministic write() failure, and a checkout of this repository
+ * can be mounted on a filesystem (e.g. vboxsf, a VirtualBox shared
+ * folder) that refuses to create symlinks at all ("Operation not
+ * permitted"), while /tmp is a normal filesystem that supports them.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -37,7 +44,7 @@
 #include <syslog.h>
 #include <unistd.h>
 
-#define BBB_SYSFS_GPIO_DIR "test_bbb_sysfs"
+#define BBB_SYSFS_GPIO_DIR "/tmp/librsswitch-test-bbb-sysfs"
 
 #undef syslog
 #define syslog capture_syslog
@@ -160,6 +167,22 @@ static void fake_add_pin(const char *pinstr)
 	fake_write_file(path, "");
 }
 
+/*
+ * Replaces the file at BBB_SYSFS_GPIO_DIR + relpath with a symlink
+ * to /dev/full, so a write() through it deterministically fails
+ * with ENOSPC instead of succeeding.
+ */
+static void fake_to_dev_full(const char *relpath)
+{
+	char path[MAX_LEN];
+
+	snprintf(path, sizeof(path), "%s%s", BBB_SYSFS_GPIO_DIR, relpath);
+	(void)unlink(path);
+	if (symlink("/dev/full", path) == -1)
+		fprintf(stderr, "fake_to_dev_full: symlink %s: %s\n", path,
+			strerror(errno));
+}
+
 /* Returns the content of BBB_SYSFS_GPIO_DIR + relpath in buf, or
  * "<missing>" if the file does not exist.
  */
@@ -232,12 +255,66 @@ static void test_missing_export_file(void)
 	CHECK_EQ(captured_find("this message was never logged"), 0);
 }
 
+/*
+ * A value file replaced by a symlink to /dev/full makes transmit()
+ * fail on its first write() (ENOSPC) instead of terminating the
+ * process; the test keeps running afterwards.
+ */
+static void test_transmit_write_failure_returns(void)
+{
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+
+	fake_to_dev_full("/gpio49/value");
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK(captured_count() > 0);
+
+	CHECK_EQ(board_exit(), 0);
+}
+
+/*
+ * A missing value file makes transmit()'s open() fail, returning -1
+ * instead of terminating the process.
+ */
+static void test_transmit_missing_value_returns(void)
+{
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+
+	(void)unlink(BBB_SYSFS_GPIO_DIR "/gpio49/value");
+	CHECK_EQ(transmit(1, 1, 1), -1);
+	CHECK(captured_count() > 0);
+
+	CHECK_EQ(board_exit(), 0);
+}
+
+/*
+ * An unexport file replaced by a symlink to /dev/full makes
+ * board_exit()'s write() fail (ENOSPC), returning -1 instead of
+ * terminating the process.
+ */
+static void test_board_exit_unexport_failure_returns(void)
+{
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+
+	fake_to_dev_full("/unexport");
+	CHECK_EQ(board_exit(), -1);
+	CHECK(captured_count() > 0);
+}
+
 int main(void)
 {
 	int ret;
 
 	test_lifecycle_with_fake_sysfs();
 	test_missing_export_file();
+	test_transmit_write_failure_returns();
+	test_transmit_missing_value_returns();
+	test_board_exit_unexport_failure_returns();
 
 	ret = MT_REPORT();
 	fake_cleanup();

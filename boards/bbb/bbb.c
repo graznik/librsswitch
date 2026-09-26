@@ -110,8 +110,9 @@ int32_t board_exit(void)
 
 	n = write(fd, pin, strlen(pin));
 	if (n != strlen(pin)) {
+		close(fd);
 		syslog(LOG_ERR, "Cannot unexport GPIO\n");
-		exit(-1);
+		return -1;
 	}
 	ret = close(fd);
 	if (ret == -1) {
@@ -133,31 +134,33 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 			pin);
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
 		syslog(LOG_ERR, "Path too long\n");
-		exit(-1);
+		return -1;
 	}
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		syslog(LOG_ERR, "Cannot open %s\n", path);
-		exit(-1);
+		return -1;
 	}
 	n = write(fd, "1", 1);
 	if (n != strlen("1")) {
+		close(fd);
 		syslog(LOG_ERR, "Cannot write\n");
-		exit(-1);
+		return -1;
 	}
 	usleep(pulse_len * nhigh);
 
 	n = write(fd, "0", 1);
 	if (n != strlen("0")) {
+		close(fd);
 		syslog(LOG_ERR, "Cannot write\n");
-		exit(-1);
+		return -1;
 	}
 	usleep(pulse_len * nlow);
 
 	ret = close(fd);
 	if (ret == -1) {
 		syslog(LOG_ERR, "Cannot close %s\n", path);
-		exit(-1);
+		return -1;
 	}
 
 	return 0;

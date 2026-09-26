@@ -64,4 +64,4 @@ test_concurrency_tsan: test_concurrency.c $(TEST_DEPS)
 
 clean:
 	-@rm -f $(TESTS) test_concurrency_tsan 2>/dev/null || true
-	-@rm -rf test_bbb_sysfs 2>/dev/null || true
+	-@rm -rf test_bbb_sysfs /tmp/librsswitch-test-bbb-sysfs 2>/dev/null || true
