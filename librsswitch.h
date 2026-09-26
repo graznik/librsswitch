@@ -22,9 +22,9 @@
 /*
  * Thread safety
  *
- * socket_send() and socket_gpio_config() (and, once added,
- * socket_send_codeword()) are safe to call concurrently from multiple
- * threads of the same process. Every send session -- board_init(),
+ * socket_send(), socket_send_codeword() and socket_gpio_config() are
+ * safe to call concurrently from multiple threads of the same
+ * process. Every send session -- board_init(),
  * all repetitions, board_exit() -- is serialized by one library-wide
  * lock, so concurrent sends never interleave their pulses; a calling
  * thread simply blocks until the previous send session completes.
@@ -53,6 +53,52 @@ void socket_gpio_config(const char *config);
 
 int32_t socket_send(uint32_t dev, uint32_t group,
 		    uint32_t socket, uint32_t data);
+
+/*
+ * Bounds for socket_send_codeword()'s tristate argument: byte length
+ * before the first NUL, in [SOCKET_CODEWORD_MIN_LEN,
+ * SOCKET_CODEWORD_MAX_LEN]. 12 is the PT2260/PT2262 tri-state word
+ * length -- both supported chips use a 12-symbol codeword.
+ */
+#define SOCKET_CODEWORD_MIN_LEN 1U
+#define SOCKET_CODEWORD_MAX_LEN 12U
+
+/*
+ * Bounds for socket_send_codeword()'s pulse_len argument, in
+ * microseconds. Wide enough for both supported chips at their
+ * documented 350us pulse, narrow enough that a typo cannot hold the
+ * GPIO line high for more than a few milliseconds per pulse.
+ */
+#define SOCKET_PULSE_LEN_MIN_US 50U
+#define SOCKET_PULSE_LEN_MAX_US 2000U
+
+/*
+ * Sends a raw tri-state codeword, instead of one of the two built-in
+ * device tables socket_send() encodes.
+ *
+ * tristate's length (the number of bytes before its first NUL) must
+ * be within [SOCKET_CODEWORD_MIN_LEN, SOCKET_CODEWORD_MAX_LEN]. Every
+ * one of those bytes must be the ASCII character '0', '1' or
+ * uppercase 'F' -- lowercase, whitespace, and any other byte
+ * (including a multi-byte UTF-8 sequence) is rejected. tristate is
+ * never modified or truncated: it is sent exactly as given, or
+ * rejected in full.
+ *
+ * pulse_len is in microseconds and must be within
+ * [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US].
+ *
+ * On success, tristate is sent NTIMES (10 -- the same repeat count
+ * socket_send() uses), each repetition followed by a sync pulse.
+ * Input is fully validated before board_init() or any GPIO access;
+ * an invalid tristate or pulse_len never touches the board. On the
+ * x86_64 build, the codeword is printed to stdout, exactly like
+ * socket_send() does.
+ *
+ * Returns 0 on success, -1 on error (invalid input, or a board
+ * error). Serialized with socket_send() by the same lock -- see
+ * "Thread safety" above.
+ */
+int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len);
 
 enum socket_type {
 		  REV_008345,

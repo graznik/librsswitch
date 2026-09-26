@@ -194,10 +194,188 @@ static void test_concurrent_socket_send(void)
 		run_round();
 }
 
+#define NTHREADS_MIXED 6
+#define NSENDS_MIXED 10
+#define NROUNDS_MIXED 4
+
+static const uint32_t mixed_codeword_pulse_len[3] = {300, 320, 340};
+static const char * const mixed_codewords[3] = {
+	"0101FFFF0000", "1F1F1F1F1F1F", "0F0",
+};
+
+static char mixed_ref[NTHREADS_MIXED][PULSE_DECODE_MAX_FRAME_LEN];
+static uint32_t mixed_ref_pulse_len[NTHREADS_MIXED];
+
+struct mixed_worker_ctx {
+	int use_codeword;	/* 1: socket_send_codeword(), 0: socket_send() */
+	uint32_t group;
+	uint32_t socket;
+	uint32_t data;
+	const char *codeword;
+	uint32_t pulse_len;
+	int is_thread0;
+	int ok;
+};
+
+/*
+ * Records one reference (codeword, pulse_len) pair per mixed-sender
+ * thread: the first three via socket_send() (decoded, like
+ * compute_references()), the last three the literal codewords sent
+ * through socket_send_codeword().
+ */
+static void compute_mixed_references(void)
+{
+	int t;
+
+	for (t = 0; t < 3; t++) {
+		size_t pos = 0;
+
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(POLLIN_2605, addr_group[t],
+				      addr_socket[t], addr_data[t]), 0);
+		CHECK_EQ(next_transmission(&pos, mixed_ref[t],
+					    sizeof(mixed_ref[t]),
+					    &mixed_ref_pulse_len[t]), 0);
+		CHECK_EQ(mixed_ref_pulse_len[t], (uint32_t)350);
+	}
+
+	for (t = 0; t < 3; t++) {
+		snprintf(mixed_ref[3 + t], sizeof(mixed_ref[3 + t]), "%s",
+			 mixed_codewords[t]);
+		mixed_ref_pulse_len[3 + t] = mixed_codeword_pulse_len[t];
+	}
+}
+
+static void *mixed_worker_main(void *arg)
+{
+	struct mixed_worker_ctx *ctx = arg;
+	int i;
+
+	for (i = 0; i < NSENDS_MIXED; i++) {
+		int32_t ret;
+
+		if (ctx->use_codeword)
+			ret = socket_send_codeword(ctx->codeword,
+						    ctx->pulse_len);
+		else
+			ret = socket_send(POLLIN_2605, ctx->group,
+					   ctx->socket, ctx->data);
+
+		if (ret != 0)
+			ctx->ok = 0;
+
+		/* Thread 0 also sends a rejected address between sends. */
+		if (ctx->is_thread0 && i == 4) {
+			if (socket_send(POLLIN_2605, 32, 0, 0) != -1)
+				ctx->ok = 0;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ * Like run_round(), but three threads send through socket_send() and
+ * three through socket_send_codeword() with distinct literal
+ * codewords and distinct pulse_len values (D-09: different codewords
+ * through both entry points), proving the two entry points share the
+ * same lock and never interleave with each other either.
+ */
+static void run_mixed_round(void)
+{
+	pthread_t tid[NTHREADS_MIXED];
+	struct mixed_worker_ctx ctx[NTHREADS_MIXED];
+	size_t counts[NTHREADS_MIXED];
+	size_t pos;
+	int t;
+
+	x86_64_recorder_reset();
+
+	for (t = 0; t < 3; t++) {
+		ctx[t].use_codeword = 0;
+		ctx[t].group = addr_group[t];
+		ctx[t].socket = addr_socket[t];
+		ctx[t].data = addr_data[t];
+		ctx[t].codeword = NULL;
+		ctx[t].pulse_len = 0;
+		ctx[t].is_thread0 = (t == 0);
+		ctx[t].ok = 1;
+		counts[t] = 0;
+	}
+	for (t = 0; t < 3; t++) {
+		ctx[3 + t].use_codeword = 1;
+		ctx[3 + t].group = 0;
+		ctx[3 + t].socket = 0;
+		ctx[3 + t].data = 0;
+		ctx[3 + t].codeword = mixed_codewords[t];
+		ctx[3 + t].pulse_len = mixed_codeword_pulse_len[t];
+		ctx[3 + t].is_thread0 = 0;
+		ctx[3 + t].ok = 1;
+		counts[3 + t] = 0;
+	}
+
+	for (t = 0; t < NTHREADS_MIXED; t++)
+		CHECK_EQ(pthread_create(&tid[t], NULL, mixed_worker_main,
+					 &ctx[t]), 0);
+
+	for (t = 0; t < NTHREADS_MIXED; t++)
+		CHECK_EQ(pthread_join(tid[t], NULL), 0);
+
+	for (t = 0; t < NTHREADS_MIXED; t++)
+		CHECK(ctx[t].ok);
+
+	pos = 0;
+	while (pos < x86_64_recorder_count()) {
+		char frame[PULSE_DECODE_MAX_FRAME_LEN];
+		uint32_t pulse_len;
+		int matched = -1;
+		int decoded = (next_transmission(&pos, frame, sizeof(frame),
+						  &pulse_len) == 0);
+
+		CHECK(decoded);
+		if (!decoded)
+			break;
+
+		for (t = 0; t < NTHREADS_MIXED; t++) {
+			if (pulse_len == mixed_ref_pulse_len[t] &&
+			    strcmp(frame, mixed_ref[t]) == 0) {
+				matched = t;
+				break;
+			}
+		}
+		CHECK(matched >= 0);
+		if (matched >= 0)
+			counts[matched]++;
+	}
+
+	CHECK_EQ(pos, x86_64_recorder_count());
+
+	for (t = 0; t < NTHREADS_MIXED; t++)
+		CHECK_EQ(counts[t], (size_t)NSENDS_MIXED);
+
+	CHECK(!x86_64_recorder_overflowed());
+	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(),
+		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED + 1));
+	CHECK_EQ(x86_64_board_exit_count(),
+		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED + 1));
+}
+
+static void test_concurrent_mixed_senders(void)
+{
+	int round;
+
+	compute_mixed_references();
+
+	for (round = 0; round < NROUNDS_MIXED; round++)
+		run_mixed_round();
+}
+
 int main(void)
 {
 	test_overlap_detector_is_not_vacuous();
 	test_concurrent_socket_send();
+	test_concurrent_mixed_senders();
 
 	return MT_REPORT();
 }

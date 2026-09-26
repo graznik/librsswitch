@@ -14,6 +14,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <inttypes.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -348,6 +349,58 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 		syslog(LOG_ERR, "[-] Unknown socket type %u", dev);
 		ret = -1;
 	}
+
+	if (board_exit() < 0)
+		syslog(LOG_ERR, "[-] board_exit");
+
+	pthread_mutex_unlock(&send_lock);
+	return ret;
+}
+
+int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)
+{
+	size_t len;
+	int32_t ret;
+
+	if (!tristate) {
+		syslog(LOG_ERR, "[-] Invalid tristate codeword");
+		return -1;
+	}
+
+	len = strnlen(tristate, SOCKET_CODEWORD_MAX_LEN + 1);
+	if (len < SOCKET_CODEWORD_MIN_LEN || len > SOCKET_CODEWORD_MAX_LEN) {
+		syslog(LOG_ERR, "[-] Invalid tristate codeword length %zu",
+		       len);
+		return -1;
+	}
+
+	if (tristate_check(tristate) < 0)
+		return -1;
+
+	if (pulse_len < SOCKET_PULSE_LEN_MIN_US ||
+	    pulse_len > SOCKET_PULSE_LEN_MAX_US) {
+		syslog(LOG_ERR, "[-] pulse_len %" PRIu32 " out of range",
+		       pulse_len);
+		return -1;
+	}
+
+	if (pthread_mutex_lock(&send_lock) != 0) {
+		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		return -1;
+	}
+
+	ret = board_init(gpio_config);
+	if (ret < 0) {
+		syslog(LOG_ERR, "[-] board_init");
+		pthread_mutex_unlock(&send_lock);
+		return ret;
+	}
+
+#ifdef X86_64
+	fprintf(stdout, "%s\n", tristate);
+#endif
+
+	ret = send_tris(tristate, pulse_len);
 
 	if (board_exit() < 0)
 		syslog(LOG_ERR, "[-] board_exit");
