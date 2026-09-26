@@ -28,6 +28,9 @@
 #ifdef BEAGLEBONE_BLACK
 #include "boards/bbb/bbb.h"
 #endif
+#ifdef X86_64
+#include "boards/x86_64/x86_64.h"
+#endif
 
 #include "librsswitch.h"
 
@@ -49,34 +52,8 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata);
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len);
-#ifdef X86_64
-static void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
-static int32_t board_init(const char *config);
-static int32_t board_exit(void);
-#endif
 
 static const char *gpio_config;
-
-#ifdef X86_64
-static int32_t board_init(const char *config)
-{
-	(void)config;
-	return 0;
-}
-
-static int32_t board_exit(void)
-{
-	return 0;
-
-}
-
-static void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
-{
-	(void)nhigh;
-	(void)nlow;
-	(void)pulse_len;
-}
-#endif
 
 /**
  * Send a code word

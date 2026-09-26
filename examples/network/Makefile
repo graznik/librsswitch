@@ -55,7 +55,7 @@ bbb:
 	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
 
 x86_64:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
 
 
 install: rsswitchd

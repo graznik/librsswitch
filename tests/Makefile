@@ -6,8 +6,8 @@ INCLUDES = -I..
 test: test_socket_send
 	./test_socket_send
 
-test_socket_send: test_socket_send.c minitest.h ../librsswitch.c ../librsswitch.h
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_socket_send test_socket_send.c ../librsswitch.c
+test_socket_send: test_socket_send.c minitest.h ../librsswitch.c ../librsswitch.h ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_socket_send test_socket_send.c ../librsswitch.c ../boards/x86_64/x86_64.c
 
 clean:
 	-@rm -f test_socket_send 2>/dev/null || true
