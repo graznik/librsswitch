@@ -43,26 +43,48 @@ The "chip:line" config format (see "GPIO configuration" below) is the
 same for both versions.
 
 Build with the matching Makefile target from examples/basic/ or
-examples/network/:
+examples/network/; on the Pi itself, both rpi and rpi3 use the
+native gcc (only the cross-compiling host below needs a cross
+toolchain):
  $ make rpi     # Raspberry Pi (32-bit ARM)
  $ make rpi3    # Raspberry Pi 3 (aarch64)
  $ make bbb     # BeagleBone Black (sysfs GPIO, no libgpiod needed)
  $ make x86_64  # host build, GPIO calls are stubbed out
+
+Any of these targets also accepts DEBUG=1 to turn on verbose syslog
+output (off by default, so a release build never logs every command):
+ $ make DEBUG=1 rpi
 
 
 Software setup (cross compiling on x86_64)
 ------------------------------------------
 Install an ARM/aarch64 cross toolchain (e.g. via your distro's
 gcc-arm-linux-gnueabihf / gcc-aarch64-linux-gnu packages), then build
-with the matching target -- the Makefile sets CROSS_COMPILE for you
-based on the target and picks up libgpiod headers from
-/usr/include and /usr/local/include:
+with the matching target from examples/basic/ or examples/network/ --
+the Makefile picks the cross compiler for you based on the target and
+picks up libgpiod headers from /usr/include and /usr/local/include:
+ $ cd examples/basic   # or examples/network
  $ make rpi     # arm-linux-gnueabihf-gcc
  $ make rpi3    # aarch64-linux-gnu-gcc
+
+setenv.sh and setenv64.sh are only needed when your cross toolchain
+lives outside PATH (for example a Linaro tarball under /opt) -- they
+add its bin/ directory to PATH. A toolchain installed from your
+distro's packages needs neither script, since the Makefile already
+picks the right compiler for the target.
 
 libgpiod itself (headers + library) needs to be available for the
 target architecture in your cross sysroot -- either cross-build it
 from source or install your distro's cross-dev variant if one exists.
+
+
+Host build (x86_64 host)
+-------------------------
+From the repository root:
+ $ make -C examples/basic x86_64
+ $ ./examples/basic/rsssend 1 17 23 1
+0FFF0000F00F
+ $ make -C examples/network x86_64
 
 
 Usage

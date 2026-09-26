@@ -10,11 +10,21 @@ librsswitch to switch a given socket either on or off.
 Installation (Raspberry Pi)
 ===========================
  $ cd librsswitch/examples/network/
- $ make
- # make install
+ $ make rpi     # or: make rpi3 on a 64-bit Raspberry Pi OS
+ $ sudo make install
 
-rsswitchd is going to be installed to /usr/local/bin and will enabled by
-default.
+rsswitchd is installed to /usr/local/bin and enabled and started via
+systemd by default. For a staged install (packaging, or checking the
+result without root), use `make install DESTDIR=<dir>`: the binary
+and unit file are placed under <dir> and the systemd steps are
+skipped.
+
+Installation (x86_64 host)
+===========================
+From examples/network:
+ $ make x86_64
+ $ make install DESTDIR=/tmp/rsswitchd-stage
+ $ ls /tmp/rsswitchd-stage/usr/local/bin/rsswitchd /tmp/rsswitchd-stage/etc/systemd/system/rsswitchd.service
 
 Usage
 =======================
