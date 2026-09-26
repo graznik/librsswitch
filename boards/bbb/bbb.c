@@ -13,6 +13,18 @@
 #define MAX_LEN 100
 #define DEFAULT_PIN "49"
 
+/*
+ * Base directory for every sysfs GPIO path this board touches.
+ * Overridden only by tests/test_bbb.c, which points it at a fake
+ * tree so board_init(), transmit() and board_exit() -- including
+ * their error paths -- can be driven end to end on any Linux host
+ * without a BeagleBone. No production build defines this, so every
+ * shipped BBB build uses the real /sys/class/gpio.
+ */
+#ifndef BBB_SYSFS_GPIO_DIR
+#define BBB_SYSFS_GPIO_DIR "/sys/class/gpio"
+#endif
+
 static char pin[16];
 
 int32_t board_init(const char *config)
@@ -24,7 +36,13 @@ int32_t board_init(const char *config)
 
 	snprintf(pin, sizeof(pin), "%s", config ? config : DEFAULT_PIN);
 
-	fd = open("/sys/class/gpio/export", O_WRONLY);
+	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/export");
+	if (ret < 0 || (size_t)ret >= sizeof(path)) {
+		syslog(LOG_ERR, "Path too long\n");
+		return -1;
+	}
+
+	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		syslog(LOG_ERR, "Cannot open /sys/class/gpio/export\n");
 		return -1;
@@ -43,8 +61,12 @@ int32_t board_init(const char *config)
 		return -1;
 	}
 
-	snprintf(path, sizeof(path) - 1,
-		 "/sys/class/gpio/gpio%s/direction", pin);
+	ret = snprintf(path, sizeof(path),
+			BBB_SYSFS_GPIO_DIR "/gpio%s/direction", pin);
+	if (ret < 0 || (size_t)ret >= sizeof(path)) {
+		syslog(LOG_ERR, "Path too long\n");
+		return -1;
+	}
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		syslog(LOG_ERR, "Cannot open %s\n", path);
@@ -74,7 +96,13 @@ int32_t board_exit(void)
 	int ret;
 	char path[MAX_LEN] = {0};
 
-	fd = open("/sys/class/gpio/unexport", O_WRONLY);
+	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/unexport");
+	if (ret < 0 || (size_t)ret >= sizeof(path)) {
+		syslog(LOG_ERR, "Path too long\n");
+		return -1;
+	}
+
+	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		syslog(LOG_ERR, "Cannot open /sys/class/gpio/unexport\n");
 		return -1;
@@ -101,7 +129,12 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	int ret;
 	char path[MAX_LEN] = {0};
 
-	snprintf(path, sizeof(path) - 1, "/sys/class/gpio/gpio%s/value", pin);
+	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/gpio%s/value",
+			pin);
+	if (ret < 0 || (size_t)ret >= sizeof(path)) {
+		syslog(LOG_ERR, "Path too long\n");
+		exit(-1);
+	}
 	fd = open(path, O_WRONLY);
 	if (fd == -1) {
 		syslog(LOG_ERR, "Cannot open %s\n", path);
