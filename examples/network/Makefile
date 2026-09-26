@@ -9,7 +9,7 @@ CFLAGS += -Wbad-function-cast -Wformat-security -Wformat-nonliteral
 CFLAGS += -Wmissing-format-attribute -Winline
 CFLAGS += -Wformat -Werror=format-security -Werror=array-bounds
 
-.PHONY: rpi, rpi3, bbb, x86_64, clean
+.PHONY: rpi rpi3 bbb x86_64 install clean
 
 ifeq ($(MAKECMDGOALS), )
 $(error No target given. Supported targets: rpi, rpi3, bbb, x86_64)
