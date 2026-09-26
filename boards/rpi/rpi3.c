@@ -116,10 +116,18 @@ void delayMicroseconds(unsigned int howLong)
 	}
 }
 
-void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
+int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
-	gpiod_line_set_value(line, 1);
+	if (gpiod_line_set_value(line, 1) < 0) {
+		syslog(LOG_ERR, "[-] gpiod_line_set_value");
+		return -1;
+	}
 	delayMicroseconds(pulse_len * nhigh);
-	gpiod_line_set_value(line, 0);
+	if (gpiod_line_set_value(line, 0) < 0) {
+		syslog(LOG_ERR, "[-] gpiod_line_set_value");
+		return -1;
+	}
 	delayMicroseconds(pulse_len * nlow);
+
+	return 0;
 }

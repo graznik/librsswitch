@@ -94,7 +94,7 @@ int32_t board_exit(void)
 	return 0;
 }
 
-void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
+int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	int fd;
 	size_t n;
@@ -126,4 +126,6 @@ void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		syslog(LOG_ERR, "Cannot close %s\n", path);
 		exit(-1);
 	}
+
+	return 0;
 }

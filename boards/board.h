@@ -37,6 +37,12 @@
  */
 int32_t board_init(const char *config);
 int32_t board_exit(void);
-void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
+
+/*
+ * Drives one high/low pulse pair. Returns 0 on success, -1 on error,
+ * in which case the caller abandons the rest of the codeword (no
+ * further transmit() call is made for that send).
+ */
+int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
 
 #endif /* BOARD_H */

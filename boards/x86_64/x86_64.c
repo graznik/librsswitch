@@ -35,17 +35,18 @@ int32_t board_exit(void)
 	return 0;
 }
 
-void transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
+int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	if (recorder_count >= X86_64_RECORDER_MAX_PULSES) {
 		recorder_overflow = 1;
-		return;
+		return 0;
 	}
 
 	recorder[recorder_count].nhigh = nhigh;
 	recorder[recorder_count].nlow = nlow;
 	recorder[recorder_count].pulse_len = pulse_len;
 	recorder_count++;
+	return 0;
 }
 
 void x86_64_recorder_reset(void)

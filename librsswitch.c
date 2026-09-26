@@ -41,11 +41,11 @@
 #define MAX_LEN 100
 
 
-static void send_tris(char *codeword, uint32_t pulse_len);
-static void send_0(uint32_t pulse_len);
-static void send_1(uint32_t pulse_len);
-static void send_f(uint32_t pulse_len);
-static void send_sync(uint32_t pulse_len);
+static int32_t send_tris(char *codeword, uint32_t pulse_len);
+static int32_t send_0(uint32_t pulse_len);
+static int32_t send_1(uint32_t pulse_len);
+static int32_t send_f(uint32_t pulse_len);
+static int32_t send_sync(uint32_t pulse_len);
 static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 			       uint32_t idata);
 static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
@@ -60,7 +60,7 @@ static const char *gpio_config;
  * @param codeword
  * @param ntimes     Number of times to send the code word
  */
-static void send_tris(char *codeword, uint32_t pulse_len)
+static int32_t send_tris(char *codeword, uint32_t pulse_len)
 {
 	size_t n;
 
@@ -68,21 +68,30 @@ static void send_tris(char *codeword, uint32_t pulse_len)
 		int i = 0;
 
 		while (codeword[i] != '\0') {
+			int32_t ret;
+
 			switch (codeword[i]) {
 			case '0':
-				send_0(pulse_len);
+				ret = send_0(pulse_len);
 				break;
 			case 'F':
-				send_f(pulse_len);
+				ret = send_f(pulse_len);
 				break;
 			case '1':
-				send_1(pulse_len);
+				ret = send_1(pulse_len);
+				break;
+			default:
+				ret = 0;
 				break;
 			}
+			if (ret < 0)
+				return -1;
 			i++;
 		}
-		send_sync(pulse_len);
+		if (send_sync(pulse_len) < 0)
+			return -1;
 	}
+	return 0;
 }
 
 /**
@@ -90,10 +99,11 @@ static void send_tris(char *codeword, uint32_t pulse_len)
  *            _     _
  * Waveform: | |___| |___
  */
-static void send_0(uint32_t pulse_len)
+static int32_t send_0(uint32_t pulse_len)
 {
-	transmit(1, 3, pulse_len);
-	transmit(1, 3, pulse_len);
+	if (transmit(1, 3, pulse_len) < 0)
+		return -1;
+	return transmit(1, 3, pulse_len);
 }
 
 /**
@@ -101,10 +111,11 @@ static void send_0(uint32_t pulse_len)
  *            ___   ___
  * Waveform: |   |_|   |_
  */
-static void send_1(uint32_t pulse_len)
+static int32_t send_1(uint32_t pulse_len)
 {
-	transmit(3, 1, pulse_len);
-	transmit(3, 1, pulse_len);
+	if (transmit(3, 1, pulse_len) < 0)
+		return -1;
+	return transmit(3, 1, pulse_len);
 }
 
 /**
@@ -112,10 +123,11 @@ static void send_1(uint32_t pulse_len)
  *            _     ___
  * Waveform: | |___|   |_
  */
-static void send_f(uint32_t pulse_len)
+static int32_t send_f(uint32_t pulse_len)
 {
-	transmit(1, 3, pulse_len);
-	transmit(3, 1, pulse_len);
+	if (transmit(1, 3, pulse_len) < 0)
+		return -1;
+	return transmit(3, 1, pulse_len);
 }
 
 /**
@@ -125,9 +137,9 @@ static void send_f(uint32_t pulse_len)
  *                       _
  * Waveform Protocol 2: | |__________
  */
-static void send_sync(uint32_t pulse_len)
+static int32_t send_sync(uint32_t pulse_len)
 {
-	transmit(1, 31, pulse_len);
+	return transmit(1, 31, pulse_len);
 }
 
 /**
@@ -248,9 +260,7 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 #endif
 
 	/* Send the codeword */
-	send_tris(codeword, pulse_len);
-
-	return 0;
+	return send_tris(codeword, pulse_len);
 }
 
 void socket_gpio_config(const char *config)
