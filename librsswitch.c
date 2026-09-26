@@ -198,16 +198,17 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 	int32_t ret;
 
 	if (igroup > (ngroups - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket group %d",  igroup);
+		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, igroup);
 		return -1;
 	}
 	if (isocket > (nsockets - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket %d", isocket);
+		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, isocket);
 		return -1;
 	}
 
 	if (idata > (ndata - 1)) {
-		syslog(LOG_ERR, "[-] Unknown switch parameter %d", idata);
+		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
+		       idata);
 		return -1;
 	}
 
@@ -248,16 +249,17 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 	int32_t ret;
 
 	if (igroup > (ngroups - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket group %d",  igroup);
+		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, igroup);
 		return -1;
 	}
 	if (isocket > (nsockets - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket %d", isocket);
+		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, isocket);
 		return -1;
 	}
 
 	if (idata > (ndata - 1)) {
-		syslog(LOG_ERR, "[-] Unknown switch parameter %d", idata);
+		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
+		       idata);
 		return -1;
 	}
 
@@ -330,8 +332,9 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 	}
 
 #ifdef DEBUG
-	syslog(LOG_NOTICE, "dev: %u, group: %u, socket: %u, data: %u",
-	       dev, group, socket, data);
+	syslog(LOG_NOTICE,
+	       "dev: %" PRIu32 ", group: %" PRIu32 ", socket: %" PRIu32
+	       ", data: %" PRIu32, dev, group, socket, data);
 #endif
 
 	switch (dev) {
@@ -346,7 +349,7 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 			syslog(LOG_ERR, "[-] pollin_2605_send()");
 		break;
 	default:
-		syslog(LOG_ERR, "[-] Unknown socket type %u", dev);
+		syslog(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
 		ret = -1;
 	}
 

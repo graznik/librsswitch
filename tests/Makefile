@@ -1,7 +1,8 @@
 CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
-TESTS = test_socket_send test_codewords test_concurrency test_codeword_api
+TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
+	test_logging
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
@@ -26,6 +27,13 @@ test_concurrency: test_concurrency.c $(TEST_DEPS)
 
 test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c
+
+# Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
+# ..., data: ..." line in socket_send() is exercised (LIB-02).
+# Includes ../librsswitch.c directly (like test_codeword_api), so it
+# links only the x86_64 board, not librsswitch.c a second time.
+test_logging: test_logging.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c
 
 # Optional ThreadSanitizer target (D-10). `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into
