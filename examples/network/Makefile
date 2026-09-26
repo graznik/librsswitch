@@ -74,7 +74,11 @@ x86_64:
 	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsswitchd rsswitchd.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
 
 
-install: rsswitchd
+install:
+	@if [ ! -x rsswitchd ]; then \
+		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
+		exit 1; \
+	fi
 	install -m 0755 rsswitchd $(PREFIX)/bin
 	cp rsswitchd.service /etc/systemd/system/
 	systemctl enable rsswitchd
