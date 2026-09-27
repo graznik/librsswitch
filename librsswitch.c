@@ -39,6 +39,8 @@
 #define MAX_LEN 100
 
 
+static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
+			     uint32_t data);
 static int32_t tristate_check(const char *codeword);
 static int32_t send_tris(const char *codeword, uint32_t pulse_len);
 static int32_t send_0(uint32_t pulse_len);
@@ -92,6 +94,49 @@ static const char * const pollin_2605_sockets[] = {
 	"FFF00", "0FF00", "F0F00", "00F00",
 	"FF000", "0F000", "F0000", "00000"};
 static const char * const pollin_2605_data[] = {"F0", "0F"}; /* Off, On */
+
+/*
+ * Rejects an unknown device or an out-of-range group, socket or data
+ * for the given device. socket_send() calls this before send_lock and
+ * board_init(), so a rejected address never touches the board.
+ */
+static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
+			     uint32_t data)
+{
+	size_t ngroups, nsockets, ndata;
+
+	switch (dev) {
+	case REV_008345:
+		ngroups = ARRAY_SIZE(rev_008345_groups);
+		nsockets = ARRAY_SIZE(rev_008345_sockets);
+		ndata = ARRAY_SIZE(rev_008345_data);
+		break;
+	case POLLIN_2605:
+		ngroups = ARRAY_SIZE(pollin_2605_groups);
+		nsockets = ARRAY_SIZE(pollin_2605_sockets);
+		ndata = ARRAY_SIZE(pollin_2605_data);
+		break;
+	default:
+		syslog(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
+		return -1;
+	}
+
+	if (group >= ngroups) {
+		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, group);
+		return -1;
+	}
+	if (socket >= nsockets) {
+		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, socket);
+		return -1;
+	}
+	if (data >= ndata) {
+		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
+		       data);
+		return -1;
+	}
+
+	return 0;
+}
 
 /*
  * Rejects codeword unless every byte before the first NUL is one of
@@ -214,38 +259,20 @@ static int32_t send_sync(uint32_t pulse_len)
  * @param igroup    Socket group, valid range 0-3
  * @param isocket   Socket within the group, valid range 0-2
  * @param idata     0 = off, 1 = on
- * @return 0 on success, -1 for an out-of-range parameter or a
- *         failing send_tris()
+ * @return 0 on success, -1 for a failing socket_ctrl()/send_tris()
+ *
+ * igroup, isocket and idata are already checked by address_check()
+ * before socket_send() reaches this function -- it indexes the
+ * file-scope tables directly.
  */
 static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 			       uint32_t idata)
 {
 	const uint32_t pulse_len = 350;
-	size_t ngroups = ARRAY_SIZE(rev_008345_groups);
-	size_t nsockets = ARRAY_SIZE(rev_008345_sockets);
-	size_t ndata = ARRAY_SIZE(rev_008345_data);
-	int32_t ret;
 
-	if (igroup > (ngroups - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, igroup);
-		return -1;
-	}
-	if (isocket > (nsockets - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, isocket);
-		return -1;
-	}
-
-	if (idata > (ndata - 1)) {
-		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
-		       idata);
-		return -1;
-	}
-
-	ret = socket_ctrl(rev_008345_groups[igroup],
-			  rev_008345_sockets[isocket],
-			  rev_008345_data[idata], pulse_len);
-
-	return ret;
+	return socket_ctrl(rev_008345_groups[igroup],
+			   rev_008345_sockets[isocket],
+			   rev_008345_data[idata], pulse_len);
 }
 
 /**
@@ -253,38 +280,20 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
  * @param igroup    Socket group, valid range 0-31
  * @param isocket   Socket within the group, valid range 0-31
  * @param idata     0 = off, 1 = on
- * @return 0 on success, -1 for an out-of-range parameter or a
- *         failing send_tris()
+ * @return 0 on success, -1 for a failing socket_ctrl()/send_tris()
+ *
+ * igroup, isocket and idata are already checked by address_check()
+ * before socket_send() reaches this function -- it indexes the
+ * file-scope tables directly.
  */
 static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata)
 {
 	const uint32_t pulse_len = 350;
-	size_t ngroups = ARRAY_SIZE(pollin_2605_groups);
-	size_t nsockets = ARRAY_SIZE(pollin_2605_sockets);
-	size_t ndata = ARRAY_SIZE(pollin_2605_data);
-	int32_t ret;
 
-	if (igroup > (ngroups - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, igroup);
-		return -1;
-	}
-	if (isocket > (nsockets - 1)) {
-		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, isocket);
-		return -1;
-	}
-
-	if (idata > (ndata - 1)) {
-		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
-		       idata);
-		return -1;
-	}
-
-	ret = socket_ctrl(pollin_2605_groups[igroup],
-			  pollin_2605_sockets[isocket],
-			  pollin_2605_data[idata], pulse_len);
-
-	return ret;
+	return socket_ctrl(pollin_2605_groups[igroup],
+			   pollin_2605_sockets[isocket],
+			   pollin_2605_data[idata], pulse_len);
 }
 
 /**
@@ -342,6 +351,15 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 {
 	int32_t ret;
 
+#ifdef DEBUG
+	syslog(LOG_NOTICE,
+	       "dev: %" PRIu32 ", group: %" PRIu32 ", socket: %" PRIu32
+	       ", data: %" PRIu32, dev, group, socket, data);
+#endif
+
+	if (address_check(dev, group, socket, data) < 0)
+		return -1;
+
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
 		return -1;
@@ -353,12 +371,6 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 		pthread_mutex_unlock(&send_lock);
 		return ret;
 	}
-
-#ifdef DEBUG
-	syslog(LOG_NOTICE,
-	       "dev: %" PRIu32 ", group: %" PRIu32 ", socket: %" PRIu32
-	       ", data: %" PRIu32, dev, group, socket, data);
-#endif
 
 	switch (dev) {
 	case REV_008345:
@@ -372,7 +384,7 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 			syslog(LOG_ERR, "[-] pollin_2605_send()");
 		break;
 	default:
-		syslog(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
+		/* dev was already checked above; never reached. */
 		ret = -1;
 	}
 

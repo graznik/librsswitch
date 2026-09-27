@@ -113,12 +113,11 @@ static void *worker_main(void *arg)
  * times, with no overlap and a matching board_init()/board_exit()
  * count.
  *
- * NTHREADS * NSENDS + 1 counts every socket_send() call made this
- * round, including thread 0's one rejected address: board_init() and
- * board_exit() run unconditionally for every socket_send() call
- * (accepted or rejected) in the current, unchanged control flow --
- * only the codeword generation in between is skipped for a rejected
- * address.
+ * NTHREADS * NSENDS counts only the accepted sends: socket_send()
+ * validates the address before it takes send_lock or calls
+ * board_init(), so thread 0's rejected address is refused before any
+ * board session opens and does not add to the board_init()/
+ * board_exit() count.
  */
 static void run_round(void)
 {
@@ -180,8 +179,8 @@ static void run_round(void)
 
 	CHECK(!x86_64_recorder_overflowed());
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)(NTHREADS * NSENDS + 1));
-	CHECK_EQ(x86_64_board_exit_count(), (size_t)(NTHREADS * NSENDS + 1));
+	CHECK_EQ(x86_64_board_init_count(), (size_t)(NTHREADS * NSENDS));
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)(NTHREADS * NSENDS));
 }
 
 static void test_concurrent_socket_send(void)
@@ -356,9 +355,9 @@ static void run_mixed_round(void)
 	CHECK(!x86_64_recorder_overflowed());
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(),
-		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED + 1));
+		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED));
 	CHECK_EQ(x86_64_board_exit_count(),
-		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED + 1));
+		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED));
 }
 
 static void test_concurrent_mixed_senders(void)

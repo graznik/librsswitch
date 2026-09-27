@@ -80,38 +80,60 @@ static void test_pollin_2605_boundary(void)
 
 /*
  * A rejected address must not leave a partial transmission on the
- * air: every out-of-range call the tests above already reject must
- * record zero pulses.
+ * air, and must not open a board session at all: every out-of-range
+ * call the tests above already reject must record zero pulses and
+ * make zero board_init()/board_exit() calls. The final control send
+ * shows exactly one of each, so the counters are not vacuous.
  */
 static void test_rejected_sends_transmit_nothing(void)
 {
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(REV_008345, 4, 0, 0), -1);   /* group */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(REV_008345, 0, 3, 0), -1);   /* socket */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(REV_008345, 0, 0, 2), -1);   /* data */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(POLLIN_2605, 32, 0, 0), -1);  /* group */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(POLLIN_2605, 0, 32, 0), -1);  /* socket */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 2), -1);   /* data */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
 	CHECK_EQ(socket_send(99, 0, 0, 0), -1);            /* device */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
+
+	/* Control: a valid send still opens exactly one board session. */
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 0), 0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)1);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
 }
 
 /*
