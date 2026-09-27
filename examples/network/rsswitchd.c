@@ -17,6 +17,7 @@
 
 static int check_input(char *input, int len);
 static int sock_ctrl(char *recbuf);
+static void serve_connection(int connfd, const char *ip);
 
 #define CODE_LEN 4
 #define DEFAULT_PORT 5000
@@ -82,7 +83,7 @@ invalid:
 
 int main(int argc, char *argv[])
 {
-	int listenfd = 0, connfd = 0, n = 0;
+	int listenfd = 0, connfd = 0;
 	const char *gpio_config = NULL;
 	struct sockaddr_in serv_addr, cli_addr;
 	socklen_t cli_len = sizeof(cli_addr);
@@ -90,8 +91,6 @@ int main(int argc, char *argv[])
 	struct in_addr bind_addr;
 	unsigned long port = DEFAULT_PORT;
 	int opt;
-
-	char recbuf[1025];
 
 	/*
 	 * On the x86_64 build the library prints every sent codeword
@@ -151,7 +150,6 @@ int main(int argc, char *argv[])
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	memset(&serv_addr, 0, sizeof(serv_addr));
-	memset(recbuf, 0, sizeof(recbuf));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr = bind_addr;
@@ -186,18 +184,44 @@ int main(int argc, char *argv[])
 			  cli_ipaddr, sizeof(cli_ipaddr));
 		syslog(LOG_NOTICE, "Client from %s connected.", cli_ipaddr);
 
-		while ((n = read(connfd, recbuf, sizeof(recbuf)-1)) > 0) {
-			recbuf[n] = 0;
+		serve_connection(connfd, cli_ipaddr);
+		close(connfd);
+	}
+}
 
-			if (n < 0)
-				printf("\nRead error\n");
+/*
+ * Reads and handles every command sent on connfd, until read()
+ * returns 0 (the client closed its end) or a real error. A signal
+ * interrupting the read is retried; any other error is logged with
+ * the client's address and ends this connection. The caller closes
+ * connfd exactly once, after this function returns.
+ */
+static void serve_connection(int connfd, const char *ip)
+{
+	char recbuf[1025];
 
-			if (check_input(recbuf, n) == 0)
-				sock_ctrl(recbuf);
+	memset(recbuf, 0, sizeof(recbuf));
 
-			close(connfd);
-			sleep(1);
+	for (;;) {
+		ssize_t n = read(connfd, recbuf, sizeof(recbuf) - 1);
+
+		if (n == 0)
+			return;
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			syslog(LOG_ERR, "[-] read from %s: %s", ip,
+			       strerror(errno));
+			return;
 		}
+
+		recbuf[n] = 0;
+
+		if (check_input(recbuf, (int)n) == 0)
+			sock_ctrl(recbuf);
+
+		sleep(1);
 	}
 }
 

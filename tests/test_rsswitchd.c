@@ -33,6 +33,7 @@
  */
 #define _GNU_SOURCE
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -528,6 +529,31 @@ static void daemon_stop(struct daemon *d, int sig, int *status)
 	live_remove(d->pid);
 }
 
+/* Counts the entries of /proc/<pid>/fd, i.e. the number of open file
+ * descriptors of the given process. Returns -1 if /proc/<pid>/fd
+ * cannot be read (the process already exited).
+ */
+static int daemon_fd_count(pid_t pid)
+{
+	char path[64];
+	struct dirent *ent;
+	DIR *dir;
+	int count = 0;
+
+	snprintf(path, sizeof(path), "/proc/%d/fd", (int)pid);
+	dir = opendir(path);
+	if (dir == NULL)
+		return -1;
+
+	while ((ent = readdir(dir)) != NULL) {
+		if (ent->d_name[0] == '.')
+			continue;
+		count++;
+	}
+	closedir(dir);
+	return count;
+}
+
 /* Makes a SOCK_CLOEXEC TCP socket with TCP_NODELAY and retries
  * ECONNREFUSED every 20ms for up to 2s. Returns the fd, or -1 on
  * another error or at the deadline.
@@ -781,6 +807,245 @@ static void test_legacy_codeword(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* A connection carries two commands with a gap between them; both
+ * must be executed, in order (DMN-01).
+ */
+static void test_two_reads_one_connection(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+		usleep(200000);
+
+		CHECK_EQ(client_send(fd, "0321", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF1FF100010"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A connection that never sends anything must not stop the next
+ * client from being served.
+ */
+static void test_empty_connection(void)
+{
+	struct daemon d;
+	int st;
+	int fd1, fd2;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd1 = client_connect("127.0.0.1", d.port);
+	CHECK(fd1 >= 0);
+	if (fd1 >= 0)
+		close(fd1);
+
+	fd2 = client_connect("127.0.0.1", d.port);
+	CHECK(fd2 >= 0);
+	if (fd2 >= 0) {
+		CHECK_EQ(client_send(fd2, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		close(fd2);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A complete legacy command followed at once by close() still gets
+ * executed; an incomplete one followed by close() gets nothing.
+ */
+static void test_eof_after_command(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		close(fd);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+	}
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "030", 3), 0);
+		close(fd);
+		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A client reset (RST) while the daemon waits in read() must not stop
+ * the daemon or the next client from being served.
+ */
+static void test_client_reset(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		struct linger lg = { .l_onoff = 1, .l_linger = 0 };
+
+		setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+		close(fd);
+	}
+
+	/* Give the daemon a moment to observe the reset. */
+	usleep(100000);
+	CHECK_EQ(waitpid(d.pid, NULL, WNOHANG), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* The daemon serves one connection at a time: a second client's
+ * command is not executed while the first connection is still open
+ * and silent, and runs once the first connection closes.
+ */
+static void test_one_connection_at_a_time(void)
+{
+	struct daemon d;
+	int st;
+	int fda, fdb;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fda = client_connect("127.0.0.1", d.port);
+	CHECK(fda >= 0);
+
+	fdb = client_connect("127.0.0.1", d.port);
+	CHECK(fdb >= 0);
+	if (fdb >= 0)
+		CHECK_EQ(client_send(fdb, "0300", 4), 0);
+
+	CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
+
+	if (fda >= 0)
+		close(fda);
+
+	CHECK(daemon_stdout_line(&d, line, sizeof(line), 1000));
+	CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+	if (fdb >= 0)
+		close(fdb);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* 20 connections that each send a command or nothing, then close,
+ * must not leak a file descriptor per connection (DMN-01/T-02-06).
+ */
+static void test_no_fd_leak(void)
+{
+	struct daemon d;
+	int st;
+	int baseline, after;
+	int seen = 0;
+	int i;
+	long long deadline;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	/*
+	 * A warm-up connection forces the daemon's first syslog()
+	 * call (per accepted connection), which glibc's syslog(3)
+	 * only opens its socket to the syslog daemon on -- a one-time
+	 * fd for the life of the process, not a per-connection leak.
+	 * Measure the baseline after this warm-up so it is not
+	 * mistaken for one.
+	 */
+	{
+		int wfd = client_connect("127.0.0.1", d.port);
+
+		CHECK(wfd >= 0);
+		if (wfd >= 0)
+			close(wfd);
+	}
+	usleep(200000);
+
+	baseline = daemon_fd_count(d.pid);
+	CHECK(baseline >= 0);
+
+	for (i = 0; i < 20; i++) {
+		int fd = client_connect("127.0.0.1", d.port);
+
+		CHECK(fd >= 0);
+		if (fd < 0)
+			continue;
+
+		if (i % 2 == 0)
+			CHECK_EQ(client_send(fd, "0300", 4), 0);
+
+		close(fd);
+	}
+
+	while (seen < 10) {
+		char line[64];
+
+		if (!daemon_stdout_line(&d, line, sizeof(line), 3000))
+			break;
+		seen++;
+	}
+	CHECK_EQ(seen, 10);
+
+	/*
+	 * Until the next commit removes it, the daemon still sleeps
+	 * 1s after every processed command before it can close that
+	 * connection and accept the next one, so draining 10 commands
+	 * can take close to 10s. Poll generously rather than assume a
+	 * fast drain; once the sleep is gone this converges almost
+	 * immediately.
+	 */
+	after = daemon_fd_count(d.pid);
+	deadline = now_ms() + 15000;
+	while (after != baseline && now_ms() < deadline) {
+		usleep(20000);
+		after = daemon_fd_count(d.pid);
+	}
+	CHECK_EQ(after, baseline);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 int main(int argc, char *argv[])
 {
 	if (argc > 1)
@@ -795,6 +1060,12 @@ int main(int argc, char *argv[])
 	test_bind_only_there();
 	test_default_bind_address();
 	test_legacy_codeword();
+	test_two_reads_one_connection();
+	test_empty_connection();
+	test_eof_after_command();
+	test_client_reset();
+	test_one_connection_at_a_time();
+	test_no_fd_leak();
 
 	return MT_REPORT();
 }
