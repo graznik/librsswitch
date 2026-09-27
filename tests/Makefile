@@ -2,7 +2,7 @@ CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
 TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
-	test_logging test_bbb
+	test_logging test_bbb test_rsswitchd
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
@@ -28,7 +28,7 @@ endif
 
 .PHONY: test clean tsan
 
-test: $(TESTS) test_rsssend_bin
+test: $(TESTS) test_rsssend_bin test_rsswitchd_bin
 	@status=0; \
 	for t in $(TESTS); do \
 		./$$t > /dev/null || status=1; \
@@ -55,6 +55,17 @@ test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 # runs it explicitly below.
 test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c $(LIB_SRCS)
+
+# Builds ../examples/network/rsswitchd.c against the x86_64 board, so
+# test_rsswitchd.c can spawn the real daemon and drive it over TCP on
+# an ephemeral port. Not part of $(TESTS): test_rsswitchd (below) is
+# the minitest binary that spawns and drives this one; `test` builds
+# it explicitly as a dependency of both.
+test_rsswitchd_bin: ../examples/network/rsswitchd.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_bin ../examples/network/rsswitchd.c $(LIB_SRCS)
+
+test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd test_rsswitchd.c
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
 # ..., data: ..." line in socket_send() is exercised (LIB-02).
@@ -117,5 +128,5 @@ test_concurrency_tsan: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) -fsanitize=thread -g -O1 $(INCLUDES) -o test_concurrency_tsan test_concurrency.c $(LIB_SRCS)
 
 clean:
-	-@rm -f $(TESTS) test_rsssend_bin test_concurrency_tsan 2>/dev/null || true
+	-@rm -f $(TESTS) test_rsssend_bin test_rsswitchd_bin test_concurrency_tsan 2>/dev/null || true
 	-@rm -rf test_bbb_sysfs /tmp/librsswitch-test-bbb-sysfs 2>/dev/null || true
