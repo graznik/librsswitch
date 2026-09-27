@@ -81,6 +81,21 @@ invalid:
 	return -1;
 }
 
+/*
+ * Logs "[-] what: strerror(errno)" to syslog and prints the same to
+ * stderr with an "rsswitchd: " prefix -- an operator starting the
+ * daemon by hand must see why it did not come up, not just find it
+ * in the log -- then exits 1.
+ */
+static void fatal(const char *what)
+{
+	int saved_errno = errno;
+
+	syslog(LOG_ERR, "[-] %s: %s", what, strerror(saved_errno));
+	fprintf(stderr, "rsswitchd: %s: %s\n", what, strerror(saved_errno));
+	exit(1);
+}
+
 int main(int argc, char *argv[])
 {
 	int listenfd = 0, connfd = 0;
@@ -102,6 +117,11 @@ int main(int argc, char *argv[])
 	 * soon as it is sent.
 	 */
 	setvbuf(stdout, NULL, _IOLBF, 0);
+
+	/* Opened first, so a startup failure below is logged under
+	 * the daemon's own name.
+	 */
+	openlog("rsswitchd", 0, LOG_USER);
 
 	if (inet_pton(AF_INET, DEFAULT_BIND, &bind_addr) != 1) {
 		fprintf(stderr, "rsswitchd: internal error: bad default bind address\n");
@@ -149,17 +169,28 @@ int main(int argc, char *argv[])
 	socket_gpio_config(gpio_config);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (listenfd < 0)
+		fatal("socket");
 	memset(&serv_addr, 0, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr = bind_addr;
 	serv_addr.sin_port = htons((uint16_t)port);
 
-	bind(listenfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+	if (bind(listenfd, (struct sockaddr *)&serv_addr,
+		 sizeof(serv_addr)) < 0) {
+		char bind_ipaddr[INET_ADDRSTRLEN];
+		char what[64];
 
-	listen(listenfd, 10);
+		if (inet_ntop(AF_INET, &bind_addr, bind_ipaddr,
+			      sizeof(bind_ipaddr)) == NULL)
+			snprintf(bind_ipaddr, sizeof(bind_ipaddr), "unknown");
+		snprintf(what, sizeof(what), "bind %s:%lu", bind_ipaddr, port);
+		fatal(what);
+	}
 
-	openlog("rsswitchd", 0, LOG_USER);
+	if (listen(listenfd, 10) < 0)
+		fatal("listen");
 
 	{
 		struct sockaddr_in bound_addr;
@@ -167,21 +198,45 @@ int main(int argc, char *argv[])
 		char bound_ipaddr[INET_ADDRSTRLEN];
 
 		if (getsockname(listenfd, (struct sockaddr *)&bound_addr,
-				&bound_len) == 0 &&
-		    inet_ntop(AF_INET, &bound_addr.sin_addr, bound_ipaddr,
-			      sizeof(bound_ipaddr)) != NULL) {
-			fprintf(stderr, "rsswitchd: listening on %s:%u\n",
-				bound_ipaddr,
-				(unsigned int)ntohs(bound_addr.sin_port));
-		}
+				&bound_len) < 0)
+			fatal("getsockname");
+		if (inet_ntop(AF_INET, &bound_addr.sin_addr, bound_ipaddr,
+			      sizeof(bound_ipaddr)) == NULL)
+			snprintf(bound_ipaddr, sizeof(bound_ipaddr), "unknown");
+		fprintf(stderr, "rsswitchd: listening on %s:%u\n",
+			bound_ipaddr,
+			(unsigned int)ntohs(bound_addr.sin_port));
 	}
 
 	while (1) {
 		connfd = accept(listenfd, (struct sockaddr *)&cli_addr,
 				&cli_len);
+		if (connfd < 0) {
+			if (errno == EINTR)
+				continue;
+
+			syslog(LOG_ERR, "[-] accept: %s", strerror(errno));
+
+			/*
+			 * A resource error is likely persistent; pause
+			 * so a tight accept()/fail loop cannot spin the
+			 * CPU or flood syslog while it lasts. The
+			 * daemon keeps running either way -- accept()
+			 * failing must never end it.
+			 */
+			if (errno == EMFILE || errno == ENFILE ||
+			    errno == ENOBUFS || errno == ENOMEM) {
+				struct timespec pause = { 0, 100000000L };
+
+				nanosleep(&pause, NULL);
+			}
+			continue;
+		}
+
 		/* Log clients IP address. */
-		inet_ntop(AF_INET, &cli_addr.sin_addr,
-			  cli_ipaddr, sizeof(cli_ipaddr));
+		if (inet_ntop(AF_INET, &cli_addr.sin_addr, cli_ipaddr,
+			      sizeof(cli_ipaddr)) == NULL)
+			snprintf(cli_ipaddr, sizeof(cli_ipaddr), "unknown");
 		syslog(LOG_NOTICE, "Client from %s connected.", cli_ipaddr);
 
 		serve_connection(connfd, cli_ipaddr);

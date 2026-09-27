@@ -554,6 +554,56 @@ static int daemon_fd_count(pid_t pid)
 	return count;
 }
 
+/* Reads utime+stime (fields 14 and 15 of /proc/<pid>/stat, in clock
+ * ticks) after the closing parenthesis of comm, so a process name
+ * containing spaces or parentheses cannot shift the field count.
+ * Returns -1 if the file cannot be read or parsed.
+ */
+static long daemon_cpu_ticks(pid_t pid)
+{
+	char path[64];
+	char *line = NULL;
+	size_t linecap = 0;
+	char state;
+	int ppid, pgrp, session, tty_nr, tpgid;
+	unsigned int flags;
+	unsigned long minflt, cminflt, majflt, cmajflt, utime, stime;
+	char *paren;
+	ssize_t n;
+	long ret = -1;
+	FILE *f;
+
+	snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
+	f = fopen(path, "r");
+	if (f == NULL)
+		return -1;
+
+	n = getline(&line, &linecap, f);
+	fclose(f);
+	if (n < 0) {
+		free(line);
+		return -1;
+	}
+
+	/*
+	 * scanf's assignment-suppression ('*') cannot be combined with
+	 * a length modifier here (rejected by this compiler's
+	 * gnu_scanf format check), so every field is captured into a
+	 * named variable and the ones this function does not need are
+	 * simply left unused after the call.
+	 */
+	paren = strrchr(line, ')');
+	if (paren != NULL &&
+	    sscanf(paren + 1,
+		   " %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu",
+		   &state, &ppid, &pgrp, &session, &tty_nr, &tpgid, &flags,
+		   &minflt, &cminflt, &majflt, &cmajflt, &utime, &stime) == 13)
+		ret = (long)(utime + stime);
+
+	free(line);
+	return ret;
+}
+
 /* Makes a SOCK_CLOEXEC TCP socket with TCP_NODELAY and retries
  * ECONNREFUSED every 20ms for up to 2s. Returns the fd, or -1 on
  * another error or at the deadline.
@@ -971,6 +1021,97 @@ static void test_one_connection_at_a_time(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* A bind() conflict must exit 1 loudly, never silently listen on a
+ * random port (DMN-02).
+ */
+static void test_bind_failure_exits(void)
+{
+	struct sockaddr_in sa;
+	socklen_t salen = sizeof(sa);
+	int listener;
+	int port;
+	char portstr[16];
+	char prefix[64];
+	const char *args[5];
+	char out[256], err[512];
+	int status = 0;
+
+	listener = socket(AF_INET, SOCK_STREAM, 0);
+	CHECK(listener >= 0);
+	if (listener < 0)
+		return;
+
+	memset(&sa, 0, sizeof(sa));
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(0);
+	inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr);
+
+	CHECK_EQ(bind(listener, (struct sockaddr *)&sa, sizeof(sa)), 0);
+	CHECK_EQ(listen(listener, 1), 0);
+	CHECK_EQ(getsockname(listener, (struct sockaddr *)&sa, &salen), 0);
+	port = ntohs(sa.sin_port);
+
+	snprintf(portstr, sizeof(portstr), "%d", port);
+	args[0] = "--bind";
+	args[1] = "127.0.0.1";
+	args[2] = "--port";
+	args[3] = portstr;
+	args[4] = NULL;
+
+	CHECK_EQ(daemon_run(args, &status, out, sizeof(out), err, sizeof(err),
+			    2000), 0);
+	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 1);
+	snprintf(prefix, sizeof(prefix), "rsswitchd: bind 127.0.0.1:%d", port);
+	CHECK(strstr(err, prefix) != NULL);
+	CHECK(strstr(err, "listening on") == NULL);
+
+	close(listener);
+}
+
+/* An accept() failure (EMFILE, forced with a low RLIMIT_NOFILE) must
+ * not stop or spin the daemon (DMN-02).
+ */
+static void test_accept_failure_keeps_running(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	long ticks0, ticks1;
+	long clk_tck = sysconf(_SC_CLK_TCK);
+	static const char *const args[] = {
+		"--bind", "127.0.0.1", "--port", "0", NULL
+	};
+
+	CHECK_EQ(daemon_spawn(&d, args, 4), 0);
+	CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+
+	ticks0 = daemon_cpu_ticks(d.pid);
+	CHECK(ticks0 >= 0);
+
+	usleep(1000000);
+
+	CHECK_EQ(waitpid(d.pid, NULL, WNOHANG), 0);
+
+	{
+		char line[64];
+
+		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 100), 0);
+	}
+
+	ticks1 = daemon_cpu_ticks(d.pid);
+	CHECK(ticks1 >= 0);
+	if (ticks0 >= 0 && ticks1 >= 0 && clk_tck > 0)
+		CHECK((double)(ticks1 - ticks0) / (double)clk_tck < 0.5);
+
+	if (fd >= 0)
+		close(fd);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 /* Two commands on one connection, with no artificial gap between
  * them (DMN-08).
  */
@@ -1095,6 +1236,8 @@ int main(int argc, char *argv[])
 	test_eof_after_command();
 	test_client_reset();
 	test_one_connection_at_a_time();
+	test_bind_failure_exits();
+	test_accept_failure_keeps_running();
 	test_no_pause_between_commands();
 	test_no_fd_leak();
 
