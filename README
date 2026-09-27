@@ -110,7 +110,9 @@ socket_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
 - data: 1 = On, 0 = Off
 
 Returns 0 on success, -1 for an out-of-range group/socket/data, an
-unknown dev, or a board error. Nothing is sent for invalid input.
+unknown dev, or a board error. Arguments are fully validated before
+board_init() or any GPIO access, so an invalid address never touches
+the board and nothing is sent.
 
 socket_send_codeword(const char *tristate, uint32_t pulse_len);
 

@@ -51,6 +51,25 @@
  */
 void socket_gpio_config(const char *config);
 
+/*
+ * Sends a switch command for one of the two built-in device tables.
+ *
+ * dev is REV_008345 or POLLIN_2605 (see enum socket_type below). group
+ * is 0-3 for REV 008345 and 0-31 for Pollin 2605. socket is 0-2 for
+ * REV 008345 and 0-31 for Pollin 2605. data is 0 for off, 1 for on.
+ *
+ * Arguments are fully validated before board_init() or any GPIO
+ * access: an invalid dev, group, socket or data is logged via
+ * syslog and never touches the board.
+ *
+ * On success, the device's codeword is sent NTIMES (10) times, each
+ * repetition followed by a sync pulse. On the x86_64 build, the
+ * codeword is printed to stdout.
+ *
+ * Returns 0 on success, -1 for an invalid argument or a board error.
+ * Serialized with socket_send_codeword() by the same lock -- see
+ * "Thread safety" above.
+ */
 int32_t socket_send(uint32_t dev, uint32_t group,
 		    uint32_t socket, uint32_t data);
 
