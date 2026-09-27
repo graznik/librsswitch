@@ -106,6 +106,17 @@ bad_line:
 	       config);
 }
 
+/*
+ * Set to 1 only between a successful high write and the following
+ * successful low write -- the window in which the line may actually
+ * be high. A failed high write leaves it 0, since the failed write
+ * did not change the level. board_exit() uses it to drive the line
+ * low before releasing it, so a transmit() that failed between its
+ * two writes cannot leave the transmitter keyed (G-01-5). Shared by
+ * both libgpiod API variants below.
+ */
+static int line_high;
+
 #if LIBRSSWITCH_GPIOD_VERSION == 1
 
 static struct gpiod_chip *chip;
@@ -143,21 +154,42 @@ int32_t board_init(const char *config)
 		line = NULL;
 		return -1;
 	}
+	/* The line was just requested as a low output. */
+	line_high = 0;
 
 	return 0;
 }
 
 int32_t board_exit(void)
 {
+	int32_t ret = 0;
+
 	if (!chip)
 		return 0;
+
+	/*
+	 * A transmit() that failed between its high and low writes
+	 * leaves the line high; drive it low here, before release, so
+	 * the session never ends with the transmitter keyed (G-01-5).
+	 * Best effort: a failure is logged and returned, but never
+	 * skips the release/close below.
+	 */
+	if (line_high) {
+		if (gpiod_line_set_value(line, 0) < 0) {
+			syslog(LOG_ERR,
+			       "[-] Failed to drive GPIO line low: %s",
+			       strerror(errno));
+			ret = -1;
+		}
+		line_high = 0;
+	}
 
 	gpiod_line_release(line);
 	gpiod_chip_close(chip);
 	chip = NULL;
 	line = NULL;
 
-	return 0;
+	return ret;
 }
 
 #else /* LIBRSSWITCH_GPIOD_VERSION == 2 */
@@ -245,6 +277,8 @@ int32_t board_init(const char *config)
 		       line_offset, strerror(errno));
 	} else {
 		ret = 0;
+		/* The line was just requested as a low output. */
+		line_high = 0;
 	}
 
 	gpiod_request_config_free(req_cfg);
@@ -263,15 +297,35 @@ out:
 
 int32_t board_exit(void)
 {
+	int32_t ret = 0;
+
 	if (!chip)
 		return 0;
+
+	/*
+	 * A transmit() that failed between its high and low writes
+	 * leaves the line high; drive it low here, before release, so
+	 * the session never ends with the transmitter keyed (G-01-5).
+	 * Best effort: a failure is logged and returned, but never
+	 * skips the release/close below.
+	 */
+	if (line_high) {
+		if (gpiod_line_request_set_value(request, line_offset,
+						  GPIOD_LINE_VALUE_INACTIVE) < 0) {
+			syslog(LOG_ERR,
+			       "[-] Failed to drive GPIO line low: %s",
+			       strerror(errno));
+			ret = -1;
+		}
+		line_high = 0;
+	}
 
 	gpiod_line_request_release(request);
 	gpiod_chip_close(chip);
 	chip = NULL;
 	request = NULL;
 
-	return 0;
+	return ret;
 }
 
 #endif /* LIBRSSWITCH_GPIOD_VERSION */
@@ -314,11 +368,13 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		syslog(LOG_ERR, "[-] gpiod_line_set_value");
 		return -1;
 	}
+	line_high = 1;
 	delayMicroseconds(pulse_len * nhigh);
 	if (gpiod_line_set_value(line, 0) < 0) {
 		syslog(LOG_ERR, "[-] gpiod_line_set_value");
 		return -1;
 	}
+	line_high = 0;
 	delayMicroseconds(pulse_len * nlow);
 
 	return 0;
@@ -333,12 +389,14 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		syslog(LOG_ERR, "[-] gpiod_line_request_set_value");
 		return -1;
 	}
+	line_high = 1;
 	delayMicroseconds(pulse_len * nhigh);
 	if (gpiod_line_request_set_value(request, line_offset,
 					  GPIOD_LINE_VALUE_INACTIVE) < 0) {
 		syslog(LOG_ERR, "[-] gpiod_line_request_set_value");
 		return -1;
 	}
+	line_high = 0;
 	delayMicroseconds(pulse_len * nlow);
 
 	return 0;

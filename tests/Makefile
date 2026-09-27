@@ -71,15 +71,31 @@ test_bbb: test_bbb.c minitest.h ../boards/bbb/bbb.c ../boards/bbb/bbb.h \
 	  ../boards/board.h
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_bbb test_bbb.c
 
+# Intercepts, at link time, the five libgpiod calls rpi.c makes on a
+# line (both API variants -- the options for the version not in use
+# have no references in the link and are silently ignored), so
+# test_rpi.c's __wrap_* functions can drive transmit() and board_exit()
+# against dummy chip/line handles without ever opening a real chip
+# (G-01-5). Belongs only to this test rule: it must never appear in
+# examples/basic/Makefile or examples/network/Makefile, which link the
+# real libgpiod for shipped binaries.
+RPI_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
+		  -Wl,--wrap=gpiod_line_release \
+		  -Wl,--wrap=gpiod_line_request_set_value \
+		  -Wl,--wrap=gpiod_line_request_release \
+		  -Wl,--wrap=gpiod_chip_close
+
 # Includes ../boards/rpi/rpi.c directly (like test_bbb includes
-# ../boards/bbb/bbb.c), so it can drive board_init()/board_exit() and
-# parse_config() and their static state. Only ever names a chip that
-# cannot exist, so it never opens a real GPIO line. Links no other
-# source; GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod headers
-# and library it builds and links against.
+# ../boards/bbb/bbb.c), so it can drive board_init()/board_exit(),
+# transmit() and parse_config() and their static state. Only ever
+# names a chip that cannot exist for board_init(), and only ever
+# touches dummy handles under RPI_TEST_WRAPS interception for
+# transmit()/board_exit(), so it never opens a real GPIO line. Links
+# no other source; GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod
+# headers and library it builds and links against.
 test_rpi: test_rpi.c minitest.h ../boards/rpi/rpi.c ../boards/rpi/rpi.h \
 	  ../boards/board.h
-	$(CC) $(CFLAGS) $(GPIOD_CFLAGS) $(INCLUDES) -o test_rpi test_rpi.c $(GPIOD_LIBS)
+	$(CC) $(CFLAGS) $(GPIOD_CFLAGS) $(INCLUDES) -o test_rpi test_rpi.c $(RPI_TEST_WRAPS) $(GPIOD_LIBS)
 
 # Optional ThreadSanitizer target (D-10). `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into

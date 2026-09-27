@@ -23,12 +23,18 @@
  * file can also reach parse_config(), board_init(), board_exit() and
  * their static state.
  *
- * This suite only ever names a GPIO chip that cannot exist on any
- * host, so it can never open a real line, on this box or anyone
- * else's. It calls only the entry points a session actually needs to
- * observe the two behaviours under test (opening a chip, and closing
- * a session that never opened one), and it never asks the board to
- * drive an output pulse, so it cannot key a real transmitter.
+ * test_missing_chip_logs_to_syslog(), test_exit_without_open_chip()
+ * and test_parse_config() only ever name a GPIO chip that cannot
+ * exist on any host, so they can never open a real line. The
+ * transmit()/board_exit() tests below run only against dummy chip and
+ * line/request handles pointing at test-local storage (never a real
+ * chip): every libgpiod call rpi.c makes on a line -- set-value,
+ * release/request-release, and chip-close -- is intercepted at link
+ * time (-Wl,--wrap in tests/Makefile) and, for a dummy handle, only
+ * records the requested level instead of touching real hardware. A
+ * non-dummy handle is forwarded to the real libgpiod function, so this
+ * suite still never opens a real chip or drives a real line, and
+ * cannot key a real transmitter.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -97,6 +103,156 @@ static int captured_find(const char *needle)
 	}
 
 	return 0;
+}
+
+/*
+ * Mock state for the G-01-5 transmit()/board_exit() tests below.
+ * dummy_chip_obj and dummy_line_obj/dummy_request_obj are ordinary
+ * file-scope objects whose addresses stand in for opaque libgpiod
+ * handles: rpi.c and its wrapped libgpiod calls only ever compare
+ * these pointers or pass them back to another wrapped call, never
+ * dereference their contents. mock_session_open() points chip and
+ * line/request at them, exactly as a real board_init() would leave
+ * them after a successful session.
+ */
+static int dummy_chip_obj;
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+static int dummy_line_obj;
+#else
+static int dummy_request_obj;
+#endif
+
+static int mock_level;
+static int mock_set_calls;
+static int mock_fail_low_writes;
+static int mock_level_at_release;
+static int mock_release_count;
+static int mock_close_count;
+#if LIBRSSWITCH_GPIOD_VERSION == 2
+static unsigned int mock_last_offset;
+#endif
+
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+
+extern int __real_gpiod_line_set_value(struct gpiod_line *line, int value);
+int __wrap_gpiod_line_set_value(struct gpiod_line *line, int value);
+int __wrap_gpiod_line_set_value(struct gpiod_line *line, int value)
+{
+	if (line != (struct gpiod_line *)&dummy_line_obj)
+		return __real_gpiod_line_set_value(line, value);
+
+	if (value == 0 && mock_fail_low_writes > 0) {
+		mock_fail_low_writes--;
+		errno = EIO;
+		return -1;
+	}
+
+	mock_level = value;
+	mock_set_calls++;
+	return 0;
+}
+
+extern void __real_gpiod_line_release(struct gpiod_line *line);
+void __wrap_gpiod_line_release(struct gpiod_line *line);
+void __wrap_gpiod_line_release(struct gpiod_line *line)
+{
+	if (line != (struct gpiod_line *)&dummy_line_obj) {
+		__real_gpiod_line_release(line);
+		return;
+	}
+
+	mock_level_at_release = mock_level;
+	mock_release_count++;
+}
+
+#else /* LIBRSSWITCH_GPIOD_VERSION == 2 */
+
+extern int __real_gpiod_line_request_set_value(struct gpiod_line_request *request,
+						unsigned int offset,
+						enum gpiod_line_value value);
+int __wrap_gpiod_line_request_set_value(struct gpiod_line_request *request,
+					 unsigned int offset,
+					 enum gpiod_line_value value);
+int __wrap_gpiod_line_request_set_value(struct gpiod_line_request *request,
+					 unsigned int offset,
+					 enum gpiod_line_value value)
+{
+	if (request != (struct gpiod_line_request *)&dummy_request_obj)
+		return __real_gpiod_line_request_set_value(request, offset,
+							    value);
+
+	mock_last_offset = offset;
+
+	if (value == GPIOD_LINE_VALUE_INACTIVE && mock_fail_low_writes > 0) {
+		mock_fail_low_writes--;
+		errno = EIO;
+		return -1;
+	}
+
+	mock_level = (value == GPIOD_LINE_VALUE_ACTIVE) ? 1 : 0;
+	mock_set_calls++;
+	return 0;
+}
+
+extern void __real_gpiod_line_request_release(struct gpiod_line_request *request);
+void __wrap_gpiod_line_request_release(struct gpiod_line_request *request);
+void __wrap_gpiod_line_request_release(struct gpiod_line_request *request)
+{
+	if (request != (struct gpiod_line_request *)&dummy_request_obj) {
+		__real_gpiod_line_request_release(request);
+		return;
+	}
+
+	mock_level_at_release = mock_level;
+	mock_release_count++;
+}
+
+#endif /* LIBRSSWITCH_GPIOD_VERSION */
+
+extern void __real_gpiod_chip_close(struct gpiod_chip *chip);
+void __wrap_gpiod_chip_close(struct gpiod_chip *chip);
+void __wrap_gpiod_chip_close(struct gpiod_chip *chip)
+{
+	if (chip != (struct gpiod_chip *)&dummy_chip_obj) {
+		__real_gpiod_chip_close(chip);
+		return;
+	}
+
+	mock_close_count++;
+}
+
+static void mock_reset(void)
+{
+	mock_level = -1;
+	mock_set_calls = 0;
+	mock_fail_low_writes = 0;
+	mock_level_at_release = -1;
+	mock_release_count = 0;
+	mock_close_count = 0;
+#if LIBRSSWITCH_GPIOD_VERSION == 2
+	mock_last_offset = 0;
+#endif
+}
+
+/*
+ * Points chip and line (v1) / request (v2) at the dummy handles, sets
+ * v2's line_offset to DEFAULT_LINE_OFFSET, line_high to 0 and the
+ * mock level to 0 -- exactly as board_init() leaves them after a
+ * successful session (a freshly requested output line starts low).
+ */
+static void mock_session_open(void)
+{
+	mock_reset();
+
+	chip = (struct gpiod_chip *)&dummy_chip_obj;
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	line = (struct gpiod_line *)&dummy_line_obj;
+#else
+	request = (struct gpiod_line_request *)&dummy_request_obj;
+	line_offset = DEFAULT_LINE_OFFSET;
+#endif
+	line_high = 0;
+	mock_level = 0;
 }
 
 /*
@@ -235,11 +391,104 @@ static void test_parse_config(void)
 		check_parse_config_default(malformed[i]);
 }
 
+/*
+ * transmit()'s low write fails once (armed via mock_fail_low_writes),
+ * leaving the mocked line at 1 and transmit() returning -1.
+ * board_exit() then drives it low itself before releasing (G-01-5):
+ * level at release 0, release and chip close each called once, and
+ * chip (and line/request) cleared to NULL.
+ */
+static void test_failed_low_write_driven_low_at_release(void)
+{
+	int32_t transmit_ret;
+	int32_t exit_ret;
+
+	mock_session_open();
+	mock_fail_low_writes = 1;
+
+	transmit_ret = transmit(1, 1, 1);
+	CHECK_EQ(transmit_ret, -1);
+	CHECK_EQ(mock_level, 1);
+
+	captured_reset();
+	exit_ret = board_exit();
+
+	CHECK_EQ(exit_ret, 0);
+	CHECK_EQ(mock_level_at_release, 0);
+	CHECK_EQ(mock_release_count, 1);
+	CHECK_EQ(mock_close_count, 1);
+	CHECK(chip == NULL);
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	CHECK(line == NULL);
+#else
+	CHECK(request == NULL);
+	CHECK_EQ(mock_last_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+#endif
+}
+
+/*
+ * A session with no write failure makes 2 set-value calls in
+ * transmit() and adds none in board_exit(): line_high is already 0
+ * when board_exit() runs, so its drive-low step never fires.
+ */
+static void test_clean_session_adds_no_write(void)
+{
+	int32_t transmit_ret;
+	int32_t exit_ret;
+
+	mock_session_open();
+
+	transmit_ret = transmit(1, 1, 1);
+	CHECK_EQ(transmit_ret, 0);
+	CHECK_EQ(mock_set_calls, 2);
+
+	exit_ret = board_exit();
+	CHECK_EQ(exit_ret, 0);
+	CHECK_EQ(mock_set_calls, 2);
+	CHECK_EQ(mock_level_at_release, 0);
+}
+
+/*
+ * Two low-write failures are armed: transmit()'s own low write
+ * consumes the first and returns -1 with the line left high;
+ * board_exit()'s drive-low attempt consumes the second, also fails,
+ * is logged, and makes board_exit() return -1 -- but release and chip
+ * close still each run once, chip is still cleared to NULL, and the
+ * line is left high (level at release 1). A second board_exit() call
+ * (chip already NULL) returns 0 without touching the mock again.
+ */
+static void test_failed_drive_low_still_releases(void)
+{
+	int32_t transmit_ret;
+	int32_t exit_ret;
+
+	mock_session_open();
+	mock_fail_low_writes = 2;
+
+	transmit_ret = transmit(1, 1, 1);
+	CHECK_EQ(transmit_ret, -1);
+
+	captured_reset();
+	exit_ret = board_exit();
+
+	CHECK_EQ(exit_ret, -1);
+	CHECK(captured_find("[-] Failed to drive GPIO line low"));
+	CHECK_EQ(mock_release_count, 1);
+	CHECK_EQ(mock_close_count, 1);
+	CHECK(chip == NULL);
+	CHECK_EQ(mock_level_at_release, 1);
+
+	CHECK_EQ(board_exit(), 0);
+}
+
 int main(void)
 {
 	test_missing_chip_logs_to_syslog();
 	test_exit_without_open_chip();
 	test_parse_config();
+	test_failed_low_write_driven_low_at_release();
+	test_clean_session_adds_no_write();
+	test_failed_drive_low_still_releases();
 
 	return MT_REPORT();
 }
