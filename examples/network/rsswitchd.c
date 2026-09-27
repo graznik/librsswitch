@@ -152,6 +152,21 @@ int main(int argc, char *argv[])
 
 	openlog("rsswitchd", 0, LOG_USER);
 
+	{
+		struct sockaddr_in bound_addr;
+		socklen_t bound_len = sizeof(bound_addr);
+		char bound_ipaddr[INET_ADDRSTRLEN];
+
+		if (getsockname(listenfd, (struct sockaddr *)&bound_addr,
+				&bound_len) == 0 &&
+		    inet_ntop(AF_INET, &bound_addr.sin_addr, bound_ipaddr,
+			      sizeof(bound_ipaddr)) != NULL) {
+			fprintf(stderr, "rsswitchd: listening on %s:%u\n",
+				bound_ipaddr,
+				(unsigned int)ntohs(bound_addr.sin_port));
+		}
+	}
+
 	while (1) {
 		connfd = accept(listenfd, (struct sockaddr *)&cli_addr,
 				&cli_len);
