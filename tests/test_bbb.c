@@ -33,13 +33,30 @@
  * can be mounted on a filesystem (e.g. vboxsf, a VirtualBox shared
  * folder) that refuses to create symlinks at all ("Operation not
  * permitted"), while /tmp is a normal filesystem that supports them.
+ *
+ * A second failure-injection technique, RLIMIT_FSIZE, produces a real
+ * "high write ok, low write fails" on the very same value fd -- the
+ * symlink-to-/dev/full trick above always fails the *first* write
+ * through a given fd, so it cannot reach the case where transmit()'s
+ * "1" write succeeded and its "0" write failed. fsize_limit_begin()
+ * lowers the soft RLIMIT_FSIZE to 1 byte (leaving the hard limit
+ * alone) and ignores SIGXFSZ; a 1-byte write at offset 0 then stays
+ * within the limit and succeeds, while the next 1-byte write (offset
+ * 1, pushing the file past 1 byte) fails with EFBIG. fsize_limit_end()
+ * restores both. While the limit is active, any write to a regular
+ * file beyond 1 byte fails -- including stdio writing to a redirected
+ * stdout -- so no CHECK() and no printf() may run inside that window;
+ * every test using it keeps return values in locals and asserts on
+ * them only after calling fsize_limit_end().
  */
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <syslog.h>
@@ -235,6 +252,44 @@ static long count_open_fds(void)
 	closedir(d);
 
 	return n;
+}
+
+/*
+ * Saves the current RLIMIT_FSIZE and SIGXFSZ handler, then lowers the
+ * soft RLIMIT_FSIZE to 1 byte (hard limit unchanged) and sets SIGXFSZ
+ * to SIG_IGN, so a write() that would grow a regular file past 1 byte
+ * fails with EFBIG instead of raising SIGXFSZ. See the file header
+ * comment for why this is needed and what may not run while active.
+ */
+static void fsize_limit_begin(struct rlimit *saved, void (**saved_handler)(int))
+{
+	struct rlimit lim;
+
+	if (getrlimit(RLIMIT_FSIZE, saved) == -1) {
+		fprintf(stderr, "fsize_limit_begin: getrlimit: %s\n",
+			strerror(errno));
+		return;
+	}
+
+	*saved_handler = signal(SIGXFSZ, SIG_IGN);
+
+	lim = *saved;
+	lim.rlim_cur = 1;
+	if (setrlimit(RLIMIT_FSIZE, &lim) == -1)
+		fprintf(stderr, "fsize_limit_begin: setrlimit: %s\n",
+			strerror(errno));
+}
+
+/* Restores the RLIMIT_FSIZE and SIGXFSZ handler saved by
+ * fsize_limit_begin().
+ */
+static void fsize_limit_end(const struct rlimit *saved, void (*saved_handler)(int))
+{
+	if (setrlimit(RLIMIT_FSIZE, saved) == -1)
+		fprintf(stderr, "fsize_limit_end: setrlimit: %s\n",
+			strerror(errno));
+
+	signal(SIGXFSZ, saved_handler);
 }
 
 static void fake_cleanup(void)
@@ -587,6 +642,89 @@ static void test_session_after_transmit_failure(void)
 }
 
 /*
+ * transmit()'s "1" write succeeds (offset 0, within the 1-byte
+ * RLIMIT_FSIZE) and its "0" write fails (offset 1, EFBIG) -- a real
+ * "high ok, low fails" on the same fd. board_exit() then drives the
+ * line low itself before closing the fd (G-01-5): value ends "10",
+ * board_exit() returns 0, and no fd is leaked.
+ */
+static void test_failed_low_write_driven_low_at_exit(void)
+{
+	char buf[MAX_LEN];
+	long before;
+	struct rlimit saved;
+	void (*saved_handler)(int);
+	int32_t transmit_ret;
+	int32_t exit_ret;
+
+	fake_reset();
+	fake_add_pin("49");
+
+	before = count_open_fds();
+	CHECK_EQ(board_init(NULL), 0);
+
+	captured_reset();
+	fsize_limit_begin(&saved, &saved_handler);
+	transmit_ret = transmit(1, 1, 1);
+	fsize_limit_end(&saved, saved_handler);
+	exit_ret = board_exit();
+
+	CHECK_EQ(transmit_ret, -1);
+	CHECK(captured_find("Cannot write"));
+	CHECK_EQ(exit_ret, 0);
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "10"), 0);
+	CHECK_EQ(count_open_fds(), before);
+}
+
+/*
+ * Same setup as above, but the 1-byte RLIMIT_FSIZE is still active
+ * when board_exit() attempts its own drive-low write, so that write
+ * fails too (still offset 1, EFBIG). board_exit() logs the failure,
+ * still closes the value fd (fd count restored) and returns -1; value
+ * stays "1" (only the original "1" write ever landed). A following
+ * session on a fresh fake tree is unaffected.
+ */
+static void test_failed_drive_low_still_closes(void)
+{
+	char buf[MAX_LEN];
+	long before;
+	struct rlimit saved;
+	void (*saved_handler)(int);
+	int32_t transmit_ret;
+	int32_t exit_ret;
+
+	fake_reset();
+	fake_add_pin("49");
+
+	before = count_open_fds();
+	CHECK_EQ(board_init(NULL), 0);
+
+	fsize_limit_begin(&saved, &saved_handler);
+	transmit_ret = transmit(1, 1, 1);
+	captured_reset();
+	exit_ret = board_exit();
+	fsize_limit_end(&saved, saved_handler);
+
+	CHECK_EQ(transmit_ret, -1);
+	CHECK_EQ(exit_ret, -1);
+	CHECK(captured_find("Cannot write"));
+	CHECK(captured_find(BBB_SYSFS_GPIO_DIR "/gpio49/value"));
+	check_messages_follow_convention();
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "1"), 0);
+	CHECK_EQ(count_open_fds(), before);
+
+	fake_reset();
+	fake_add_pin("49");
+	CHECK_EQ(board_init(NULL), 0);
+	CHECK_EQ(transmit(1, 1, 1), 0);
+	fake_read("/gpio49/value", buf, sizeof(buf));
+	CHECK_EQ(strcmp(buf, "10"), 0);
+	CHECK_EQ(board_exit(), 0);
+}
+
+/*
  * With gpio49 already present, board_init() skips the export write,
  * transmit() still works, and board_exit() leaves unexport and the
  * gpio49 directory untouched (D-17).
@@ -713,6 +851,8 @@ int main(void)
 	test_transmit_outside_session();
 	test_failed_init_leaks_no_fd();
 	test_session_after_transmit_failure();
+	test_failed_low_write_driven_low_at_exit();
+	test_failed_drive_low_still_closes();
 	test_already_exported_pin_left_alone();
 	test_own_export_undone_on_failure();
 	test_exit_without_session();

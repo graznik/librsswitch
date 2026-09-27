@@ -50,6 +50,17 @@ static char value_path[MAX_LEN];
 static int pin_exported;
 
 /*
+ * Set to 1 only between a successful write of "1" to value and the
+ * following successful write of "0" -- the window in which the line
+ * may actually be high. A failed "1" write leaves it 0, since the
+ * failed write did not change the level. board_exit() uses it to
+ * drive the line low before closing the value fd, so a transmit()
+ * that failed between its two writes cannot leave the transmitter
+ * keyed (G-01-5).
+ */
+static int line_high;
+
+/*
  * Undoes this board_init()'s own export, if it made one, logging
  * (but not failing) if the unexport write itself fails -- called
  * from a board_init() failure path that ran after a successful
@@ -149,6 +160,12 @@ int32_t board_init(const char *config)
 	if (parse_pin(config) == -1)
 		return -1;
 	pin_exported = 0;
+	/*
+	 * The "out" write below initialises the value low (kernel
+	 * gpiolib-sysfs.c direction_store()), so every session starts
+	 * with the line low even if a previous process left it high.
+	 */
+	line_high = 0;
 
 	ret = snprintf(path, sizeof(path), BBB_SYSFS_GPIO_DIR "/gpio%s", pin);
 	if (ret < 0 || (size_t)ret >= sizeof(path)) {
@@ -241,9 +258,28 @@ int32_t board_exit(void)
 	int fd;
 	ssize_t n;
 	int ret;
+	int drive_low_failed = 0;
 	char path[MAX_LEN] = {0};
 
 	if (value_fd != -1) {
+		/*
+		 * A transmit() that failed between its "1" and "0"
+		 * writes leaves the line high; drive it low here,
+		 * before the fd is closed, so the session never ends
+		 * with the transmitter keyed (G-01-5). Best effort: a
+		 * failure is logged and returned, but never skips the
+		 * close below.
+		 */
+		if (line_high) {
+			n = write(value_fd, "0", 1);
+			if (n != (ssize_t)strlen("0")) {
+				syslog(LOG_ERR, "[-] Cannot write %s: %s",
+					value_path, strerror(errno));
+				drive_low_failed = 1;
+			}
+			line_high = 0;
+		}
+
 		ret = close(value_fd);
 		value_fd = -1;
 		if (ret == -1) {
@@ -254,7 +290,7 @@ int32_t board_exit(void)
 	}
 
 	if (!pin_exported)
-		return 0;
+		return drive_low_failed ? -1 : 0;
 
 	pin_exported = 0;
 
@@ -282,7 +318,7 @@ int32_t board_exit(void)
 		return -1;
 	}
 
-	return 0;
+	return drive_low_failed ? -1 : 0;
 }
 
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
@@ -300,6 +336,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 			strerror(errno));
 		return -1;
 	}
+	line_high = 1;
 	usleep(pulse_len * nhigh);
 
 	n = write(value_fd, "0", 1);
@@ -308,6 +345,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 			strerror(errno));
 		return -1;
 	}
+	line_high = 0;
 	usleep(pulse_len * nlow);
 
 	return 0;
