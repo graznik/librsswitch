@@ -971,6 +971,36 @@ static void test_one_connection_at_a_time(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* Two commands on one connection, with no artificial gap between
+ * them (DMN-08).
+ */
+static void test_no_pause_between_commands(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	long long t0;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+
+		t0 = now_ms();
+		CHECK_EQ(client_send(fd, "0321", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK(now_ms() - t0 < 500);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 /* 20 connections that each send a command or nothing, then close,
  * must not leak a file descriptor per connection (DMN-01/T-02-06).
  */
@@ -1065,6 +1095,7 @@ int main(int argc, char *argv[])
 	test_eof_after_command();
 	test_client_reset();
 	test_one_connection_at_a_time();
+	test_no_pause_between_commands();
 	test_no_fd_leak();
 
 	return MT_REPORT();

@@ -220,8 +220,6 @@ static void serve_connection(int connfd, const char *ip)
 
 		if (check_input(recbuf, (int)n) == 0)
 			sock_ctrl(recbuf);
-
-		sleep(1);
 	}
 }
 
