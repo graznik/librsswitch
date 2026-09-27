@@ -60,16 +60,16 @@ INCLUDES += -I/usr/local/include/
 LIBS = -L/usr/local/lib
 
 rpi:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
 
 rpi3:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
 
 bbb:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
 
 x86_64:
-	$(CC) $(CFLAGS) $(INCLUDES) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
 
 clean:
 	-@rm -rf *.o *~ rsssend 2>/dev/null || true

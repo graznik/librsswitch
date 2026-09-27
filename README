@@ -76,6 +76,10 @@ picks the right compiler for the target.
 libgpiod itself (headers + library) needs to be available for the
 target architecture in your cross sysroot -- either cross-build it
 from source or install your distro's cross-dev variant if one exists.
+A libgpiod installed under its own prefix is picked up through the
+usual CPPFLAGS and LDFLAGS, which take precedence over the default
+/usr/include, /usr/local/include and /usr/local/lib paths:
+ $ make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib rpi
 
 
 Host build (x86_64 host)
