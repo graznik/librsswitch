@@ -150,8 +150,8 @@ int main(int argc, char *argv[])
 	socket_gpio_config(gpio_config);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
-	memset(&serv_addr, '0', sizeof(serv_addr));
-	memset(recbuf, '0', sizeof(recbuf));
+	memset(&serv_addr, 0, sizeof(serv_addr));
+	memset(recbuf, 0, sizeof(recbuf));
 
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr = bind_addr;
