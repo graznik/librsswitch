@@ -63,6 +63,37 @@ static const char *gpio_config;
 static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /*
+ * Tri-state code parts of the two supported devices, indexed by
+ * group, socket and data. Their sizes define the valid address ranges
+ * for each device (REV 008345: group 0-3, socket 0-2; Pollin 2605:
+ * group 0-31, socket 0-31; both: data 0-1).
+ */
+static const char * const rev_008345_groups[] = {"1FFF", "F1FF", "FF1F",
+						  "FFF1"};
+static const char * const rev_008345_sockets[] = {"1FF0", "F1F0", "FF10"};
+static const char * const rev_008345_data[] = {"0001", "0010"};
+
+static const char * const pollin_2605_groups[] = {
+	"FFFFF", "0FFFF", "F0FFF", "00FFF",
+	"FF0FF", "0F0FF", "F00FF", "000FF",
+	"FFF0F", "0FF0F", "F0F0F", "00F0F",
+	"FF00F", "0F00F", "F000F", "0000F",
+	"FFFF0", "0FFF0", "F0FF0", "00FF0",
+	"FF0F0", "0F0F0", "F00F0", "000F0",
+	"FFF00", "0FF00", "F0F00", "00F00",
+	"FF000", "0F000", "F0000", "00000"};
+static const char * const pollin_2605_sockets[] = {
+	"FFFFF", "0FFFF", "F0FFF", "00FFF",
+	"FF0FF", "0F0FF", "F00FF", "000FF",
+	"FFF0F", "0FF0F", "F0F0F", "00F0F",
+	"FF00F", "0F00F", "F000F", "0000F",
+	"FFFF0", "0FFF0", "F0FF0", "00FF0",
+	"FF0F0", "0F0F0", "F00F0", "000F0",
+	"FFF00", "0FF00", "F0F00", "00F00",
+	"FF000", "0F000", "F0000", "00000"};
+static const char * const pollin_2605_data[] = {"F0", "0F"}; /* Off, On */
+
+/*
  * Rejects codeword unless every byte before the first NUL is one of
  * '0', '1' or uppercase 'F'. Also rejects NULL and the empty string.
  * Called before the first transmit() so a corrupted or malformed
@@ -189,13 +220,10 @@ static int32_t send_sync(uint32_t pulse_len)
 static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 			       uint32_t idata)
 {
-	const char * const groups[] = {"1FFF", "F1FF", "FF1F", "FFF1"};
-	const char * const sockets[] = {"1FF0", "F1F0", "FF10"};
-	const char * const data[] = {"0001", "0010"};
 	const uint32_t pulse_len = 350;
-	size_t ngroups = ARRAY_SIZE(groups);
-	size_t nsockets = ARRAY_SIZE(sockets);
-	size_t ndata = ARRAY_SIZE(data);
+	size_t ngroups = ARRAY_SIZE(rev_008345_groups);
+	size_t nsockets = ARRAY_SIZE(rev_008345_sockets);
+	size_t ndata = ARRAY_SIZE(rev_008345_data);
 	int32_t ret;
 
 	if (igroup > (ngroups - 1)) {
@@ -213,8 +241,9 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 		return -1;
 	}
 
-	ret = socket_ctrl(groups[igroup], sockets[isocket],
-			  data[idata], pulse_len);
+	ret = socket_ctrl(rev_008345_groups[igroup],
+			  rev_008345_sockets[isocket],
+			  rev_008345_data[idata], pulse_len);
 
 	return ret;
 }
@@ -230,27 +259,10 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
 static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata)
 {
-	const char *const groups[] = {"FFFFF", "0FFFF", "F0FFF", "00FFF",
-				      "FF0FF", "0F0FF", "F00FF", "000FF",
-				      "FFF0F", "0FF0F", "F0F0F", "00F0F",
-				      "FF00F", "0F00F", "F000F", "0000F",
-				      "FFFF0", "0FFF0", "F0FF0", "00FF0",
-				      "FF0F0", "0F0F0", "F00F0", "000F0",
-				      "FFF00", "0FF00", "F0F00", "00F00",
-				      "FF000", "0F000", "F0000", "00000"};
-	const char *const sockets[] = {"FFFFF", "0FFFF", "F0FFF", "00FFF",
-				       "FF0FF", "0F0FF", "F00FF", "000FF",
-				       "FFF0F", "0FF0F", "F0F0F", "00F0F",
-				       "FF00F", "0F00F", "F000F", "0000F",
-				       "FFFF0", "0FFF0", "F0FF0", "00FF0",
-				       "FF0F0", "0F0F0", "F00F0", "000F0",
-				       "FFF00", "0FF00", "F0F00", "00F00",
-				       "FF000", "0F000", "F0000", "00000"};
-	const char * const data[] = {"F0", "0F"}; /* Off, On */
 	const uint32_t pulse_len = 350;
-	size_t ngroups = ARRAY_SIZE(groups);
-	size_t nsockets = ARRAY_SIZE(sockets);
-	size_t ndata = ARRAY_SIZE(data);
+	size_t ngroups = ARRAY_SIZE(pollin_2605_groups);
+	size_t nsockets = ARRAY_SIZE(pollin_2605_sockets);
+	size_t ndata = ARRAY_SIZE(pollin_2605_data);
 	int32_t ret;
 
 	if (igroup > (ngroups - 1)) {
@@ -268,8 +280,9 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 		return -1;
 	}
 
-	ret = socket_ctrl(groups[igroup], sockets[isocket],
-			  data[idata], pulse_len);
+	ret = socket_ctrl(pollin_2605_groups[igroup],
+			  pollin_2605_sockets[isocket],
+			  pollin_2605_data[idata], pulse_len);
 
 	return ret;
 }
