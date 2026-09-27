@@ -93,6 +93,17 @@ int main(int argc, char *argv[])
 
 	char recbuf[1025];
 
+	/*
+	 * On the x86_64 build the library prints every sent codeword
+	 * on stdout. When stdout is a pipe or a file, as it is under
+	 * systemd or when a test captures it, the stream is fully
+	 * buffered by default, so a codeword only appears once the
+	 * buffer fills or at exit, and a daemon stopped by a signal
+	 * loses it. Line buffering makes each codeword visible as
+	 * soon as it is sent.
+	 */
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
 	if (inet_pton(AF_INET, DEFAULT_BIND, &bind_addr) != 1) {
 		fprintf(stderr, "rsswitchd: internal error: bad default bind address\n");
 		return 1;
