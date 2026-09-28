@@ -652,6 +652,145 @@ static void test_ranges_follow_library(void)
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 }
 
+static void check_raw(const struct proto_cmd *cmd, const char *tristate,
+		       uint32_t pulse_len)
+{
+	CHECK_EQ(cmd->kind, PROTO_RAW);
+	CHECK_EQ(strcmp(cmd->tristate, tristate), 0);
+	CHECK_EQ(cmd->pulse_len, pulse_len);
+}
+
+/*
+ * The raw grammar (D-08): well-formed lines produce PROTO_RAW with
+ * the tristate copied exactly and pulse_len parsed; every malformed
+ * or out-of-range shape is rejected with the right class, syntax
+ * always winning over range for an over-length tristate that also
+ * has an invalid character. Fed whole and one byte at a time, with
+ * identical results either way.
+ */
+static void test_raw(void)
+{
+	static const struct {
+		const char *bytes;
+		size_t len;
+		const char *tristate;
+		uint32_t pulse_len;
+	} ok[] = {
+		{ "raw 0FFF0000F00F 350\n",
+		  sizeof("raw 0FFF0000F00F 350\n") - 1, "0FFF0000F00F", 350 },
+		{ "raw 0 50\n", sizeof("raw 0 50\n") - 1, "0", 50 },
+		{ "raw 1F 2000\n", sizeof("raw 1F 2000\n") - 1, "1F", 2000 },
+	};
+	static const struct {
+		const char *bytes;
+		size_t len;
+	} syntax_bad[] = {
+		{ "raw 0FFF0000F00F\n", sizeof("raw 0FFF0000F00F\n") - 1 },
+		{ "raw 350\n", sizeof("raw 350\n") - 1 },
+		{ "raw\n", sizeof("raw\n") - 1 },
+		{ "raw 0 350 1\n", sizeof("raw 0 350 1\n") - 1 },
+		{ "RAW 0 350\n", sizeof("RAW 0 350\n") - 1 },
+		{ "raw 0f 350\n", sizeof("raw 0f 350\n") - 1 },
+		{ "raw 02 350\n", sizeof("raw 02 350\n") - 1 },
+		{ "raw  350\n", sizeof("raw  350\n") - 1 },
+		{ "raw 0 0350\n", sizeof("raw 0 0350\n") - 1 },
+		{ "raw 0 -1\n", sizeof("raw 0 -1\n") - 1 },
+		{ "raw 0 350 \n", sizeof("raw 0 350 \n") - 1 },
+		/* 13 tristate bytes, one a lowercase 'f': syntax wins
+		 * over the length-13 range violation.
+		 */
+		{ "raw 0FFF0000F00f0 350\n",
+		  sizeof("raw 0FFF0000F00f0 350\n") - 1 },
+	};
+	struct proto_conn pc;
+	struct proto_cmd cmd[4];
+	size_t i, n;
+
+	for (i = 0; i < ARRAY_SIZE(ok); i++) {
+		proto_init(&pc);
+		n = feed(&pc, ok[i].bytes, ok[i].len, cmd, ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_raw(&cmd[0], ok[i].tristate, ok[i].pulse_len);
+
+		proto_init(&pc);
+		n = feed_bytes(&pc, ok[i].bytes, ok[i].len, cmd,
+			       ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_raw(&cmd[0], ok[i].tristate, ok[i].pulse_len);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(syntax_bad); i++) {
+		proto_init(&pc);
+		n = feed(&pc, syntax_bad[i].bytes, syntax_bad[i].len, cmd,
+			 ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_error(&cmd[0], PROTO_ERR_SYNTAX);
+
+		proto_init(&pc);
+		n = feed_bytes(&pc, syntax_bad[i].bytes, syntax_bad[i].len,
+			       cmd, ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_error(&cmd[0], PROTO_ERR_SYNTAX);
+	}
+
+	/* 13 valid tristate bytes (no invalid character): a range
+	 * violation, not syntax.
+	 */
+	proto_init(&pc);
+	{
+		static const char in[] = "raw 0FFF0000F00F0 350\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "tristate longer than 12"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "raw 0 49\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "pulse_len 49 not in 50-2000"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "raw 0 2001\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "pulse_len 2001 not in 50-2000"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "raw 0 99999999999\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "pulse_len too large"), 0);
+
+	/* A 200-byte raw line with no newline: the generic line-length
+	 * bound fires, same as any other overlong line.
+	 */
+	proto_init(&pc);
+	{
+		char big[200];
+
+		memset(big, '0', sizeof(big));
+		memcpy(big, "raw ", 4);
+		n = feed(&pc, big, sizeof(big), cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_TOOLONG);
+}
+
 static void test_line_limit(void)
 {
 	struct proto_conn pc;
@@ -834,6 +973,7 @@ int main(void)
 	test_overflow();
 	test_ranges();
 	test_ranges_follow_library();
+	test_raw();
 	test_line_limit();
 	test_zero_input();
 	test_independent_state();

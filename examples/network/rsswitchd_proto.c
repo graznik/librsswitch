@@ -37,16 +37,17 @@ static int is_ascii_digit(char c)
 
 /*
  * Splits line (len bytes, not NUL-terminated, may contain any byte)
- * into exactly 4 fields separated by single spaces, storing each
- * field's start pointer and length in field[]/flen[]. A leading or
- * trailing space, two spaces in a row (which yields a zero-length
- * field), or any field count other than exactly 4 all fail this
- * check -- the caller has no need to tell those shapes apart, they
- * are all "malformed command". Returns 1 on exactly 4 fields, 0
- * otherwise.
+ * into fields separated by single spaces, storing each field's start
+ * pointer and length in field[]/flen[] for up to max fields. Returns
+ * the total number of fields found in the line, which may exceed
+ * max -- a field at or beyond index max is counted but not stored, so
+ * the caller can still tell "too many fields" apart from an exact
+ * count without an unbounded array. A leading or trailing space, or
+ * two spaces in a row, all still produce a (counted) zero-length
+ * field.
  */
-static int split_fields(const char *line, size_t len,
-			 const char *field[4], size_t flen[4])
+static size_t split_fields(const char *line, size_t len,
+			    const char *field[], size_t flen[], size_t max)
 {
 	size_t start = 0;
 	size_t nfields = 0;
@@ -54,16 +55,16 @@ static int split_fields(const char *line, size_t len,
 
 	for (i = 0; i <= len; i++) {
 		if (i == len || line[i] == ' ') {
-			if (nfields >= 4)
-				return 0;
-			field[nfields] = line + start;
-			flen[nfields] = i - start;
+			if (nfields < max) {
+				field[nfields] = line + start;
+				flen[nfields] = i - start;
+			}
 			nfields++;
 			start = i + 1;
 		}
 	}
 
-	return nfields == 4;
+	return nfields;
 }
 
 /*
@@ -170,12 +171,91 @@ static void check_range(struct proto_cmd *cmd, int legacy, uint32_t dev,
 }
 
 /*
+ * Parses the two already-delimited fields of "raw <tristate>
+ * <pulse_len>" (D-08) into *cmd. Syntax is checked first, for the
+ * whole command: tristate is non-empty and holds only '0', '1' and
+ * uppercase 'F' -- not yet checked against its length limit, so an
+ * over-length tristate that also has an invalid character is still a
+ * syntax error, not a range error. pulse follows the same digit,
+ * no-leading-zero and 10-digit rules as a v2 field (field_ok()).
+ * Only once both pass syntax is either range-checked -- tristate's
+ * length against SOCKET_CODEWORD_MAX_LEN, then pulse's converted
+ * value against [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US] --
+ * and only then is tristate copied into *cmd. Never builds an error
+ * text from a byte of tristate or pulse (D-15).
+ */
+static void parse_raw(const char *tristate, size_t tlen, const char *pulse,
+		       size_t plen, struct proto_cmd *cmd)
+{
+	size_t i;
+	uint32_t pulse_len;
+
+	if (tlen == 0) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_SYNTAX;
+		snprintf(cmd->text, sizeof(cmd->text), "malformed command");
+		return;
+	}
+	for (i = 0; i < tlen; i++) {
+		if (tristate[i] != '0' && tristate[i] != '1' &&
+		    tristate[i] != 'F') {
+			cmd->kind = PROTO_ERROR;
+			cmd->err = PROTO_ERR_SYNTAX;
+			snprintf(cmd->text, sizeof(cmd->text),
+				 "malformed command");
+			return;
+		}
+	}
+
+	if (!field_ok(pulse, plen)) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_SYNTAX;
+		snprintf(cmd->text, sizeof(cmd->text), "malformed command");
+		return;
+	}
+
+	if (tlen > SOCKET_CODEWORD_MAX_LEN) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text),
+			 "tristate longer than %u", SOCKET_CODEWORD_MAX_LEN);
+		return;
+	}
+
+	if (field_to_u32(pulse, plen, &pulse_len) < 0) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "pulse_len too large");
+		return;
+	}
+
+	if (pulse_len < SOCKET_PULSE_LEN_MIN_US ||
+	    pulse_len > SOCKET_PULSE_LEN_MAX_US) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "pulse_len %" PRIu32
+			 " not in %u-%u", pulse_len, SOCKET_PULSE_LEN_MIN_US,
+			 SOCKET_PULSE_LEN_MAX_US);
+		return;
+	}
+
+	cmd->kind = PROTO_RAW;
+	memcpy(cmd->tristate, tristate, tlen);
+	cmd->tristate[tlen] = '\0';
+	cmd->pulse_len = pulse_len;
+}
+
+/*
  * Parses one already-delimited line (len > 0, no trailing \r or \n)
- * into *cmd. "Syntax before range, first failing field wins": every
- * field's syntax is checked first; only once all four pass are they
- * converted, in field order (dev, group, socket, data), and the
- * first one whose value does not fit wins the RANGE error. Once every
- * field converts, check_range() applies the per-device bounds check.
+ * into *cmd. Exactly three fields whose first is the lowercase
+ * keyword "raw" follow the raw grammar (parse_raw() above); every
+ * other three-field line is "malformed command", same as any field
+ * count other than 3 or 4. Otherwise: "Syntax before range, first
+ * failing field wins" for the v2 grammar -- every field's syntax is
+ * checked first; only once all four pass are they converted, in
+ * field order (dev, group, socket, data), and the first one whose
+ * value does not fit wins the RANGE error. Once every field converts,
+ * check_range() applies the per-device bounds check.
  */
 static void parse_line(const char *line, size_t len, struct proto_cmd *cmd)
 {
@@ -184,9 +264,18 @@ static void parse_line(const char *line, size_t len, struct proto_cmd *cmd)
 	const char *field[4];
 	size_t flen[4];
 	uint32_t val[4];
+	size_t nfields;
 	size_t i;
 
-	if (!split_fields(line, len, field, flen)) {
+	nfields = split_fields(line, len, field, flen, 4);
+
+	if (nfields == 3 && flen[0] == 3 && field[0][0] == 'r' &&
+	    field[0][1] == 'a' && field[0][2] == 'w') {
+		parse_raw(field[1], flen[1], field[2], flen[2], cmd);
+		return;
+	}
+
+	if (nfields != 4) {
 		cmd->kind = PROTO_ERROR;
 		cmd->err = PROTO_ERR_SYNTAX;
 		snprintf(cmd->text, sizeof(cmd->text), "malformed command");

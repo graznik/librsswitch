@@ -362,6 +362,15 @@ static int handle_command(int connfd, const char *ip,
 		}
 		log_err(ip, PROTO_ERR_SEND, "transmission failed");
 		return send_reply(connfd, ip, "ERR send transmission failed\n");
+	case PROTO_RAW:
+		if (socket_send_codeword(cmd->tristate, cmd->pulse_len) == 0) {
+			syslog(LOG_NOTICE,
+			       "%s: sent raw %s pulse_len %" PRIu32,
+			       ip, cmd->tristate, cmd->pulse_len);
+			return send_reply(connfd, ip, "OK\n");
+		}
+		log_err(ip, PROTO_ERR_SEND, "transmission failed");
+		return send_reply(connfd, ip, "ERR send transmission failed\n");
 	}
 
 	return 0;

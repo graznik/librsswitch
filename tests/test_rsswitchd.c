@@ -1809,6 +1809,94 @@ static void test_range_replies(void)
 	}
 }
 
+/* A raw tri-state command sends exactly the given codeword at the
+ * given pulse length and gets OK; an out-of-range one gets a precise
+ * ERR range and nothing is printed (PROTO-06).
+ */
+static void test_raw_command(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		expect_ok(&d, fd, "raw 0FFF0000F00F 350\n", 21,
+			  "0FFF0000F00F");
+		expect_ok(&d, fd, "raw F0F0FF0F0F0F 350\n", 21,
+			  "F0F0FF0F0F0F");
+
+		CHECK_EQ(client_send(fd, "raw 0 49\n", 9), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR range pulse_len 49 not in 50-2000"),
+			 0);
+		CHECK(client_quiet(fd, 300));
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* raw, v2 and legacy all work back to back on one connection, in
+ * order (roadmap success criterion 1).
+ */
+static void test_raw_back_to_back(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		expect_ok(&d, fd, "raw 0FFF0000F00F 350\n", 21,
+			  "0FFF0000F00F");
+		expect_ok(&d, fd, "1 17 23 1\n", 10, "0FFF0000F00F");
+		expect_ok(&d, fd, "0300", 4, "FFF11FF00001");
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A library failure after the daemon's own checks passed is reported
+ * as ERR send for a raw command too, just like a v2 or legacy one
+ * (D-12, D-14).
+ */
+static void test_raw_err_send(void)
+{
+	const char *saved_path = daemon_path;
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	daemon_path = "./test_rsswitchd_failbin";
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+	daemon_path = saved_path;
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "raw 0FFF0000F00F 350\n", 21), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR send transmission failed"), 0);
+		CHECK(daemon_stdout_line(&d, reply, sizeof(reply), 300) == 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 /* Neither a reply nor a syslog line ever contains raw client bytes
  * (D-15) -- checked here at the reply, escape sequences and garbage
  * alike collapse to the same fixed text.
@@ -1955,6 +2043,9 @@ int main(int argc, char *argv[])
 	test_legacy_keeps_connection();
 	test_err_send();
 	test_range_replies();
+	test_raw_command();
+	test_raw_back_to_back();
+	test_raw_err_send();
 	test_no_echo();
 	test_serialized_replies();
 	test_early_disconnect();

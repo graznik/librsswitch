@@ -52,6 +52,19 @@
  *     out-of-range group, socket or data gives "<field> %u not in
  *     0-%u", naming the field's highest valid value. Only once every
  *     field passes this check does the result become PROTO_SWITCH.
+ *   - A line of exactly three fields whose first field is exactly the
+ *     three bytes "raw" (lowercase) is the raw grammar (D-08): "raw
+ *     <tristate> <pulse_len>". Every other three-field line is a
+ *     syntax error -- the "raw" keyword is not case-insensitive and
+ *     has no shorter or longer form. Syntax is checked first, for the
+ *     whole command: the tristate is non-empty and holds only '0',
+ *     '1' and uppercase 'F'; pulse_len follows the same digit,
+ *     no-leading-zero and 10-digit rules as a v2 field. Only once
+ *     both pass syntax is either range-checked: a tristate longer
+ *     than SOCKET_CODEWORD_MAX_LEN, checked before its length is used
+ *     for anything else, or a pulse_len outside
+ *     [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US]. Passing
+ *     both produces PROTO_RAW.
  *   - An empty line (bare \n or \r\n at a command boundary) is
  *     PROTO_EMPTY: not a command, no reply.
  *   - Error text is always built from fixed words and already-parsed
@@ -91,13 +104,14 @@
 /*
  * The result of one command boundary. PROTO_EMPTY is an ignored
  * empty line (D-09): no reply, nothing sent. PROTO_SWITCH is a fully
- * parsed, well-formed legacy or v2 switch command. PROTO_ERROR is a
- * malformed, out-of-range or too-long line. Plan 02-03 adds
- * PROTO_RAW for the raw tri-state command.
+ * parsed, well-formed legacy or v2 switch command. PROTO_RAW is a
+ * well-formed raw tri-state command (D-08). PROTO_ERROR is a
+ * malformed, out-of-range or too-long line.
  */
 enum proto_kind {
 	PROTO_EMPTY,
 	PROTO_SWITCH,
+	PROTO_RAW,
 	PROTO_ERROR
 };
 
@@ -124,10 +138,16 @@ enum proto_err {
  * against socket_addr_limits()'s per-device bounds (D-12, D-13).
  * err/text are unused.
  *
+ * kind == PROTO_RAW: tristate is a NUL-terminated string of '0', '1'
+ * and uppercase 'F', 1 to SOCKET_CODEWORD_MAX_LEN bytes long, exactly
+ * as given by the client; pulse_len holds the parsed pulse length,
+ * already checked against [SOCKET_PULSE_LEN_MIN_US,
+ * SOCKET_PULSE_LEN_MAX_US] (D-08). Every other field is unused.
+ *
  * kind == PROTO_ERROR: err names the class and text holds a short,
  * human-readable explanation built only from fixed words and
  * already-parsed numbers (D-15) -- never from bytes in the input
- * line. legacy/dev/group/socket/data are unused.
+ * line. legacy/dev/group/socket/data/tristate/pulse_len are unused.
  *
  * kind == PROTO_EMPTY: no other field is meaningful.
  */
@@ -138,6 +158,8 @@ struct proto_cmd {
 	uint32_t group;
 	uint32_t socket;
 	uint32_t data;
+	char tristate[SOCKET_CODEWORD_MAX_LEN + 1];
+	uint32_t pulse_len;
 	enum proto_err err;
 	char text[PROTO_TEXT_LEN];
 };
