@@ -2,7 +2,7 @@ CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
 TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
-	test_logging test_bbb test_rsswitchd
+	test_logging test_bbb test_rsswitchd test_proto
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
@@ -56,13 +56,27 @@ test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c $(LIB_SRCS)
 
-# Builds ../examples/network/rsswitchd.c against the x86_64 board, so
-# test_rsswitchd.c can spawn the real daemon and drive it over TCP on
-# an ephemeral port. Not part of $(TESTS): test_rsswitchd (below) is
-# the minitest binary that spawns and drives this one; `test` builds
-# it explicitly as a dependency of both.
-test_rsswitchd_bin: ../examples/network/rsswitchd.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_bin ../examples/network/rsswitchd.c $(LIB_SRCS)
+# Builds ../examples/network/rsswitchd.c and rsswitchd_proto.c against
+# the x86_64 board, so test_rsswitchd.c can spawn the real daemon and
+# drive it over TCP on an ephemeral port. Not part of $(TESTS):
+# test_rsswitchd (below) is the minitest binary that spawns and drives
+# this one; `test` builds it explicitly as a dependency of both.
+test_rsswitchd_bin: ../examples/network/rsswitchd.c \
+		     ../examples/network/rsswitchd_proto.c \
+		     ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_bin \
+		../examples/network/rsswitchd.c \
+		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
+
+# PROTO-07: unit-tests the protocol parser with no socket or GPIO
+# dependency of its own. It links $(LIB_SRCS) anyway: from plan 02-03
+# on, the parser calls socket_addr_limits() for its per-device range
+# check, and this rule never opens a board (see test_proto.c's
+# test_err_names, which asserts x86_64_board_init_count() stays 0).
+test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
+	    ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_proto test_proto.c \
+		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
 
 test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd test_rsswitchd.c
