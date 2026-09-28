@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,6 +125,26 @@ int main(int argc, char *argv[])
 	 * the daemon's own name.
 	 */
 	openlog("rsswitchd", 0, LOG_USER);
+
+	{
+		struct sigaction sa;
+
+		/*
+		 * Now that every command gets a reply, a client that
+		 * closes its connection before reading that reply
+		 * makes the next write() to it raise SIGPIPE. The
+		 * default disposition of SIGPIPE terminates the whole
+		 * process, not just that connection. Ignoring it turns
+		 * that write() into a normal, checked EPIPE failure
+		 * instead -- send_reply() already logs and returns -1
+		 * on any write error, ending only that connection.
+		 */
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = SIG_IGN;
+		sigemptyset(&sa.sa_mask);
+		if (sigaction(SIGPIPE, &sa, NULL) < 0)
+			fatal("sigaction SIGPIPE");
+	}
 
 	if (inet_pton(AF_INET, DEFAULT_BIND, &bind_addr) != 1) {
 		fprintf(stderr, "rsswitchd: internal error: bad default bind address\n");

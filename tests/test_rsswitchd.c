@@ -1821,6 +1821,46 @@ static void test_serialized_replies(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* A client that writes many lines and closes before reading any
+ * reply must not kill the daemon with SIGPIPE (DMN-04).
+ */
+static void test_early_disconnect(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	int i;
+	char reply[64];
+	pid_t w;
+	int status = 0;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		for (i = 0; i < 64; i++)
+			CHECK_EQ(client_send(fd, "x\n", 2), 0);
+		close(fd);
+	}
+
+	usleep(300000);
+
+	w = waitpid(d.pid, &status, WNOHANG);
+	CHECK_EQ(w, 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 int main(int argc, char *argv[])
 {
 	if (argc > 1)
@@ -1858,6 +1898,7 @@ int main(int argc, char *argv[])
 	test_err_send();
 	test_no_echo();
 	test_serialized_replies();
+	test_early_disconnect();
 
 	return MT_REPORT();
 }
