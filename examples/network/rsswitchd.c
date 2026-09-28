@@ -3,9 +3,9 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,12 +14,12 @@
 #include <unistd.h>
 
 #include "../../librsswitch.h"
+#include "rsswitchd_proto.h"
 
-static int check_input(char *input, int len);
-static int sock_ctrl(char *recbuf);
 static void serve_connection(int connfd, const char *ip);
+static void handle_command(const char *ip, const struct proto_cmd *cmd);
+static void log_err(const char *ip, enum proto_err err, const char *text);
 
-#define CODE_LEN 4
 #define DEFAULT_PORT 5000
 #define DEFAULT_BIND "0.0.0.0"
 
@@ -267,17 +267,26 @@ int main(int argc, char *argv[])
  * Reads and handles every command sent on connfd, until read()
  * returns 0 (the client closed its end) or a real error. A signal
  * interrupting the read is retried; any other error is logged with
- * the client's address and ends this connection. The caller closes
- * connfd exactly once, after this function returns.
+ * the client's address and ends this connection. Every complete
+ * command is fed through the protocol parser as soon as it is
+ * available, so several commands in one read(), or one command split
+ * across several read()s, are both handled correctly (PROTO-01,
+ * PROTO-05). A command still incomplete when the connection ends is
+ * dropped without being sent. The caller closes connfd exactly once,
+ * after this function returns.
  */
 static void serve_connection(int connfd, const char *ip)
 {
-	char recbuf[1025];
+	struct proto_conn pc;
+	char recbuf[1024];
 
-	memset(recbuf, 0, sizeof(recbuf));
+	proto_init(&pc);
 
 	for (;;) {
-		ssize_t n = read(connfd, recbuf, sizeof(recbuf) - 1);
+		ssize_t n = read(connfd, recbuf, sizeof(recbuf));
+		const char *p = recbuf;
+		size_t left;
+		struct proto_cmd cmd;
 
 		if (n == 0)
 			return;
@@ -290,45 +299,45 @@ static void serve_connection(int connfd, const char *ip)
 			return;
 		}
 
-		recbuf[n] = 0;
-
-		if (check_input(recbuf, (int)n) == 0)
-			sock_ctrl(recbuf);
+		left = (size_t)n;
+		while (proto_next(&pc, &p, &left, &cmd))
+			handle_command(ip, &cmd);
 	}
 }
 
-static int check_input(char *input, int len)
+/*
+ * Turns one parsed command boundary into the corresponding library
+ * call and syslog line. PROTO_EMPTY produces neither (D-09).
+ */
+static void handle_command(const char *ip, const struct proto_cmd *cmd)
 {
-	/* Check if string contains only digits */
-	int i;
-
-	if (len < CODE_LEN) {
-		syslog(LOG_ERR, "Input too short.");
-		return -1;
-	}
-
-	for (i = 0; i < CODE_LEN; i++) {
-		if (isdigit(input[i]) == 0) {
-			syslog(LOG_ERR, "Invalid input.");
-			return -1;
+	switch (cmd->kind) {
+	case PROTO_EMPTY:
+		break;
+	case PROTO_ERROR:
+		log_err(ip, cmd->err, cmd->text);
+		break;
+	case PROTO_SWITCH:
+		if (socket_send(cmd->dev, cmd->group, cmd->socket,
+				 cmd->data) == 0) {
+			syslog(LOG_NOTICE,
+			       "%s: sent dev %" PRIu32 " group %" PRIu32
+			       " socket %" PRIu32 " data %" PRIu32,
+			       ip, cmd->dev, cmd->group, cmd->socket,
+			       cmd->data);
+		} else {
+			log_err(ip, PROTO_ERR_SEND, "transmission failed");
 		}
+		break;
 	}
-
-	return 0;
 }
 
-static int sock_ctrl(char *recbuf)
+/*
+ * The single place every ERR result is logged (D-16): one line with
+ * the client's address, the fixed class word and the already-built,
+ * client-byte-free text.
+ */
+static void log_err(const char *ip, enum proto_err err, const char *text)
 {
-	syslog(LOG_NOTICE, "RSS Control");
-#ifdef DEBUG
-	syslog(LOG_NOTICE, "dev: %d, group: %d, socket: %d, data: %d",
-	       recbuf[0] - 48, recbuf[1] - 48, recbuf[2] - 48, recbuf[3] - 48);
-#endif
-	/*librrswitch needs integer values */
-	socket_send(recbuf[0] - 48,
-		    recbuf[1] - 48,
-		    recbuf[2] - 48,
-		    recbuf[3] - 48);
-
-	return 0;
+	syslog(LOG_ERR, "[-] %s: ERR %s %s", ip, proto_err_name(err), text);
 }

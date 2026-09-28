@@ -1262,6 +1262,214 @@ static void test_no_fd_leak(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* v2 commands reach the library, including Pollin group/socket >= 10
+ * (PROTO-01).
+ */
+static void test_v2_codewords(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+
+		CHECK_EQ(client_send(fd, "1 10 10 1\n", 10), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "F0F0FF0F0F0F"), 0);
+
+		CHECK_EQ(client_send(fd, "1 31 31 1\n", 10), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "00000000000F"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* Legacy and v2 produce the same codeword for the same address
+ * (PROTO-02).
+ */
+static void test_legacy_equals_v2(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+		CHECK_EQ(client_send(fd, "0 3 0 0\n", 8), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* One write carrying a legacy command directly followed by a v2 line
+ * and a CRLF-terminated v2 line produces three codewords in order
+ * (PROTO-05).
+ */
+static void test_back_to_back(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, msg, sizeof(msg) - 1), 0);
+
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* The same bytes as test_back_to_back, sent one byte per write, 2ms
+ * apart, produce the same three codewords (PROTO-05 fragmentation).
+ */
+static void test_byte_by_byte(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
+	size_t i;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		for (i = 0; i < sizeof(msg) - 1; i++) {
+			CHECK_EQ(client_send(fd, &msg[i], 1), 0);
+			usleep(2000);
+		}
+
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A malformed v2 line followed by a legacy command still executes
+ * the legacy command; nothing is transmitted for the bad line
+ * (PROTO-03).
+ */
+static void test_bad_line_then_good(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	static const char msg[] = "1 017 23 1\n0300";
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, msg, sizeof(msg) - 1), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* An overlong line is discarded, not transmitted, and the connection
+ * still works afterwards (D-17).
+ */
+static void test_toolong_then_good(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	char msg[205];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	memset(msg, 'x', 200);
+	msg[200] = '\n';
+	memcpy(msg + 201, "0300", 4);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, msg, sizeof(msg)), 0);
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* "1 17 23 1" with no trailing newline, followed by close(), sends
+ * nothing -- a partial command at EOF is dropped (PROTO-04).
+ */
+static void test_partial_at_eof(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	static const char msg[] = "1 17 23 1";
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, msg, sizeof(msg) - 1), 0);
+		close(fd);
+		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 int main(int argc, char *argv[])
 {
 	if (argc > 1)
@@ -1286,6 +1494,13 @@ int main(int argc, char *argv[])
 	test_no_pause_between_commands();
 	test_restart_same_port();
 	test_no_fd_leak();
+	test_v2_codewords();
+	test_legacy_equals_v2();
+	test_back_to_back();
+	test_byte_by_byte();
+	test_bad_line_then_good();
+	test_toolong_then_good();
+	test_partial_at_eof();
 
 	return MT_REPORT();
 }
