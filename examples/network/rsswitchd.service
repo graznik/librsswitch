@@ -5,7 +5,6 @@ After=network.target
 [Service]
 ExecStart=/usr/local/bin/rsswitchd
 Type=simple
-Nice=-20
 # Runs as the unprivileged system user make install creates.
 User=rsswitchd
 # Raspberry Pi OS gives this group access to /dev/gpiochip*; on a
