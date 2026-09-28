@@ -75,6 +75,13 @@ x86_64:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
 
 
+# The daemon runs as the unprivileged system user rsswitchd, in the
+# gpio group for GPIO access. Both the group and the user are
+# created only when missing, so a second install changes nothing.
+# Staged installs (DESTDIR set) skip this together with the
+# systemctl steps below, same as before. A static account is used
+# instead of systemd's DynamicUser= because the account must persist
+# across restarts and stay a member of the gpio group.
 install:
 	@if [ ! -x rsswitchd ]; then \
 		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
@@ -83,6 +90,8 @@ install:
 	install -D -m 0755 rsswitchd $(DESTDIR)$(PREFIX)/bin/rsswitchd
 	install -D -m 0644 rsswitchd.service $(DESTDIR)$(SYSTEMD_UNIT_DIR)/rsswitchd.service
 	@if [ -z "$(DESTDIR)" ]; then \
+		getent group gpio > /dev/null || groupadd --system gpio || exit 1; \
+		getent passwd rsswitchd > /dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd || exit 1; \
 		systemctl enable rsswitchd; \
 		systemctl start rsswitchd; \
 	fi
