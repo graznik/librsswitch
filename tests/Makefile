@@ -28,7 +28,7 @@ endif
 
 .PHONY: test clean tsan
 
-test: $(TESTS) test_rsssend_bin test_rsswitchd_bin
+test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
 		./$$t > /dev/null || status=1; \
@@ -78,7 +78,23 @@ test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_proto test_proto.c \
 		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
 
-test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin
+# Built like test_rsswitchd_bin, but against ../librsswitch.c and
+# failing_board.c instead of $(LIB_SRCS)'s x86_64 board, so
+# test_rsswitchd's test_err_send can reach the daemon's ERR send
+# reply path (D-12/D-14): a well-formed command still passes the
+# daemon's own checks and reaches the library, and it is the
+# library's board_init() call that then fails.
+test_rsswitchd_failbin: ../examples/network/rsswitchd.c \
+			 ../examples/network/rsswitchd_proto.c \
+			 ../examples/network/rsswitchd_proto.h \
+			 failing_board.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_failbin \
+		../examples/network/rsswitchd.c \
+		../examples/network/rsswitchd_proto.c \
+		../librsswitch.c failing_board.c
+
+test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
+		test_rsswitchd_failbin
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd test_rsswitchd.c
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
@@ -142,5 +158,6 @@ test_concurrency_tsan: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) -fsanitize=thread -g -O1 $(INCLUDES) -o test_concurrency_tsan test_concurrency.c $(LIB_SRCS)
 
 clean:
-	-@rm -f $(TESTS) test_rsssend_bin test_rsswitchd_bin test_concurrency_tsan 2>/dev/null || true
+	-@rm -f $(TESTS) test_rsssend_bin test_rsswitchd_bin \
+		test_rsswitchd_failbin test_concurrency_tsan 2>/dev/null || true
 	-@rm -rf test_bbb_sysfs /tmp/librsswitch-test-bbb-sysfs 2>/dev/null || true

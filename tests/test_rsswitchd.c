@@ -661,6 +661,79 @@ static int client_send(int fd, const char *buf, size_t len)
 	return 0;
 }
 
+/*
+ * Reads one \n-terminated reply line (without its newline) from fd,
+ * one byte at a time. Returns 1 for a complete line (buf is then
+ * NUL-terminated), 0 at EOF before any newline, -1 on timeout with no
+ * complete line yet or if buf is too small.
+ */
+static int client_line(int fd, char *buf, size_t len, int timeout_ms)
+{
+	long long deadline = now_ms() + timeout_ms;
+	size_t used = 0;
+
+	if (len == 0)
+		return -1;
+
+	for (;;) {
+		struct pollfd pfd;
+		long long remaining = deadline - now_ms();
+		int nready;
+		ssize_t n;
+		char c;
+
+		if (remaining <= 0)
+			return -1;
+
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		nready = poll(&pfd, 1, (int)remaining);
+		if (nready < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (nready == 0)
+			return -1;
+
+		n = read(fd, &c, 1);
+		if (n == 0)
+			return 0;
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+
+		if (c == '\n') {
+			if (used >= len)
+				return -1;
+			buf[used] = '\0';
+			return 1;
+		}
+
+		if (used + 1 >= len)
+			return -1;
+		buf[used++] = c;
+	}
+}
+
+/* Waits up to timeout_ms for a byte (or EOF) on fd; returns 1 if none
+ * arrived, 0 otherwise.
+ */
+static int client_quiet(int fd, int timeout_ms)
+{
+	struct pollfd pfd;
+	int nready;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+	nready = poll(&pfd, 1, timeout_ms);
+	if (nready < 0)
+		return 1;
+	return nready == 0;
+}
+
 static void test_help(void)
 {
 	static const char *const args[] = {"--help", NULL};
@@ -1262,62 +1335,58 @@ static void test_no_fd_leak(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* Sends cmd_bytes, expects codeword on stdout and "OK" as the reply. */
+static void expect_ok(struct daemon *d, int fd, const char *cmd_bytes,
+		       size_t cmd_len, const char *codeword)
+{
+	char line[64], reply[64];
+
+	CHECK_EQ(client_send(fd, cmd_bytes, cmd_len), 0);
+	CHECK(daemon_stdout_line(d, line, sizeof(line), 2000));
+	CHECK_EQ(strcmp(line, codeword), 0);
+	CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+	CHECK_EQ(strcmp(reply, "OK"), 0);
+}
+
 /* v2 commands reach the library, including Pollin group/socket >= 10
- * (PROTO-01).
+ * (PROTO-01), and each gets an OK reply (PROTO-04).
  */
 static void test_v2_codewords(void)
 {
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
 
 	fd = client_connect("127.0.0.1", d.port);
 	CHECK(fd >= 0);
 	if (fd >= 0) {
-		CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
-		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
-		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
-
-		CHECK_EQ(client_send(fd, "1 10 10 1\n", 10), 0);
-		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
-		CHECK_EQ(strcmp(line, "F0F0FF0F0F0F"), 0);
-
-		CHECK_EQ(client_send(fd, "1 31 31 1\n", 10), 0);
-		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
-		CHECK_EQ(strcmp(line, "00000000000F"), 0);
-
+		expect_ok(&d, fd, "1 17 23 1\n", 10, "0FFF0000F00F");
+		expect_ok(&d, fd, "1 10 10 1\n", 10, "F0F0FF0F0F0F");
+		expect_ok(&d, fd, "1 31 31 1\n", 10, "00000000000F");
 		close(fd);
 	}
 
 	daemon_stop(&d, SIGTERM, &st);
 }
 
-/* Legacy and v2 produce the same codeword for the same address
- * (PROTO-02).
+/* Legacy and v2 produce the same codeword and the same OK reply for
+ * the same address (PROTO-02).
  */
 static void test_legacy_equals_v2(void)
 {
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
 
 	fd = client_connect("127.0.0.1", d.port);
 	CHECK(fd >= 0);
 	if (fd >= 0) {
-		CHECK_EQ(client_send(fd, "0300", 4), 0);
-		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
-		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
-
-		CHECK_EQ(client_send(fd, "0 3 0 0\n", 8), 0);
-		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
-		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
-
+		expect_ok(&d, fd, "0300", 4, "FFF11FF00001");
+		expect_ok(&d, fd, "0 3 0 0\n", 8, "FFF11FF00001");
 		close(fd);
 	}
 
@@ -1325,15 +1394,15 @@ static void test_legacy_equals_v2(void)
 }
 
 /* One write carrying a legacy command directly followed by a v2 line
- * and a CRLF-terminated v2 line produces three codewords in order
- * (PROTO-05).
+ * and a CRLF-terminated v2 line produces three codewords and three
+ * OK replies, in order (PROTO-05).
  */
 static void test_back_to_back(void)
 {
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
+	char line[64], reply[64];
 	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1345,10 +1414,18 @@ static void test_back_to_back(void)
 
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
 
 		close(fd);
 	}
@@ -1357,14 +1434,15 @@ static void test_back_to_back(void)
 }
 
 /* The same bytes as test_back_to_back, sent one byte per write, 2ms
- * apart, produce the same three codewords (PROTO-05 fragmentation).
+ * apart, produce the same three codewords and OK replies (PROTO-05
+ * fragmentation).
  */
 static void test_byte_by_byte(void)
 {
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
+	char line[64], reply[64];
 	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
 	size_t i;
 
@@ -1380,10 +1458,18 @@ static void test_byte_by_byte(void)
 
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
 
 		close(fd);
 	}
@@ -1391,8 +1477,8 @@ static void test_byte_by_byte(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
-/* A malformed v2 line followed by a legacy command still executes
- * the legacy command; nothing is transmitted for the bad line
+/* A malformed v2 line gets ERR syntax and transmits nothing; a
+ * legacy command right after it still executes and gets OK
  * (PROTO-03).
  */
 static void test_bad_line_then_good(void)
@@ -1400,7 +1486,7 @@ static void test_bad_line_then_good(void)
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
+	char line[64], reply[64];
 	static const char msg[] = "1 017 23 1\n0300";
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1409,23 +1495,30 @@ static void test_bad_line_then_good(void)
 	CHECK(fd >= 0);
 	if (fd >= 0) {
 		CHECK_EQ(client_send(fd, msg, sizeof(msg) - 1), 0);
+
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR syntax malformed command"), 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		close(fd);
 	}
 
 	daemon_stop(&d, SIGTERM, &st);
 }
 
-/* An overlong line is discarded, not transmitted, and the connection
- * still works afterwards (D-17).
+/* An overlong line is discarded, not transmitted, gets ERR toolong,
+ * and the connection still works afterwards (D-17).
  */
 static void test_toolong_then_good(void)
 {
 	struct daemon d;
 	int st;
 	int fd;
-	char line[64];
+	char line[64], reply[64];
 	char msg[205];
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1438,8 +1531,16 @@ static void test_toolong_then_good(void)
 	CHECK(fd >= 0);
 	if (fd >= 0) {
 		CHECK_EQ(client_send(fd, msg, sizeof(msg)), 0);
+
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR toolong line longer than 128 bytes"),
+			 0);
+
 		CHECK(daemon_stdout_line(&d, line, sizeof(line), 2000));
 		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
 		close(fd);
 	}
 
@@ -1447,7 +1548,8 @@ static void test_toolong_then_good(void)
 }
 
 /* "1 17 23 1" with no trailing newline, followed by close(), sends
- * nothing -- a partial command at EOF is dropped (PROTO-04).
+ * nothing and gets no reply -- a partial command at EOF is dropped
+ * (PROTO-04).
  */
 static void test_partial_at_eof(void)
 {
@@ -1466,6 +1568,255 @@ static void test_partial_at_eof(void)
 		close(fd);
 		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
 	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* The worked examples from 02-CONTEXT.md's <specifics>, this time
+ * checking replies rather than just codewords.
+ */
+static void test_worked_replies(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		/* 0300 -> one OK. */
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
+		/* 0300\r\n -> exactly one OK (the CRLF is swallowed,
+		 * not a second, empty command).
+		 */
+		CHECK_EQ(client_send(fd, "0300\r\n", 6), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+		CHECK(client_quiet(fd, 300));
+
+		/* 03000301 -> OK OK. */
+		CHECK_EQ(client_send(fd, "03000301", 8), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
+		/* 1 017 23 1\n -> ERR syntax malformed command. */
+		CHECK_EQ(client_send(fd, "1 017 23 1\n", 11), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR syntax malformed command"), 0);
+
+		/* An overlong line -> ERR toolong, then 0300 -> OK. */
+		{
+			char big[205];
+
+			memset(big, 'x', 200);
+			big[200] = '\n';
+			memcpy(big + 201, "0300", 4);
+
+			CHECK_EQ(client_send(fd, big, sizeof(big)), 0);
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply,
+					"ERR toolong line longer than 128 bytes"),
+				 0);
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply, "OK"), 0);
+		}
+
+		/* An empty line -> no reply within 300ms. */
+		CHECK_EQ(client_send(fd, "\n", 1), 0);
+		CHECK(client_quiet(fd, 300));
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A pipeline of 7 commands (including a legacy command whose \n is
+ * swallowed and one empty line) sent in one write gets exactly 7
+ * replies, in order, then nothing more (PROTO-04, D-10, D-11, D-14,
+ * D-18).
+ */
+static void test_one_reply_per_command(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+	static const char msg[] =
+		"0300\n1 17 23 1\nx\n\r\n1 4294967296 0 1\n0 3 0 0\r\n"
+		"1 017 23 1\n1 10 10 1\n";
+	static const char *const expect[] = {
+		"OK",
+		"OK",
+		"ERR syntax malformed command",
+		"ERR range group too large",
+		"OK",
+		"ERR syntax malformed command",
+		"OK",
+	};
+	size_t i;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, msg, sizeof(msg) - 1), 0);
+
+		for (i = 0; i < ARRAY_SIZE(expect); i++) {
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply, expect[i]), 0);
+		}
+
+		CHECK(client_quiet(fd, 300));
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* Legacy commands get replies just like v2 and keep the connection
+ * open (D-03).
+ */
+static void test_legacy_keeps_connection(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
+		CHECK_EQ(client_send(fd, "0301", 4), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A library failure after the daemon's own checks passed is reported
+ * as ERR send, with no codeword printed, and the connection stays
+ * open (D-12, D-14).
+ */
+static void test_err_send(void)
+{
+	const char *saved_path = daemon_path;
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	daemon_path = "./test_rsswitchd_failbin";
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+	daemon_path = saved_path;
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR send transmission failed"), 0);
+		CHECK(daemon_stdout_line(&d, reply, sizeof(reply), 300) == 0);
+
+		/* Same reply again -- the connection stays open. */
+		CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR send transmission failed"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* Neither a reply nor a syslog line ever contains raw client bytes
+ * (D-15) -- checked here at the reply, escape sequences and garbage
+ * alike collapse to the same fixed text.
+ */
+static void test_no_echo(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "\x1b[31m\n", 6), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR syntax malformed command"), 0);
+
+		CHECK_EQ(client_send(fd, "zzzz\n", 5), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR syntax malformed command"), 0);
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* The daemon serves one connection at a time: B's command is not
+ * answered while A's connection is open and silent, and gets its
+ * reply once A closes (DMN-06).
+ */
+static void test_serialized_replies(void)
+{
+	struct daemon d;
+	int st;
+	int fda, fdb;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fda = client_connect("127.0.0.1", d.port);
+	CHECK(fda >= 0);
+	if (fda >= 0) {
+		CHECK_EQ(client_send(fda, "1 17 23 1\n", 10), 0);
+		CHECK_EQ(client_line(fda, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+	}
+
+	fdb = client_connect("127.0.0.1", d.port);
+	CHECK(fdb >= 0);
+	if (fdb >= 0)
+		CHECK_EQ(client_send(fdb, "0300", 4), 0);
+
+	CHECK(client_quiet(fdb, 300));
+
+	if (fda >= 0)
+		close(fda);
+
+	CHECK_EQ(client_line(fdb, reply, sizeof(reply), 1000), 1);
+	CHECK_EQ(strcmp(reply, "OK"), 0);
+
+	if (fdb >= 0)
+		close(fdb);
 
 	daemon_stop(&d, SIGTERM, &st);
 }
@@ -1501,6 +1852,12 @@ int main(int argc, char *argv[])
 	test_bad_line_then_good();
 	test_toolong_then_good();
 	test_partial_at_eof();
+	test_worked_replies();
+	test_one_reply_per_command();
+	test_legacy_keeps_connection();
+	test_err_send();
+	test_no_echo();
+	test_serialized_replies();
 
 	return MT_REPORT();
 }

@@ -17,8 +17,10 @@
 #include "rsswitchd_proto.h"
 
 static void serve_connection(int connfd, const char *ip);
-static void handle_command(const char *ip, const struct proto_cmd *cmd);
+static int handle_command(int connfd, const char *ip,
+			   const struct proto_cmd *cmd);
 static void log_err(const char *ip, enum proto_err err, const char *text);
+static int send_reply(int connfd, const char *ip, const char *reply);
 
 #define DEFAULT_PORT 5000
 #define DEFAULT_BIND "0.0.0.0"
@@ -300,23 +302,33 @@ static void serve_connection(int connfd, const char *ip)
 		}
 
 		left = (size_t)n;
-		while (proto_next(&pc, &p, &left, &cmd))
-			handle_command(ip, &cmd);
+		while (proto_next(&pc, &p, &left, &cmd)) {
+			if (handle_command(connfd, ip, &cmd) < 0)
+				return;
+		}
 	}
 }
 
 /*
  * Turns one parsed command boundary into the corresponding library
- * call and syslog line. PROTO_EMPTY produces neither (D-09).
+ * call, syslog line and reply. PROTO_EMPTY produces neither (D-09).
+ * Returns 0 to keep serving this connection, -1 if the reply could
+ * not be written (the caller then stops serving it).
  */
-static void handle_command(const char *ip, const struct proto_cmd *cmd)
+static int handle_command(int connfd, const char *ip,
+			   const struct proto_cmd *cmd)
 {
 	switch (cmd->kind) {
 	case PROTO_EMPTY:
-		break;
-	case PROTO_ERROR:
+		return 0;
+	case PROTO_ERROR: {
+		char reply[96];
+
 		log_err(ip, cmd->err, cmd->text);
-		break;
+		snprintf(reply, sizeof(reply), "ERR %s %s\n",
+			 proto_err_name(cmd->err), cmd->text);
+		return send_reply(connfd, ip, reply);
+	}
 	case PROTO_SWITCH:
 		if (socket_send(cmd->dev, cmd->group, cmd->socket,
 				 cmd->data) == 0) {
@@ -325,11 +337,13 @@ static void handle_command(const char *ip, const struct proto_cmd *cmd)
 			       " socket %" PRIu32 " data %" PRIu32,
 			       ip, cmd->dev, cmd->group, cmd->socket,
 			       cmd->data);
-		} else {
-			log_err(ip, PROTO_ERR_SEND, "transmission failed");
+			return send_reply(connfd, ip, "OK\n");
 		}
-		break;
+		log_err(ip, PROTO_ERR_SEND, "transmission failed");
+		return send_reply(connfd, ip, "ERR send transmission failed\n");
 	}
+
+	return 0;
 }
 
 /*
@@ -340,4 +354,30 @@ static void handle_command(const char *ip, const struct proto_cmd *cmd)
 static void log_err(const char *ip, enum proto_err err, const char *text)
 {
 	syslog(LOG_ERR, "[-] %s: ERR %s %s", ip, proto_err_name(err), text);
+}
+
+/*
+ * Writes reply in full to connfd, retrying on EINTR and continuing
+ * after a short write. Returns 0 on success, -1 if the write failed
+ * for any other reason (logged with the client's address).
+ */
+static int send_reply(int connfd, const char *ip, const char *reply)
+{
+	size_t len = strlen(reply);
+	size_t sent = 0;
+
+	while (sent < len) {
+		ssize_t n = write(connfd, reply + sent, len - sent);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			syslog(LOG_ERR, "[-] write to %s: %s", ip,
+			       strerror(errno));
+			return -1;
+		}
+		sent += (size_t)n;
+	}
+
+	return 0;
 }
