@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <signal.h>
@@ -42,6 +43,32 @@ static int send_reply(int connfd, const char *ip, const char *reply);
  * call afterwards.
  */
 static unsigned int idle_timeout = DEFAULT_TIMEOUT;
+
+/*
+ * Set by on_signal(), read after every pselect() call: a stop request
+ * is pending. SIGTERM and SIGINT are blocked everywhere except inside
+ * pselect() (see the sigprocmask() call in main()), so the handler
+ * itself can only ever run while a wait_readable() call is blocked,
+ * and stop_requested is only ever observed right after that wait
+ * returns.
+ */
+static volatile sig_atomic_t stop_requested;
+
+/*
+ * The signal mask every pselect() call waits with: the process's
+ * normal mask (blocking SIGTERM/SIGINT) minus those two signals.
+ * Derived once in main() from the mask sigprocmask() saved there.
+ */
+static sigset_t wait_mask;
+
+/* Only records that a stop was requested; the actual shutdown happens
+ * once the caller of pselect() notices stop_requested and unwinds.
+ */
+static void on_signal(int signo)
+{
+	(void)signo;
+	stop_requested = 1;
+}
 
 static const struct option long_opts[] = {
 	{"port", required_argument, NULL, 'p'},
@@ -168,6 +195,43 @@ int main(int argc, char *argv[])
 			fatal("sigaction SIGPIPE");
 	}
 
+	{
+		struct sigaction sa;
+		sigset_t block_set, old_mask;
+
+		/*
+		 * D-24: SIGTERM and SIGINT are blocked everywhere
+		 * except inside pselect() (wait_readable() and the
+		 * accept-error pause below both wait with wait_mask,
+		 * the only place either signal is ever unblocked). A
+		 * send, from board_init() to board_exit(), and its
+		 * reply therefore never sees a signal -- the pulses
+		 * are timed with usleep()/nanosleep() on real boards,
+		 * and a signal there could cut a sleep short and
+		 * distort the codeword. The handler only records the
+		 * request; stop_requested is acted on once the current
+		 * wait returns.
+		 */
+		memset(&sa, 0, sizeof(sa));
+		sa.sa_handler = on_signal;
+		sigemptyset(&sa.sa_mask);
+		sa.sa_flags = 0;
+		if (sigaction(SIGTERM, &sa, NULL) < 0)
+			fatal("sigaction SIGTERM");
+		if (sigaction(SIGINT, &sa, NULL) < 0)
+			fatal("sigaction SIGINT");
+
+		sigemptyset(&block_set);
+		sigaddset(&block_set, SIGTERM);
+		sigaddset(&block_set, SIGINT);
+		if (sigprocmask(SIG_BLOCK, &block_set, &old_mask) < 0)
+			fatal("sigprocmask SIG_BLOCK");
+
+		wait_mask = old_mask;
+		sigdelset(&wait_mask, SIGTERM);
+		sigdelset(&wait_mask, SIGINT);
+	}
+
 	if (inet_pton(AF_INET, DEFAULT_BIND, &bind_addr) != 1) {
 		fprintf(stderr, "rsswitchd: internal error: bad default bind address\n");
 		return 1;
@@ -287,11 +351,38 @@ int main(int argc, char *argv[])
 			(unsigned int)ntohs(bound_addr.sin_port));
 	}
 
-	while (1) {
+	{
+		/*
+		 * A non-blocking listening socket lets the accept loop
+		 * wait for a connection with wait_readable() -- the
+		 * only place SIGTERM/SIGINT are unblocked -- instead of
+		 * blocking inside accept() itself, where a signal could
+		 * only be noticed after the fact via EINTR without ever
+		 * atomically racing the signal against the wait.
+		 */
+		int flags = fcntl(listenfd, F_GETFL, 0);
+
+		if (flags < 0 ||
+		    fcntl(listenfd, F_SETFL, flags | O_NONBLOCK) < 0)
+			fatal("fcntl O_NONBLOCK");
+	}
+
+	while (!stop_requested) {
+		int ready;
+
+		ready = wait_readable(listenfd, NULL);
+		if (ready < 0) {
+			if (stop_requested)
+				break;
+			syslog(LOG_ERR, "[-] pselect: %s", strerror(errno));
+			continue;
+		}
+
 		connfd = accept(listenfd, (struct sockaddr *)&cli_addr,
 				&cli_len);
 		if (connfd < 0) {
-			if (errno == EINTR)
+			if (errno == EAGAIN || errno == EWOULDBLOCK ||
+			    errno == EINTR)
 				continue;
 
 			syslog(LOG_ERR, "[-] accept: %s", strerror(errno));
@@ -301,60 +392,105 @@ int main(int argc, char *argv[])
 			 * so a tight accept()/fail loop cannot spin the
 			 * CPU or flood syslog while it lasts. The
 			 * daemon keeps running either way -- accept()
-			 * failing must never end it.
+			 * failing must never end it. The pause is a
+			 * pselect() with no descriptors, so SIGTERM/
+			 * SIGINT still interrupt it at once (D-24)
+			 * instead of a plain sleep running to completion
+			 * regardless.
 			 */
 			if (errno == EMFILE || errno == ENFILE ||
 			    errno == ENOBUFS || errno == ENOMEM) {
 				struct timespec pause = { 0, 100000000L };
 
-				nanosleep(&pause, NULL);
+				pselect(0, NULL, NULL, NULL, &pause,
+					&wait_mask);
 			}
 			continue;
 		}
 
-		/* Log clients IP address. */
-		if (inet_ntop(AF_INET, &cli_addr.sin_addr, cli_ipaddr,
-			      sizeof(cli_ipaddr)) == NULL)
-			snprintf(cli_ipaddr, sizeof(cli_ipaddr), "unknown");
-		syslog(LOG_NOTICE, "Client from %s connected.", cli_ipaddr);
-
+		/*
+		 * Reply writes rely on blocking I/O bounded by
+		 * SO_SNDTIMEO below, not on O_NONBLOCK. Fold this and
+		 * the SO_SNDTIMEO check into one if/else so this
+		 * connection still reaches the single close(connfd)
+		 * below on either failure, instead of a second close
+		 * site (DMN-01 keeps exactly one).
+		 */
 		{
-			struct timeval tv;
+			int cflags = fcntl(connfd, F_GETFL, 0);
 
-			/*
-			 * Bounds every reply write by --timeout, the same
-			 * as the idle-command deadline below: a client
-			 * that never reads its replies cannot block this
-			 * connfd's write() forever (DMN-05). A failure
-			 * here is unusual enough that skipping the
-			 * connection, rather than treating it as fatal,
-			 * keeps the daemon serving everyone else.
-			 */
-			tv.tv_sec = (time_t)idle_timeout;
-			tv.tv_usec = 0;
-			if (setsockopt(connfd, SOL_SOCKET, SO_SNDTIMEO,
-				       &tv, sizeof(tv)) < 0)
+			if (cflags < 0 ||
+			    fcntl(connfd, F_SETFL,
+				  cflags & ~O_NONBLOCK) < 0) {
 				syslog(LOG_ERR,
-				       "[-] setsockopt SO_SNDTIMEO: %s",
+				       "[-] fcntl clear O_NONBLOCK: %s",
 				       strerror(errno));
-			else
-				serve_connection(connfd, cli_ipaddr);
+			} else {
+				/* Log clients IP address. */
+				if (inet_ntop(AF_INET, &cli_addr.sin_addr,
+					      cli_ipaddr,
+					      sizeof(cli_ipaddr)) == NULL)
+					snprintf(cli_ipaddr,
+						 sizeof(cli_ipaddr),
+						 "unknown");
+				syslog(LOG_NOTICE,
+				       "Client from %s connected.",
+				       cli_ipaddr);
+
+				{
+					struct timeval tv;
+
+					/*
+					 * Bounds every reply write by
+					 * --timeout, the same as the
+					 * idle-command deadline below:
+					 * a client that never reads its
+					 * replies cannot block this
+					 * connfd's write() forever
+					 * (DMN-05). A failure here is
+					 * unusual enough that skipping
+					 * the connection, rather than
+					 * treating it as fatal, keeps
+					 * the daemon serving everyone
+					 * else.
+					 */
+					tv.tv_sec = (time_t)idle_timeout;
+					tv.tv_usec = 0;
+					if (setsockopt(connfd, SOL_SOCKET,
+						       SO_SNDTIMEO, &tv,
+						       sizeof(tv)) < 0)
+						syslog(LOG_ERR,
+						       "[-] setsockopt SO_SNDTIMEO: %s",
+						       strerror(errno));
+					else
+						serve_connection(connfd,
+								  cli_ipaddr);
+				}
+			}
 		}
 
 		close(connfd);
 	}
+
+	close(listenfd);
+	syslog(LOG_NOTICE, "Shutting down.");
+	closelog();
+	return 0;
 }
 
 /*
  * Waits for fd to become readable, bounded by deadline (a
  * CLOCK_MONOTONIC timestamp), or indefinitely if deadline is NULL.
  * Recomputes the remaining time and retries on EINTR, so a signal
- * this daemon does not yet catch cannot shorten the wait. The
- * signal-mask argument to pselect() is NULL here -- plan 02-04 passes
- * a real one, to atomically unblock a shutdown signal while waiting.
+ * other than SIGTERM/SIGINT cannot shorten the wait. Waits with
+ * wait_mask, so SIGTERM/SIGINT -- blocked everywhere else -- are the
+ * only signals that can interrupt this call (D-24).
  *
  * Returns 1 once fd is readable, 0 once deadline has passed with
- * nothing to read, or -1 with errno set on a real pselect() error.
+ * nothing to read, or -1 with errno set on a real pselect() error --
+ * or on EINTR with stop_requested set, meaning a shutdown signal
+ * arrived rather than a real error; the caller checks stop_requested
+ * to tell the two apart.
  */
 static int wait_readable(int fd, const struct timespec *deadline)
 {
@@ -383,10 +519,13 @@ static int wait_readable(int fd, const struct timespec *deadline)
 		FD_SET(fd, &rfds);
 
 		ret = pselect(fd + 1, &rfds, NULL, NULL,
-			      deadline != NULL ? &timeout : NULL, NULL);
+			      deadline != NULL ? &timeout : NULL, &wait_mask);
 		if (ret < 0) {
-			if (errno == EINTR)
+			if (errno == EINTR) {
+				if (stop_requested)
+					return -1;
 				continue;
+			}
 			return -1;
 		}
 
@@ -414,6 +553,13 @@ static int wait_readable(int fd, const struct timespec *deadline)
  * legacy client that never closes its side hits this in normal
  * operation (D-25). The caller closes connfd exactly once, after this
  * function returns.
+ *
+ * stop_requested is checked after every wait and after every handled
+ * command (D-24): a command already being read and handled always
+ * finishes and is answered before this function returns, since
+ * SIGTERM/SIGINT stay blocked for the whole of that work; only a
+ * command not yet read, or one still buffered when the check fires,
+ * is left unsent and unanswered.
  */
 static void serve_connection(int connfd, const char *ip)
 {
@@ -426,7 +572,7 @@ static void serve_connection(int connfd, const char *ip)
 	clock_gettime(CLOCK_MONOTONIC, &deadline);
 	deadline.tv_sec += idle_timeout;
 
-	for (;;) {
+	while (!stop_requested) {
 		ssize_t n;
 		const char *p = recbuf;
 		size_t left;
@@ -435,8 +581,9 @@ static void serve_connection(int connfd, const char *ip)
 
 		ready = wait_readable(connfd, &deadline);
 		if (ready < 0) {
-			syslog(LOG_ERR, "[-] pselect for %s: %s", ip,
-			       strerror(errno));
+			if (!stop_requested)
+				syslog(LOG_ERR, "[-] pselect for %s: %s",
+				       ip, strerror(errno));
 			return;
 		}
 		if (ready == 0)
@@ -461,6 +608,9 @@ static void serve_connection(int connfd, const char *ip)
 			deadline.tv_sec += idle_timeout;
 
 			if (handle_command(connfd, ip, &cmd) < 0)
+				return;
+
+			if (stop_requested)
 				return;
 		}
 	}

@@ -529,6 +529,20 @@ static void daemon_stop(struct daemon *d, int sig, int *status)
 	live_remove(d->pid);
 }
 
+/* Stops d with SIGTERM and CHECKs it exited cleanly with status 0
+ * (D-24): every test that stops a daemon now expects a controlled,
+ * signal-driven exit, never termination by the signal's default
+ * disposition.
+ */
+static void daemon_stop_clean(struct daemon *d)
+{
+	int st = 0;
+
+	daemon_stop(d, SIGTERM, &st);
+	CHECK(WIFEXITED(st));
+	CHECK_EQ(WEXITSTATUS(st), 0);
+}
+
 /* Counts the entries of /proc/<pid>/fd, i.e. the number of open file
  * descriptors of the given process. Returns -1 if /proc/<pid>/fd
  * cannot be read (the process already exited).
@@ -857,7 +871,6 @@ static void test_invalid_options(void)
 static void test_option_forms(void)
 {
 	struct daemon d;
-	int st;
 
 	{
 		static const char *const args[] = {
@@ -867,7 +880,7 @@ static void test_option_forms(void)
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 		CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
 		CHECK(d.port > 0);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 
 	{
@@ -879,7 +892,7 @@ static void test_option_forms(void)
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 		CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
 		CHECK(d.port != 5000);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 
 	{
@@ -890,7 +903,7 @@ static void test_option_forms(void)
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 		CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
 		CHECK(strstr(d.listen_line, "127.0.0.1:") != NULL);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 
 	{
@@ -901,7 +914,7 @@ static void test_option_forms(void)
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 		CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
 		CHECK(strstr(d.listen_line, "127.0.0.1:") != NULL);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 
 	{
@@ -924,14 +937,13 @@ static void test_option_forms(void)
 
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 		CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 }
 
 static void test_bind_only_there(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -963,25 +975,23 @@ static void test_bind_only_there(void)
 		}
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 static void test_default_bind_address(void)
 {
 	struct daemon d;
-	int st;
 	static const char *const args[] = {"--port", "0", NULL};
 
 	CHECK_EQ(daemon_spawn(&d, args, 0), 0);
 	CHECK_EQ(daemon_wait_ready(&d, 5000), 0);
 	CHECK(strstr(d.listen_line, "listening on 0.0.0.0:") != NULL);
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 static void test_legacy_codeword(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 
@@ -996,7 +1006,7 @@ static void test_legacy_codeword(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A connection carries two commands with a gap between them; both
@@ -1005,7 +1015,6 @@ static void test_legacy_codeword(void)
 static void test_two_reads_one_connection(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 
@@ -1027,7 +1036,7 @@ static void test_two_reads_one_connection(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A connection that never sends anything must not stop the next
@@ -1036,7 +1045,6 @@ static void test_two_reads_one_connection(void)
 static void test_empty_connection(void)
 {
 	struct daemon d;
-	int st;
 	int fd1, fd2;
 	char line[64];
 
@@ -1056,7 +1064,7 @@ static void test_empty_connection(void)
 		close(fd2);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A complete legacy command followed at once by close() still gets
@@ -1065,7 +1073,6 @@ static void test_empty_connection(void)
 static void test_eof_after_command(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 
@@ -1088,7 +1095,7 @@ static void test_eof_after_command(void)
 		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A client reset (RST) while the daemon waits in read() must not stop
@@ -1097,7 +1104,6 @@ static void test_eof_after_command(void)
 static void test_client_reset(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 
@@ -1125,7 +1131,7 @@ static void test_client_reset(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* The daemon serves one connection at a time: a second client's
@@ -1135,7 +1141,6 @@ static void test_client_reset(void)
 static void test_one_connection_at_a_time(void)
 {
 	struct daemon d;
-	int st;
 	int fda, fdb;
 	char line[64];
 
@@ -1160,7 +1165,7 @@ static void test_one_connection_at_a_time(void)
 	if (fdb >= 0)
 		close(fdb);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A bind() conflict must exit 1 loudly, never silently listen on a
@@ -1211,13 +1216,15 @@ static void test_bind_failure_exits(void)
 }
 
 /* An accept() failure (EMFILE, forced with a low RLIMIT_NOFILE) must
- * not stop or spin the daemon (DMN-02).
+ * not stop or spin the daemon (DMN-02), and SIGTERM must still stop
+ * it within 1 s even while the accept-error pause is looping: that
+ * pause is itself a pselect() and so is interrupted at once (D-24).
  */
 static void test_accept_failure_keeps_running(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
+	long long t0;
 	long ticks0, ticks1;
 	long clk_tck = sysconf(_SC_CLK_TCK);
 	static const char *const args[] = {
@@ -1251,7 +1258,118 @@ static void test_accept_failure_keeps_running(void)
 	if (fd >= 0)
 		close(fd);
 
+	t0 = now_ms();
+	daemon_stop_clean(&d);
+	CHECK(now_ms() - t0 < 1000);
+}
+
+/* A daemon waiting for connections exits with status 0 within 1 s of
+ * SIGTERM (D-24): idle accept() must return promptly on the signal.
+ */
+static void test_sigterm_idle(void)
+{
+	struct daemon d;
+	int st;
+	long long t0;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	t0 = now_ms();
 	daemon_stop(&d, SIGTERM, &st);
+	CHECK(now_ms() - t0 < 1000);
+	CHECK(WIFEXITED(st));
+	CHECK_EQ(WEXITSTATUS(st), 0);
+}
+
+/* Same as test_sigterm_idle, for SIGINT (D-24). */
+static void test_sigint_idle(void)
+{
+	struct daemon d;
+	int st;
+	long long t0;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	t0 = now_ms();
+	daemon_stop(&d, SIGINT, &st);
+	CHECK(now_ms() - t0 < 1000);
+	CHECK(WIFEXITED(st));
+	CHECK_EQ(WEXITSTATUS(st), 0);
+}
+
+/* A connected, idle client sees EOF and the daemon exits 0 within 1 s
+ * of SIGTERM (D-24): the client's connection is closed exactly once,
+ * from main()'s single close(connfd) site, as the daemon shuts down.
+ */
+static void test_sigterm_with_client(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	long long t0;
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+
+	t0 = now_ms();
+	daemon_stop(&d, SIGTERM, &st);
+	CHECK(now_ms() - t0 < 1000);
+	CHECK(WIFEXITED(st));
+	CHECK_EQ(WEXITSTATUS(st), 0);
+
+	if (fd >= 0) {
+		CHECK(client_wait_eof(fd, 500) >= 0);
+		close(fd);
+	}
+}
+
+/* Races SIGTERM against a command in flight, 20 times: every run
+ * exits 0, and OK is received on the client exactly in the runs where
+ * the codeword also appears on stdout -- a send, from board_init() to
+ * board_exit(), and its reply can never be cut short by the signal,
+ * because both signals stay blocked outside pselect() (D-24). A
+ * command not yet read when the signal is noticed gets no reply.
+ */
+static void test_sigterm_races_command(void)
+{
+	int i;
+
+	for (i = 0; i < 20; i++) {
+		struct daemon d;
+		int st;
+		int fd;
+		char reply[64];
+		char line[64];
+		int got_reply;
+		int got_codeword;
+
+		CHECK_EQ(daemon_start(&d, NULL), 0);
+
+		fd = client_connect("127.0.0.1", d.port);
+		CHECK(fd >= 0);
+		if (fd < 0) {
+			daemon_stop(&d, SIGTERM, &st);
+			continue;
+		}
+
+		CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
+		kill(d.pid, SIGTERM);
+
+		got_reply = client_line(fd, reply, sizeof(reply), 2000) == 1 &&
+			    strcmp(reply, "OK") == 0;
+		close(fd);
+
+		got_codeword = daemon_stdout_line(&d, line, sizeof(line),
+						   500) &&
+			       strcmp(line, "0FFF0000F00F") == 0;
+
+		daemon_stop(&d, SIGTERM, &st);
+		CHECK(WIFEXITED(st));
+		CHECK_EQ(WEXITSTATUS(st), 0);
+		CHECK_EQ(got_reply, got_codeword);
+	}
 }
 
 /* Two commands on one connection, with no artificial gap between
@@ -1260,7 +1378,6 @@ static void test_accept_failure_keeps_running(void)
 static void test_no_pause_between_commands(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 	long long t0;
@@ -1281,7 +1398,7 @@ static void test_no_pause_between_commands(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A daemon stopped while a client connection was still open must not
@@ -1290,7 +1407,6 @@ static void test_no_pause_between_commands(void)
 static void test_restart_same_port(void)
 {
 	struct daemon a, b;
-	int st;
 	int fd;
 	int port;
 	char line[64];
@@ -1311,7 +1427,7 @@ static void test_restart_same_port(void)
 	/* A is signalled while the connection is still open, so its
 	 * side is closed first and leaves TIME_WAIT/FIN_WAIT on port.
 	 */
-	daemon_stop(&a, SIGTERM, &st);
+	daemon_stop_clean(&a);
 
 	if (fd >= 0)
 		close(fd);
@@ -1326,7 +1442,7 @@ static void test_restart_same_port(void)
 	CHECK_EQ(daemon_spawn(&b, args_b, 0), 0);
 	CHECK_EQ(daemon_wait_ready(&b, 2000), 0);
 
-	daemon_stop(&b, SIGTERM, &st);
+	daemon_stop_clean(&b);
 }
 
 /* 20 connections that each send a command or nothing, then close,
@@ -1335,7 +1451,6 @@ static void test_restart_same_port(void)
 static void test_no_fd_leak(void)
 {
 	struct daemon d;
-	int st;
 	int baseline, after;
 	int seen = 0;
 	int i;
@@ -1401,7 +1516,7 @@ static void test_no_fd_leak(void)
 	}
 	CHECK_EQ(after, baseline);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* Sends cmd_bytes, expects codeword on stdout and "OK" as the reply. */
@@ -1423,7 +1538,6 @@ static void expect_ok(struct daemon *d, int fd, const char *cmd_bytes,
 static void test_v2_codewords(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1437,7 +1551,7 @@ static void test_v2_codewords(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* Legacy and v2 produce the same codeword and the same OK reply for
@@ -1446,7 +1560,6 @@ static void test_v2_codewords(void)
 static void test_legacy_equals_v2(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1459,7 +1572,7 @@ static void test_legacy_equals_v2(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* One write carrying a legacy command directly followed by a v2 line
@@ -1469,7 +1582,6 @@ static void test_legacy_equals_v2(void)
 static void test_back_to_back(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64], reply[64];
 	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
@@ -1499,7 +1611,7 @@ static void test_back_to_back(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* The same bytes as test_back_to_back, sent one byte per write, 2ms
@@ -1509,7 +1621,6 @@ static void test_back_to_back(void)
 static void test_byte_by_byte(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64], reply[64];
 	static const char msg[] = "03001 17 23 1\n0 3 0 0\r\n";
@@ -1543,7 +1654,7 @@ static void test_byte_by_byte(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A malformed v2 line gets ERR syntax and transmits nothing; a
@@ -1553,7 +1664,6 @@ static void test_byte_by_byte(void)
 static void test_bad_line_then_good(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64], reply[64];
 	static const char msg[] = "1 017 23 1\n0300";
@@ -1576,7 +1686,7 @@ static void test_bad_line_then_good(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* An overlong line is discarded, not transmitted, gets ERR toolong,
@@ -1585,7 +1695,6 @@ static void test_bad_line_then_good(void)
 static void test_toolong_then_good(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64], reply[64];
 	char msg[205];
@@ -1613,7 +1722,7 @@ static void test_toolong_then_good(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* "1 17 23 1" with no trailing newline, followed by close(), sends
@@ -1623,7 +1732,6 @@ static void test_toolong_then_good(void)
 static void test_partial_at_eof(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 	static const char msg[] = "1 17 23 1";
@@ -1638,7 +1746,7 @@ static void test_partial_at_eof(void)
 		CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 300), 0);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* The worked examples from 02-CONTEXT.md's <specifics>, this time
@@ -1647,7 +1755,6 @@ static void test_partial_at_eof(void)
 static void test_worked_replies(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1707,7 +1814,7 @@ static void test_worked_replies(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A pipeline of 7 commands (including a legacy command whose \n is
@@ -1718,7 +1825,6 @@ static void test_worked_replies(void)
 static void test_one_reply_per_command(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 	static const char msg[] =
@@ -1753,7 +1859,7 @@ static void test_one_reply_per_command(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* Legacy commands get replies just like v2 and keep the connection
@@ -1762,7 +1868,6 @@ static void test_one_reply_per_command(void)
 static void test_legacy_keeps_connection(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1782,7 +1887,7 @@ static void test_legacy_keeps_connection(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A library failure after the daemon's own checks passed is reported
@@ -1793,7 +1898,6 @@ static void test_err_send(void)
 {
 	const char *saved_path = daemon_path;
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1817,7 +1921,7 @@ static void test_err_send(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* An out-of-range address gets a precise ERR range reply before the
@@ -1830,7 +1934,6 @@ static void test_err_send(void)
 static void test_range_replies(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1854,7 +1957,7 @@ static void test_range_replies(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 
 	{
 		const char *saved_path = daemon_path;
@@ -1874,7 +1977,7 @@ static void test_range_replies(void)
 			close(fd);
 		}
 
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 }
 
@@ -1885,7 +1988,6 @@ static void test_range_replies(void)
 static void test_raw_command(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1908,7 +2010,7 @@ static void test_raw_command(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* raw, v2 and legacy all work back to back on one connection, in
@@ -1917,7 +2019,6 @@ static void test_raw_command(void)
 static void test_raw_back_to_back(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 
 	CHECK_EQ(daemon_start(&d, NULL), 0);
@@ -1933,7 +2034,7 @@ static void test_raw_back_to_back(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A library failure after the daemon's own checks passed is reported
@@ -1944,7 +2045,6 @@ static void test_raw_err_send(void)
 {
 	const char *saved_path = daemon_path;
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -1963,7 +2063,7 @@ static void test_raw_err_send(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* --timeout is validated with the same strict rules as --port, and a
@@ -2003,17 +2103,16 @@ static void test_timeout_option(void)
 
 	{
 		struct daemon d;
-		int st;
 		static const char *const extra1[] = { "--timeout", "1", NULL };
 		static const char *const extra2[] = {
 			"--timeout", "3600", NULL
 		};
 
 		CHECK_EQ(daemon_start(&d, extra1), 0);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 
 		CHECK_EQ(daemon_start(&d, extra2), 0);
-		daemon_stop(&d, SIGTERM, &st);
+		daemon_stop_clean(&d);
 	}
 }
 
@@ -2024,7 +2123,6 @@ static void test_timeout_option(void)
 static void test_idle_timeout(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	long long elapsed;
 	char line[64];
@@ -2076,7 +2174,7 @@ static void test_idle_timeout(void)
 		}
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A command trickled one byte every 300 ms, with no newline, must not
@@ -2086,7 +2184,6 @@ static void test_idle_timeout(void)
 static void test_trickle_timeout(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char line[64];
 	static const char *const extra[] = { "--timeout", "1", NULL };
@@ -2142,7 +2239,7 @@ static void test_trickle_timeout(void)
 
 	CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 100), 0);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* Commands sent well within --timeout of each other keep the
@@ -2152,7 +2249,6 @@ static void test_trickle_timeout(void)
 static void test_commands_rearm(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	static const char *const extra[] = { "--timeout", "1", NULL };
 	int i;
@@ -2170,7 +2266,7 @@ static void test_commands_rearm(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* An idle connection blocks other clients for at most --timeout
@@ -2179,7 +2275,6 @@ static void test_commands_rearm(void)
 static void test_timeout_frees_daemon(void)
 {
 	struct daemon d;
-	int st;
 	int fda, fdb;
 	long long t0, elapsed;
 	char reply[64];
@@ -2207,7 +2302,7 @@ static void test_timeout_frees_daemon(void)
 	if (fda >= 0)
 		close(fda);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A client that fills the daemon's send buffer and never reads cannot
@@ -2217,7 +2312,6 @@ static void test_timeout_frees_daemon(void)
 static void test_stuck_reader(void)
 {
 	struct daemon d;
-	int st;
 	int fda, fdb;
 	long long t0;
 	char reply[64];
@@ -2262,7 +2356,7 @@ static void test_stuck_reader(void)
 	if (fda >= 0)
 		close(fda);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* Neither a reply nor a syslog line ever contains raw client bytes
@@ -2272,7 +2366,6 @@ static void test_stuck_reader(void)
 static void test_no_echo(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	char reply[64];
 
@@ -2292,7 +2385,7 @@ static void test_no_echo(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* The daemon serves one connection at a time: B's command is not
@@ -2302,7 +2395,6 @@ static void test_no_echo(void)
 static void test_serialized_replies(void)
 {
 	struct daemon d;
-	int st;
 	int fda, fdb;
 	char reply[64];
 
@@ -2332,7 +2424,7 @@ static void test_serialized_replies(void)
 	if (fdb >= 0)
 		close(fdb);
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 /* A client that writes many lines and closes before reading any
@@ -2341,7 +2433,6 @@ static void test_serialized_replies(void)
 static void test_early_disconnect(void)
 {
 	struct daemon d;
-	int st;
 	int fd;
 	int i;
 	char reply[64];
@@ -2372,7 +2463,7 @@ static void test_early_disconnect(void)
 		close(fd);
 	}
 
-	daemon_stop(&d, SIGTERM, &st);
+	daemon_stop_clean(&d);
 }
 
 int main(int argc, char *argv[])
@@ -2396,6 +2487,10 @@ int main(int argc, char *argv[])
 	test_one_connection_at_a_time();
 	test_bind_failure_exits();
 	test_accept_failure_keeps_running();
+	test_sigterm_idle();
+	test_sigint_idle();
+	test_sigterm_with_client();
+	test_sigterm_races_command();
 	test_no_pause_between_commands();
 	test_restart_same_port();
 	test_no_fd_leak();
