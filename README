@@ -202,15 +202,16 @@ ignore the resulting code. The x86_64 host tests cannot detect this,
 since the stub board has no real timing constraint to violate.
 Real-hardware verification of pulse timing is outside this milestone.
 
-board_exit() drives the GPIO line low whenever a send fails, but no
-library code runs when the sending process is killed. A sender
-killed while the line is high -- SIGKILL, or stopping rsswitchd with
-SIGTERM, which it does not catch -- leaves the 433 MHz transmitter
-keyed, blocking the band for other devices, until the next send
-starts, since board_init() always drives the line low first. A
-Raspberry Pi kernel keeps a released output at its last level, and a
-BeagleBone Black pin exported beforehand stays an output, so neither
-release nor close bounds this window.
+board_exit() drives the GPIO line low whenever a send fails, and
+rsswitchd finishes a send already in progress before it exits on
+SIGTERM or SIGINT. No library code runs when a sender is killed
+with SIGKILL or crashes, though, and such a hard kill while the
+line is high leaves the 433 MHz transmitter keyed, blocking the
+band for other devices, until the next send starts, since
+board_init() always drives the line low first. A Raspberry Pi
+kernel keeps a released output at its last level, and a
+BeagleBone Black pin exported beforehand stays an output, so
+neither release nor close bounds this window.
 
 The 433 MHz link is one-way: the library has no way to confirm that a
 socket actually switched, only that a codeword was sent.
