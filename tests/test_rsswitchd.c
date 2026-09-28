@@ -1142,6 +1142,51 @@ static void test_no_pause_between_commands(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* A daemon stopped while a client connection was still open must not
+ * block an immediate restart on the same port (SO_REUSEADDR, DMN-03).
+ */
+static void test_restart_same_port(void)
+{
+	struct daemon a, b;
+	int st;
+	int fd;
+	int port;
+	char line[64];
+	char portstr[16];
+	const char *args_b[5];
+
+	CHECK_EQ(daemon_start(&a, NULL), 0);
+	port = a.port;
+
+	fd = client_connect("127.0.0.1", a.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "0300", 4), 0);
+		CHECK(daemon_stdout_line(&a, line, sizeof(line), 2000));
+		CHECK_EQ(strcmp(line, "FFF11FF00001"), 0);
+	}
+
+	/* A is signalled while the connection is still open, so its
+	 * side is closed first and leaves TIME_WAIT/FIN_WAIT on port.
+	 */
+	daemon_stop(&a, SIGTERM, &st);
+
+	if (fd >= 0)
+		close(fd);
+
+	snprintf(portstr, sizeof(portstr), "%d", port);
+	args_b[0] = "--bind";
+	args_b[1] = "127.0.0.1";
+	args_b[2] = "--port";
+	args_b[3] = portstr;
+	args_b[4] = NULL;
+
+	CHECK_EQ(daemon_spawn(&b, args_b, 0), 0);
+	CHECK_EQ(daemon_wait_ready(&b, 2000), 0);
+
+	daemon_stop(&b, SIGTERM, &st);
+}
+
 /* 20 connections that each send a command or nothing, then close,
  * must not leak a file descriptor per connection (DMN-01/T-02-06).
  */
@@ -1239,6 +1284,7 @@ int main(int argc, char *argv[])
 	test_bind_failure_exits();
 	test_accept_failure_keeps_running();
 	test_no_pause_between_commands();
+	test_restart_same_port();
 	test_no_fd_leak();
 
 	return MT_REPORT();

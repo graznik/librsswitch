@@ -171,6 +171,25 @@ int main(int argc, char *argv[])
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (listenfd < 0)
 		fatal("socket");
+
+	{
+		int optval = 1;
+
+		/*
+		 * Without this, a daemon stopped while a client was
+		 * still connected leaves its side of that connection
+		 * in TIME_WAIT/FIN_WAIT, and binding the same port
+		 * again fails with EADDRINUSE until the kernel times
+		 * that state out. SO_REUSEADDR lets a new listener
+		 * bind the port while old connections on it are still
+		 * being torn down; it does not allow two live
+		 * listeners on one port.
+		 */
+		if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR,
+			       &optval, sizeof(optval)) < 0)
+			fatal("setsockopt SO_REUSEADDR");
+	}
+
 	memset(&serv_addr, 0, sizeof(serv_addr));
 
 	serv_addr.sin_family = AF_INET;
