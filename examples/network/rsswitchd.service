@@ -15,6 +15,23 @@ User=rsswitchd
 # BeagleBone Black, the image's udev rules must give it write
 # access to /sys/class/gpio instead.
 SupplementaryGroups=gpio
+# The daemon can never gain privileges, e.g. via setuid binaries.
+NoNewPrivileges=yes
+# Read-only file system, except the API file systems /dev, /proc
+# and /sys, which GPIO access needs.
+ProtectSystem=strict
+# Home directories are not visible.
+ProtectHome=yes
+# A private /tmp.
+PrivateTmp=yes
+# Restart after a crash.
+Restart=on-failure
+# A failing start does not spin, e.g. when the port is in use.
+RestartSec=2
+# PrivateDevices=, DevicePolicy= and ProtectKernelTunables= are left
+# out on purpose: the first two would hide /dev/gpiochip*, which
+# libgpiod needs on the Raspberry Pi, and the last would make /sys
+# read-only, which breaks sysfs GPIO on the BeagleBone.
 
 [Install]
 WantedBy=multi-user.target
