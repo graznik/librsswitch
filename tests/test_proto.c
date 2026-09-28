@@ -19,6 +19,7 @@
  * x86_64.h is linked in only to prove that (test_err_names below), not
  * because the parser itself calls into the board or the library.
  */
+#include <inttypes.h>
 #include <string.h>
 
 #include "minitest.h"
@@ -295,7 +296,9 @@ static void test_legacy_wait(void)
 	n = feed(&pc, "\n", 1, cmd, ARRAY_SIZE(cmd));
 	CHECK_EQ(n, (size_t)0);
 
-	/* 12345\n: four legacy digits, then "5\n" is its own malformed
+	/* 12345\n: four legacy digits (dev 1, group 2, socket 3, data 4)
+	 * -- data 4 is out of POLLIN_2605's 0-1 range, so this is now a
+	 * range error, not a switch; then "5\n" is its own malformed
 	 * line.
 	 */
 	proto_init(&pc);
@@ -305,7 +308,8 @@ static void test_legacy_wait(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)2);
-	check_switch(&cmd[0], 1, 1, 2, 3, 4);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "data 4 not in 0-1"), 0);
 	check_error(&cmd[1], PROTO_ERR_SYNTAX);
 }
 
@@ -382,6 +386,11 @@ static void test_overflow(void)
 	check_error(&cmd[0], PROTO_ERR_RANGE);
 	CHECK_EQ(strcmp(cmd[0].text, "group too large"), 0);
 
+	/* 4294967295 fits uint32_t (it is UINT32_MAX), so conversion
+	 * succeeds -- but it is nowhere near a valid Pollin group, so
+	 * this is now a range error naming the parsed number, not a
+	 * conversion failure or a wrapped/truncated value.
+	 */
 	proto_init(&pc);
 	{
 		static const char in[] = "1 4294967295 0 1\n";
@@ -389,7 +398,258 @@ static void test_overflow(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 1, 4294967295U, 0, 1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "group 4294967295 not in 0-31"), 0);
+}
+
+/*
+ * Every field is checked against socket_addr_limits() (D-12, D-13),
+ * in dev/group/socket/data order, for both legacy and v2, and the
+ * range check never opens a board session.
+ */
+static void test_ranges(void)
+{
+	struct proto_conn pc;
+	struct proto_cmd cmd[4];
+	size_t n;
+
+	x86_64_recorder_reset();
+
+	proto_init(&pc);
+	{
+		static const char in[] = "0 3 2 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 0, 0, 3, 2, 1);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "0 4 0 0\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "group 4 not in 0-3"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "0 0 3 0\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "socket 3 not in 0-2"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "0 0 0 2\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "data 2 not in 0-1"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "2 0 0 0\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "dev 2 unknown"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "1 31 31 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 0, 1, 31, 31, 1);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "1 32 0 0\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "group 32 not in 0-31"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "1 0 32 0\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "socket 32 not in 0-31"), 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "1 10 10 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 0, 1, 10, 10, 1);
+
+	/* Legacy: 9999 -> dev 9 unknown. */
+	proto_init(&pc);
+	n = feed(&pc, "9999", 4, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "dev 9 unknown"), 0);
+
+	/* Legacy: 0400 -> REV 008345, group 4 not in 0-3. */
+	proto_init(&pc);
+	n = feed(&pc, "0400", 4, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "group 4 not in 0-3"), 0);
+
+	/* Legacy: 0030 -> REV 008345, socket 3 not in 0-2. */
+	proto_init(&pc);
+	n = feed(&pc, "0030", 4, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "socket 3 not in 0-2"), 0);
+
+	/* Legacy: 1999 -> POLLIN_2605, group 9 and socket 9 both valid,
+	 * data 9 not in 0-1.
+	 */
+	proto_init(&pc);
+	n = feed(&pc, "1999", 4, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "data 9 not in 0-1"), 0);
+
+	/* v2: dev is checked before group, socket or data, even though
+	 * all three are also out of range.
+	 */
+	proto_init(&pc);
+	{
+		static const char in[] = "2 40 0 9\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "dev 2 unknown"), 0);
+
+	/* Syntax beats range: a leading zero in "017" is a syntax error,
+	 * even though the line also names a dev-2 that would otherwise
+	 * be a range error.
+	 */
+	proto_init(&pc);
+	{
+		static const char in[] = "2 017 0 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_SYNTAX);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "1 4294967295 0 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_RANGE);
+	CHECK_EQ(strcmp(cmd[0].text, "group 4294967295 not in 0-31"), 0);
+
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+}
+
+/*
+ * The parser's range check follows socket_addr_limits() exactly, not
+ * a copy of it: for both devices, every (group, socket, data) inside
+ * the reported limits parses to a switch, and each field one past its
+ * reported limit is a range error -- with no board session ever
+ * opened.
+ */
+static void test_ranges_follow_library(void)
+{
+	static const uint32_t devs[] = { REV_008345, POLLIN_2605 };
+	size_t d;
+
+	x86_64_recorder_reset();
+
+	for (d = 0; d < ARRAY_SIZE(devs); d++) {
+		uint32_t ngroups, nsockets, ndata;
+		uint32_t g, s, v;
+		struct proto_conn pc;
+		struct proto_cmd cmd;
+
+		CHECK_EQ(socket_addr_limits(devs[d], &ngroups, &nsockets,
+					     &ndata), 0);
+
+		proto_init(&pc);
+		for (g = 0; g < ngroups; g++) {
+			for (s = 0; s < nsockets; s++) {
+				for (v = 0; v < ndata; v++) {
+					char line[32];
+					const char *p = line;
+					size_t left;
+					int len;
+
+					len = snprintf(line, sizeof(line),
+						       "%" PRIu32 " %" PRIu32
+						       " %" PRIu32 " %" PRIu32
+						       "\n",
+						       devs[d], g, s, v);
+					left = (size_t)len;
+					CHECK_EQ(proto_next(&pc, &p, &left,
+							     &cmd), 1);
+					check_switch(&cmd, 0, devs[d], g, s,
+						     v);
+				}
+			}
+		}
+
+		{
+			char line[32];
+			const char *p;
+			size_t left;
+			int len;
+
+			len = snprintf(line, sizeof(line),
+				       "%" PRIu32 " %" PRIu32 " 0 0\n",
+				       devs[d], ngroups);
+			p = line;
+			left = (size_t)len;
+			CHECK_EQ(proto_next(&pc, &p, &left, &cmd), 1);
+			check_error(&cmd, PROTO_ERR_RANGE);
+
+			len = snprintf(line, sizeof(line),
+				       "%" PRIu32 " 0 %" PRIu32 " 0\n",
+				       devs[d], nsockets);
+			p = line;
+			left = (size_t)len;
+			CHECK_EQ(proto_next(&pc, &p, &left, &cmd), 1);
+			check_error(&cmd, PROTO_ERR_RANGE);
+
+			len = snprintf(line, sizeof(line),
+				       "%" PRIu32 " 0 0 %" PRIu32 "\n",
+				       devs[d], ndata);
+			p = line;
+			left = (size_t)len;
+			CHECK_EQ(proto_next(&pc, &p, &left, &cmd), 1);
+			check_error(&cmd, PROTO_ERR_RANGE);
+		}
+	}
+
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 }
 
 static void test_line_limit(void)
@@ -572,6 +832,8 @@ int main(void)
 	test_legacy_wait();
 	test_v2_syntax();
 	test_overflow();
+	test_ranges();
+	test_ranges_follow_library();
 	test_line_limit();
 	test_zero_input();
 	test_independent_state();

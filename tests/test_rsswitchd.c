@@ -1751,6 +1751,64 @@ static void test_err_send(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* An out-of-range address gets a precise ERR range reply before the
+ * library is ever called, for both v2 and legacy, the connection
+ * stays usable afterwards, and the same range check fires even
+ * against a daemon whose board always fails -- proving the daemon
+ * validated first, since a board failure would give ERR send instead
+ * (D-05, D-11, D-12, D-13).
+ */
+static void test_range_replies(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char reply[64];
+
+	CHECK_EQ(daemon_start(&d, NULL), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		CHECK_EQ(client_send(fd, "1 40 0 1\n", 9), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR range group 40 not in 0-31"), 0);
+		CHECK(client_quiet(fd, 300));
+
+		CHECK_EQ(client_send(fd, "9999", 4), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, "ERR range dev 9 unknown"), 0);
+		CHECK(client_quiet(fd, 300));
+
+		expect_ok(&d, fd, "1 31 31 1\n", 10, "00000000000F");
+
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+
+	{
+		const char *saved_path = daemon_path;
+
+		daemon_path = "./test_rsswitchd_failbin";
+		CHECK_EQ(daemon_start(&d, NULL), 0);
+		daemon_path = saved_path;
+
+		fd = client_connect("127.0.0.1", d.port);
+		CHECK(fd >= 0);
+		if (fd >= 0) {
+			CHECK_EQ(client_send(fd, "1 40 0 1\n", 9), 0);
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply,
+					"ERR range group 40 not in 0-31"), 0);
+			close(fd);
+		}
+
+		daemon_stop(&d, SIGTERM, &st);
+	}
+}
+
 /* Neither a reply nor a syslog line ever contains raw client bytes
  * (D-15) -- checked here at the reply, escape sequences and garbage
  * alike collapse to the same fixed text.
@@ -1896,6 +1954,7 @@ int main(int argc, char *argv[])
 	test_one_reply_per_command();
 	test_legacy_keeps_connection();
 	test_err_send();
+	test_range_replies();
 	test_no_echo();
 	test_serialized_replies();
 	test_early_disconnect();

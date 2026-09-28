@@ -44,6 +44,14 @@
  *     every field passes does conversion happen, in field order, so
  *     the first field whose value does not fit (more than 10 digits,
  *     or a value above UINT32_MAX) wins the PROTO_ERR_RANGE error.
+ *   - Once dev, group, socket and data are all syntactically valid
+ *     numbers (legacy or v2), they are checked in that same order
+ *     against librsswitch.h's socket_addr_limits() (D-12, D-13) --
+ *     never against a table copied into this file. The first field
+ *     out of range wins: an unknown dev gives "dev %u unknown"; an
+ *     out-of-range group, socket or data gives "<field> %u not in
+ *     0-%u", naming the field's highest valid value. Only once every
+ *     field passes this check does the result become PROTO_SWITCH.
  *   - An empty line (bare \n or \r\n at a command boundary) is
  *     PROTO_EMPTY: not a command, no reply.
  *   - Error text is always built from fixed words and already-parsed
@@ -63,6 +71,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include "../../librsswitch.h"
 
 /*
  * Maximum accepted line length, in bytes, not counting the
@@ -110,9 +120,9 @@ enum proto_err {
  *
  * kind == PROTO_SWITCH: legacy is 1 for a 4-digit legacy command, 0
  * for a v2 line; dev/group/socket/data hold the parsed fields (D-05
- * for legacy, D-07 for v2, both already range-checked against
- * UINT32_MAX here -- the per-device bounds check is added in plan
- * 02-03). err/text are unused.
+ * for legacy, D-07 for v2), already checked against UINT32_MAX and
+ * against socket_addr_limits()'s per-device bounds (D-12, D-13).
+ * err/text are unused.
  *
  * kind == PROTO_ERROR: err names the class and text holds a short,
  * human-readable explanation built only from fixed words and

@@ -20,6 +20,7 @@
  */
 
 #include <errno.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,12 +118,64 @@ static int field_to_u32(const char *s, size_t len, uint32_t *out)
 }
 
 /*
+ * Checks dev, group, socket and data against librsswitch.h's
+ * socket_addr_limits() (D-12, D-13), in that field order, and fills
+ * *cmd accordingly: PROTO_SWITCH with legacy set as given when every
+ * field is in range, or PROTO_ERROR/PROTO_ERR_RANGE naming the first
+ * out-of-range field otherwise. Used by both the legacy and v2
+ * command paths, so a range violation is reported identically by
+ * either, and always before socket_send() is ever called -- which
+ * still checks again on its own (D-12).
+ */
+static void check_range(struct proto_cmd *cmd, int legacy, uint32_t dev,
+			 uint32_t group, uint32_t socket, uint32_t data)
+{
+	uint32_t ngroups, nsockets, ndata;
+
+	if (socket_addr_limits(dev, &ngroups, &nsockets, &ndata) < 0) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "dev %" PRIu32
+			 " unknown", dev);
+		return;
+	}
+	if (group >= ngroups) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "group %" PRIu32
+			 " not in 0-%" PRIu32, group, ngroups - 1);
+		return;
+	}
+	if (socket >= nsockets) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "socket %" PRIu32
+			 " not in 0-%" PRIu32, socket, nsockets - 1);
+		return;
+	}
+	if (data >= ndata) {
+		cmd->kind = PROTO_ERROR;
+		cmd->err = PROTO_ERR_RANGE;
+		snprintf(cmd->text, sizeof(cmd->text), "data %" PRIu32
+			 " not in 0-%" PRIu32, data, ndata - 1);
+		return;
+	}
+
+	cmd->kind = PROTO_SWITCH;
+	cmd->legacy = legacy;
+	cmd->dev = dev;
+	cmd->group = group;
+	cmd->socket = socket;
+	cmd->data = data;
+}
+
+/*
  * Parses one already-delimited line (len > 0, no trailing \r or \n)
  * into *cmd. "Syntax before range, first failing field wins": every
  * field's syntax is checked first; only once all four pass are they
  * converted, in field order (dev, group, socket, data), and the
- * first one whose value does not fit wins the RANGE error. Plan
- * 02-03 adds the per-device bounds check once conversion succeeds.
+ * first one whose value does not fit wins the RANGE error. Once every
+ * field converts, check_range() applies the per-device bounds check.
  */
 static void parse_line(const char *line, size_t len, struct proto_cmd *cmd)
 {
@@ -160,12 +213,7 @@ static void parse_line(const char *line, size_t len, struct proto_cmd *cmd)
 		}
 	}
 
-	cmd->kind = PROTO_SWITCH;
-	cmd->legacy = 0;
-	cmd->dev = val[0];
-	cmd->group = val[1];
-	cmd->socket = val[2];
-	cmd->data = val[3];
+	check_range(cmd, 0, val[0], val[1], val[2], val[3]);
 }
 
 void proto_init(struct proto_conn *pc)
@@ -270,14 +318,14 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 		    is_ascii_digit(pc->buf[1]) &&
 		    is_ascii_digit(pc->buf[2]) &&
 		    is_ascii_digit(pc->buf[3])) {
-			cmd->kind = PROTO_SWITCH;
-			cmd->legacy = 1;
-			cmd->dev = (uint32_t)(pc->buf[0] - '0');
-			cmd->group = (uint32_t)(pc->buf[1] - '0');
-			cmd->socket = (uint32_t)(pc->buf[2] - '0');
-			cmd->data = (uint32_t)(pc->buf[3] - '0');
+			uint32_t dev = (uint32_t)(pc->buf[0] - '0');
+			uint32_t group = (uint32_t)(pc->buf[1] - '0');
+			uint32_t sock = (uint32_t)(pc->buf[2] - '0');
+			uint32_t data = (uint32_t)(pc->buf[3] - '0');
+
 			pc->len = 0;
 			pc->legacy_tail = 1;
+			check_range(cmd, 1, dev, group, sock, data);
 			return 1;
 		}
 	}
