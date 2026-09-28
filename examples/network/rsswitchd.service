@@ -3,7 +3,11 @@ Description=RSS Service Daemon
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/rsswitchd
+# The daemon has no authentication; behind the web app it only
+# needs local connections. To serve other hosts, remove
+# --bind 127.0.0.1 below or give another address -- the program's
+# own default, when no --bind is given, is 0.0.0.0.
+ExecStart=/usr/local/bin/rsswitchd --bind 127.0.0.1
 Type=simple
 # Runs as the unprivileged system user make install creates.
 User=rsswitchd
