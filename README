@@ -93,7 +93,7 @@ From the repository root:
 
 Usage
 -----
-Three public functions, declared in librsswitch.h.
+Four public functions, declared in librsswitch.h.
 
 socket_gpio_config(const char *config);
 
@@ -132,18 +132,34 @@ codeword is printed to stdout, exactly like socket_send() does.
 
 Returns 0 on success, -1 on error (invalid input, or a board error).
 
+socket_addr_limits(uint32_t dev, uint32_t *ngroups, uint32_t *nsockets,
+uint32_t *ndata);
+
+Reports the valid address range for dev, the same bounds socket_send()
+enforces: REV 008345 has 4 groups, 3 sockets and 2 data values; Pollin
+2605 has 32 groups, 32 sockets and 2 data values. Lets a caller (such
+as rsswitchd) validate an address itself before calling socket_send(),
+reading the same tables socket_send() does instead of copying the
+sizes elsewhere.
+
+Returns 0 and fills *ngroups, *nsockets and *ndata, or -1 for an
+unknown dev or a NULL pointer, leaving the outputs untouched.
+
 
 Thread safety
 -------------
-socket_send(), socket_send_codeword() and socket_gpio_config() are
-safe to call concurrently from multiple threads of the same process.
-Every send session -- board_init(), all repetitions, board_exit() --
-is serialized by one library-wide lock, so concurrent sends never
-interleave their pulses; a calling thread simply blocks until the
-previous send session completes. socket_gpio_config() takes the same
-lock around its store, so a config change is ordered against sends
-that start after it returns (it does not affect a session already in
-progress).
+socket_send(), socket_send_codeword(), socket_addr_limits() and
+socket_gpio_config() are safe to call concurrently from multiple
+threads of the same process. Every send session -- board_init(), all
+repetitions, board_exit() -- is serialized by one library-wide lock,
+so concurrent sends never interleave their pulses; a calling thread
+simply blocks until the previous send session completes.
+socket_gpio_config() takes the same lock around its store, so a config
+change is ordered against sends that start after it returns (it does
+not affect a session already in progress). socket_addr_limits() takes
+no lock at all: it only reads constant tables and never touches
+gpio_config or the board, so it never blocks and never waits behind a
+send in progress.
 
 This guarantee is process-local only: two separate processes driving
 the same GPIO line (for example rsssend run once while rsswitchd is

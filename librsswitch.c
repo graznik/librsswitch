@@ -41,6 +41,8 @@
 
 static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
 			     uint32_t data);
+static int32_t dev_limits(uint32_t dev, size_t *ngroups, size_t *nsockets,
+			  size_t *ndata);
 static int32_t tristate_check(const char *codeword);
 static int32_t send_tris(const char *codeword, uint32_t pulse_len);
 static int32_t send_0(uint32_t pulse_len);
@@ -96,6 +98,33 @@ static const char * const pollin_2605_sockets[] = {
 static const char * const pollin_2605_data[] = {"F0", "0F"}; /* Off, On */
 
 /*
+ * Fills ngroups, nsockets and ndata with dev's table sizes, the same
+ * bounds address_check() enforces -- or returns -1 for an unknown dev
+ * without logging. Both address_check() and the public
+ * socket_addr_limits() call this, so the two can never see different
+ * bounds for the same dev: each decides for itself whether and what
+ * to log about the result.
+ */
+static int32_t dev_limits(uint32_t dev, size_t *ngroups, size_t *nsockets,
+			  size_t *ndata)
+{
+	switch (dev) {
+	case REV_008345:
+		*ngroups = ARRAY_SIZE(rev_008345_groups);
+		*nsockets = ARRAY_SIZE(rev_008345_sockets);
+		*ndata = ARRAY_SIZE(rev_008345_data);
+		return 0;
+	case POLLIN_2605:
+		*ngroups = ARRAY_SIZE(pollin_2605_groups);
+		*nsockets = ARRAY_SIZE(pollin_2605_sockets);
+		*ndata = ARRAY_SIZE(pollin_2605_data);
+		return 0;
+	default:
+		return -1;
+	}
+}
+
+/*
  * Rejects an unknown device or an out-of-range group, socket or data
  * for the given device. socket_send() calls this before send_lock and
  * board_init(), so a rejected address never touches the board.
@@ -105,18 +134,7 @@ static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
 {
 	size_t ngroups, nsockets, ndata;
 
-	switch (dev) {
-	case REV_008345:
-		ngroups = ARRAY_SIZE(rev_008345_groups);
-		nsockets = ARRAY_SIZE(rev_008345_sockets);
-		ndata = ARRAY_SIZE(rev_008345_data);
-		break;
-	case POLLIN_2605:
-		ngroups = ARRAY_SIZE(pollin_2605_groups);
-		nsockets = ARRAY_SIZE(pollin_2605_sockets);
-		ndata = ARRAY_SIZE(pollin_2605_data);
-		break;
-	default:
+	if (dev_limits(dev, &ngroups, &nsockets, &ndata) < 0) {
 		syslog(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
 		return -1;
 	}
@@ -393,6 +411,23 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 
 	pthread_mutex_unlock(&send_lock);
 	return ret;
+}
+
+int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
+			   uint32_t *nsockets, uint32_t *ndata)
+{
+	size_t g, s, d;
+
+	if (!ngroups || !nsockets || !ndata)
+		return -1;
+
+	if (dev_limits(dev, &g, &s, &d) < 0)
+		return -1;
+
+	*ngroups = (uint32_t)g;
+	*nsockets = (uint32_t)s;
+	*ndata = (uint32_t)d;
+	return 0;
 }
 
 int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)

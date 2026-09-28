@@ -164,6 +164,77 @@ static void test_transmit_failure_aborts_codeword(void)
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 }
 
+/*
+ * socket_addr_limits() reports the same bounds address_check()
+ * enforces, for both devices; rejects an unknown dev or any NULL
+ * pointer without touching its outputs; and every address at or one
+ * past each device's reported limit gets the same accept/reject
+ * verdict from socket_send() -- with no board session opened for a
+ * rejected address (D-13).
+ */
+static void test_addr_limits(void)
+{
+	uint32_t ngroups, nsockets, ndata;
+	uint32_t sg, ss, sd;
+	static const struct {
+		enum socket_type dev;
+		uint32_t ngroups, nsockets, ndata;
+	} devs[] = {
+		{ REV_008345, 4, 3, 2 },
+		{ POLLIN_2605, 32, 32, 2 },
+	};
+	size_t i;
+
+	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, &nsockets, &ndata),
+		 0);
+	CHECK_EQ(ngroups, (uint32_t)4);
+	CHECK_EQ(nsockets, (uint32_t)3);
+	CHECK_EQ(ndata, (uint32_t)2);
+
+	CHECK_EQ(socket_addr_limits(POLLIN_2605, &ngroups, &nsockets, &ndata),
+		 0);
+	CHECK_EQ(ngroups, (uint32_t)32);
+	CHECK_EQ(nsockets, (uint32_t)32);
+	CHECK_EQ(ndata, (uint32_t)2);
+
+	sg = ss = sd = 999;
+	CHECK_EQ(socket_addr_limits(2, &sg, &ss, &sd), -1);
+	CHECK_EQ(sg, (uint32_t)999);
+	CHECK_EQ(ss, (uint32_t)999);
+	CHECK_EQ(sd, (uint32_t)999);
+
+	CHECK_EQ(socket_addr_limits(REV_008345, NULL, &nsockets, &ndata), -1);
+	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, NULL, &ndata), -1);
+	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, &nsockets, NULL),
+		 -1);
+
+	for (i = 0; i < ARRAY_SIZE(devs); i++) {
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+				      devs[i].nsockets - 1,
+				      devs[i].ndata - 1), 0);
+		CHECK_EQ(x86_64_board_init_count(), (size_t)1);
+
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups,
+				      devs[i].nsockets - 1,
+				      devs[i].ndata - 1), -1);
+		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+				      devs[i].nsockets,
+				      devs[i].ndata - 1), -1);
+		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+
+		x86_64_recorder_reset();
+		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+				      devs[i].nsockets - 1,
+				      devs[i].ndata), -1);
+		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	}
+}
+
 int main(void)
 {
 	test_rev_008345_valid();
@@ -175,6 +246,7 @@ int main(void)
 	test_unknown_device();
 	test_rejected_sends_transmit_nothing();
 	test_transmit_failure_aborts_codeword();
+	test_addr_limits();
 
 	return MT_REPORT();
 }

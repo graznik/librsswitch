@@ -39,6 +39,11 @@
  * The library is not async-signal-safe -- never call any of these
  * functions from a signal handler. Cancelling a thread while it is
  * inside a send is not supported; doing so may leave the lock held.
+ *
+ * socket_addr_limits() takes no lock at all: it only reads the same
+ * constant tables socket_send() checks addresses against, and never
+ * touches gpio_config or the board. It is safe to call concurrently
+ * with any of the functions above, from any thread.
  */
 
 /*
@@ -72,6 +77,21 @@ void socket_gpio_config(const char *config);
  */
 int32_t socket_send(uint32_t dev, uint32_t group,
 		    uint32_t socket, uint32_t data);
+
+/*
+ * Reports the valid address range for dev: groups 0 to *ngroups - 1,
+ * sockets 0 to *nsockets - 1, data 0 to *ndata - 1 -- the same bounds
+ * socket_send() enforces internally, read from the same constant
+ * tables. Lets a caller such as rsswitchd validate an address itself
+ * before calling socket_send(), without hand-copying the table sizes,
+ * so the two checks cannot drift apart.
+ *
+ * Returns 0 and fills *ngroups, *nsockets and *ndata, or -1 for an
+ * unknown dev or a NULL pointer, leaving the outputs untouched. Takes
+ * no lock and never touches the board -- see "Thread safety" above.
+ */
+int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
+			   uint32_t *nsockets, uint32_t *ndata);
 
 /*
  * Bounds for socket_send_codeword()'s tristate argument: byte length
