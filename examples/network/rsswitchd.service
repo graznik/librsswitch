@@ -6,6 +6,12 @@ After=network.target
 ExecStart=/usr/local/bin/rsswitchd
 Type=simple
 Nice=-20
+# Runs as the unprivileged system user make install creates.
+User=rsswitchd
+# Raspberry Pi OS gives this group access to /dev/gpiochip*; on a
+# BeagleBone Black, the image's udev rules must give it write
+# access to /sys/class/gpio instead.
+SupplementaryGroups=gpio
 
 [Install]
 WantedBy=multi-user.target
