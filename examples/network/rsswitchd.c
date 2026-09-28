@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <errno.h>
 #include <getopt.h>
@@ -18,6 +20,7 @@
 #include "rsswitchd_proto.h"
 
 static void serve_connection(int connfd, const char *ip);
+static int wait_readable(int fd, const struct timespec *deadline);
 static int handle_command(int connfd, const char *ip,
 			   const struct proto_cmd *cmd);
 static void log_err(const char *ip, enum proto_err err, const char *text);
@@ -26,10 +29,25 @@ static int send_reply(int connfd, const char *ip, const char *reply);
 #define DEFAULT_PORT 5000
 #define DEFAULT_BIND "0.0.0.0"
 
+/*
+ * Default --timeout, in seconds: how long a connection may go without
+ * a complete command before it is closed (D-19, DMN-05).
+ */
+#define DEFAULT_TIMEOUT 10U
+
+/*
+ * How long a connection may go without a complete command before it
+ * is closed, and how long a reply write may block -- set once from
+ * --timeout in main(), read (never written) by every serve_connection()
+ * call afterwards.
+ */
+static unsigned int idle_timeout = DEFAULT_TIMEOUT;
+
 static const struct option long_opts[] = {
 	{"port", required_argument, NULL, 'p'},
 	{"bind", required_argument, NULL, 'b'},
 	{"gpio", required_argument, NULL, 'g'},
+	{"timeout", required_argument, NULL, 't'},
 	{"help", no_argument,       NULL, 'h'},
 	{NULL, 0, NULL, 0}
 };
@@ -42,13 +60,17 @@ static const struct option long_opts[] = {
 static void usage(FILE *out)
 {
 	fprintf(out,
-		"Usage: rsswitchd [--port PORT] [--bind ADDR] [--gpio CONFIG] [--help]\n"
+		"Usage: rsswitchd [--port PORT] [--bind ADDR] [--gpio CONFIG]\n"
+		"                 [--timeout SECONDS] [--help]\n"
 		"  --port PORT    TCP port to listen on, 0-65535; 0 lets the\n"
 		"                 kernel pick a free port (default 5000)\n"
 		"  --bind ADDR    IPv4 address to listen on (default 0.0.0.0,\n"
 		"                 meaning all addresses)\n"
 		"  --gpio CONFIG  board-specific GPIO config (default: the\n"
 		"                 board's built-in default)\n"
+		"  --timeout SECS closes a connection when no complete\n"
+		"                 command arrives for SECS seconds, 1-3600\n"
+		"                 (default 10)\n"
 		"  --help         show this text and exit\n");
 }
 
@@ -173,6 +195,21 @@ int main(int argc, char *argv[])
 		case 'g':
 			gpio_config = optarg;
 			break;
+		case 't':
+			if (parse_number("--timeout", optarg, 3600,
+					  &val) < 0) {
+				usage(stderr);
+				exit(2);
+			}
+			if (val == 0) {
+				fprintf(stderr,
+					"rsswitchd: invalid --timeout '%s'\n",
+					optarg);
+				usage(stderr);
+				exit(2);
+			}
+			idle_timeout = (unsigned int)val;
+			break;
 		case 'h':
 			usage(stdout);
 			exit(0);
@@ -281,35 +318,131 @@ int main(int argc, char *argv[])
 			snprintf(cli_ipaddr, sizeof(cli_ipaddr), "unknown");
 		syslog(LOG_NOTICE, "Client from %s connected.", cli_ipaddr);
 
-		serve_connection(connfd, cli_ipaddr);
+		{
+			struct timeval tv;
+
+			/*
+			 * Bounds every reply write by --timeout, the same
+			 * as the idle-command deadline below: a client
+			 * that never reads its replies cannot block this
+			 * connfd's write() forever (DMN-05). A failure
+			 * here is unusual enough that skipping the
+			 * connection, rather than treating it as fatal,
+			 * keeps the daemon serving everyone else.
+			 */
+			tv.tv_sec = (time_t)idle_timeout;
+			tv.tv_usec = 0;
+			if (setsockopt(connfd, SOL_SOCKET, SO_SNDTIMEO,
+				       &tv, sizeof(tv)) < 0)
+				syslog(LOG_ERR,
+				       "[-] setsockopt SO_SNDTIMEO: %s",
+				       strerror(errno));
+			else
+				serve_connection(connfd, cli_ipaddr);
+		}
+
 		close(connfd);
 	}
 }
 
 /*
+ * Waits for fd to become readable, bounded by deadline (a
+ * CLOCK_MONOTONIC timestamp), or indefinitely if deadline is NULL.
+ * Recomputes the remaining time and retries on EINTR, so a signal
+ * this daemon does not yet catch cannot shorten the wait. The
+ * signal-mask argument to pselect() is NULL here -- plan 02-04 passes
+ * a real one, to atomically unblock a shutdown signal while waiting.
+ *
+ * Returns 1 once fd is readable, 0 once deadline has passed with
+ * nothing to read, or -1 with errno set on a real pselect() error.
+ */
+static int wait_readable(int fd, const struct timespec *deadline)
+{
+	for (;;) {
+		struct timespec timeout;
+		fd_set rfds;
+		int ret;
+
+		if (deadline != NULL) {
+			struct timespec now;
+
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			timeout.tv_sec = deadline->tv_sec - now.tv_sec;
+			timeout.tv_nsec = deadline->tv_nsec - now.tv_nsec;
+			if (timeout.tv_nsec < 0) {
+				timeout.tv_nsec += 1000000000L;
+				timeout.tv_sec--;
+			}
+			if (timeout.tv_sec < 0) {
+				timeout.tv_sec = 0;
+				timeout.tv_nsec = 0;
+			}
+		}
+
+		FD_ZERO(&rfds);
+		FD_SET(fd, &rfds);
+
+		ret = pselect(fd + 1, &rfds, NULL, NULL,
+			      deadline != NULL ? &timeout : NULL, NULL);
+		if (ret < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+
+		return ret > 0 ? 1 : 0;
+	}
+}
+
+/*
  * Reads and handles every command sent on connfd, until read()
- * returns 0 (the client closed its end) or a real error. A signal
- * interrupting the read is retried; any other error is logged with
- * the client's address and ends this connection. Every complete
- * command is fed through the protocol parser as soon as it is
- * available, so several commands in one read(), or one command split
- * across several read()s, are both handled correctly (PROTO-01,
- * PROTO-05). A command still incomplete when the connection ends is
- * dropped without being sent. The caller closes connfd exactly once,
- * after this function returns.
+ * returns 0 (the client closed its end), a real error, or no complete
+ * command arrives for idle_timeout seconds. A signal interrupting the
+ * read is retried; any other error is logged with the client's
+ * address and ends this connection. Every complete command is fed
+ * through the protocol parser as soon as it is available, so several
+ * commands in one read(), or one command split across several
+ * read()s, are both handled correctly (PROTO-01, PROTO-05).
+ *
+ * The idle deadline is set on entry and re-armed only when proto_next()
+ * completes a result -- a command, an ERR or an empty line -- never by
+ * partial bytes still buffered in pc: re-arming on every read() would
+ * let a client that trickles one byte at a time hold the only
+ * connection slot forever, exactly the stall DMN-05 exists to close.
+ * A command still incomplete when the deadline passes, or when the
+ * connection ends, is dropped without being sent or logged -- a
+ * legacy client that never closes its side hits this in normal
+ * operation (D-25). The caller closes connfd exactly once, after this
+ * function returns.
  */
 static void serve_connection(int connfd, const char *ip)
 {
 	struct proto_conn pc;
 	char recbuf[1024];
+	struct timespec deadline;
 
 	proto_init(&pc);
 
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	deadline.tv_sec += idle_timeout;
+
 	for (;;) {
-		ssize_t n = read(connfd, recbuf, sizeof(recbuf));
+		ssize_t n;
 		const char *p = recbuf;
 		size_t left;
 		struct proto_cmd cmd;
+		int ready;
+
+		ready = wait_readable(connfd, &deadline);
+		if (ready < 0) {
+			syslog(LOG_ERR, "[-] pselect for %s: %s", ip,
+			       strerror(errno));
+			return;
+		}
+		if (ready == 0)
+			return;
+
+		n = read(connfd, recbuf, sizeof(recbuf));
 
 		if (n == 0)
 			return;
@@ -324,6 +457,9 @@ static void serve_connection(int connfd, const char *ip)
 
 		left = (size_t)n;
 		while (proto_next(&pc, &p, &left, &cmd)) {
+			clock_gettime(CLOCK_MONOTONIC, &deadline);
+			deadline.tv_sec += idle_timeout;
+
 			if (handle_command(connfd, ip, &cmd) < 0)
 				return;
 		}

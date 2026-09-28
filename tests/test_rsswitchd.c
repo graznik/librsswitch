@@ -734,6 +734,75 @@ static int client_quiet(int fd, int timeout_ms)
 	return nready == 0;
 }
 
+/*
+ * Waits up to timeout_ms for fd to reach EOF (a read() of 0 bytes).
+ * Returns the number of milliseconds elapsed until EOF, or -1 if EOF
+ * did not arrive within timeout_ms or a byte arrived instead.
+ */
+static long long client_wait_eof(int fd, int timeout_ms)
+{
+	long long start = now_ms();
+	long long deadline = start + timeout_ms;
+
+	for (;;) {
+		struct pollfd pfd;
+		long long remaining = deadline - now_ms();
+		int nready;
+		char c;
+		ssize_t n;
+
+		if (remaining <= 0)
+			return -1;
+
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		nready = poll(&pfd, 1, (int)remaining);
+		if (nready < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+		if (nready == 0)
+			return -1;
+
+		n = read(fd, &c, 1);
+		if (n == 0)
+			return now_ms() - start;
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return -1;
+		}
+
+		/* A byte arrived instead of EOF: not what these tests
+		 * expect at this point.
+		 */
+		return -1;
+	}
+}
+
+/*
+ * Like client_send(), but via send(MSG_NOSIGNAL): used only by tests
+ * that keep writing to a socket the daemon may have already closed --
+ * a plain write() there would raise SIGPIPE and kill this test
+ * process itself, not just fail the one write.
+ */
+static void client_send_ignore_sigpipe(int fd, const char *buf, size_t len)
+{
+	size_t sent = 0;
+
+	while (sent < len) {
+		ssize_t n = send(fd, buf + sent, len - sent, MSG_NOSIGNAL);
+
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			return;
+		}
+		sent += (size_t)n;
+	}
+}
+
 static void test_help(void)
 {
 	static const char *const args[] = {"--help", NULL};
@@ -1897,6 +1966,305 @@ static void test_raw_err_send(void)
 	daemon_stop(&d, SIGTERM, &st);
 }
 
+/* --timeout is validated with the same strict rules as --port, and a
+ * valid value is accepted and shown in --help (DMN-07, D-19).
+ */
+static void test_timeout_option(void)
+{
+	static const char *const help_args[] = {"--help", NULL};
+	static const char *const bad_cases[][3] = {
+		{"--timeout", "0", NULL},
+		{"--timeout", "3601", NULL},
+		{"--timeout", "abc", NULL},
+		{"--timeout", "", NULL},
+	};
+	size_t i;
+	char out[1024], err[256];
+	int status = 0;
+
+	CHECK_EQ(daemon_run(help_args, &status, out, sizeof(out), err,
+			    sizeof(err), 2000), 0);
+	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	CHECK(strstr(out, "--timeout") != NULL);
+	CHECK(strstr(out, "default 10") != NULL);
+
+	for (i = 0; i < ARRAY_SIZE(bad_cases); i++) {
+		const char *args[3];
+
+		args[0] = bad_cases[i][0];
+		args[1] = bad_cases[i][1];
+		args[2] = NULL;
+
+		CHECK_EQ(daemon_run(args, &status, out, sizeof(out), err,
+				    sizeof(err), 2000), 0);
+		CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 2);
+		CHECK(err[0] != '\0');
+	}
+
+	{
+		struct daemon d;
+		int st;
+		static const char *const extra1[] = { "--timeout", "1", NULL };
+		static const char *const extra2[] = {
+			"--timeout", "3600", NULL
+		};
+
+		CHECK_EQ(daemon_start(&d, extra1), 0);
+		daemon_stop(&d, SIGTERM, &st);
+
+		CHECK_EQ(daemon_start(&d, extra2), 0);
+		daemon_stop(&d, SIGTERM, &st);
+	}
+}
+
+/* A silent client is closed between 0.9 and 2.0 s after connecting,
+ * with no bytes sent to it and no fd leaked, and a following client
+ * is unaffected (D-19, DMN-05).
+ */
+static void test_idle_timeout(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	long long elapsed;
+	char line[64];
+	int baseline, after;
+	static const char *const extra[] = { "--timeout", "1", NULL };
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	/*
+	 * A warm-up connection forces the daemon's first syslog() call
+	 * (per connection), which only opens its socket to the syslog
+	 * daemon on first use -- a one-time fd for the life of the
+	 * process, not a per-connection leak (see test_no_fd_leak).
+	 * Measure the baseline after this warm-up so it is not
+	 * mistaken for one.
+	 */
+	{
+		int wfd = client_connect("127.0.0.1", d.port);
+
+		CHECK(wfd >= 0);
+		if (wfd >= 0)
+			close(wfd);
+	}
+	usleep(200000);
+
+	baseline = daemon_fd_count(d.pid);
+	CHECK(baseline >= 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		elapsed = client_wait_eof(fd, 3000);
+		CHECK(elapsed >= 900 && elapsed <= 2000);
+		close(fd);
+	}
+
+	CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 100), 0);
+
+	after = daemon_fd_count(d.pid);
+	CHECK_EQ(after, baseline);
+
+	{
+		int fd2 = client_connect("127.0.0.1", d.port);
+
+		CHECK(fd2 >= 0);
+		if (fd2 >= 0) {
+			expect_ok(&d, fd2, "0300", 4, "FFF11FF00001");
+			close(fd2);
+		}
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A command trickled one byte every 300 ms, with no newline, must not
+ * hold the connection slot past --timeout: the deadline counts from
+ * the last completed command, not from the last byte (D-19, DMN-05).
+ */
+static void test_trickle_timeout(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	char line[64];
+	static const char *const extra[] = { "--timeout", "1", NULL };
+	static const char msg[] = "1 17 23 1";
+	long long start;
+	long long eof_ms = -1;
+	size_t i;
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		start = now_ms();
+
+		for (i = 0; i < sizeof(msg) - 1; i++) {
+			struct pollfd pfd;
+			int nready;
+
+			if (client_send(fd, &msg[i], 1) < 0)
+				break;
+
+			pfd.fd = fd;
+			pfd.events = POLLIN;
+			nready = poll(&pfd, 1, 300);
+			if (nready > 0 &&
+			    (pfd.revents & (POLLIN | POLLHUP))) {
+				char c;
+				ssize_t n = read(fd, &c, 1);
+
+				if (n <= 0) {
+					eof_ms = now_ms() - start;
+					break;
+				}
+			}
+		}
+
+		if (eof_ms < 0) {
+			long long already = now_ms() - start;
+			int remain = already < 2000 ?
+				(int)(2000 - already) : 100;
+			long long more = client_wait_eof(fd, remain);
+
+			if (more >= 0)
+				eof_ms = already + more;
+		}
+
+		CHECK(eof_ms >= 0);
+		CHECK(eof_ms <= 1800);
+
+		close(fd);
+	}
+
+	CHECK_EQ(daemon_stdout_line(&d, line, sizeof(line), 100), 0);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* Commands sent well within --timeout of each other keep the
+ * connection alive indefinitely: the deadline is re-armed on every
+ * completed command (D-19, DMN-05).
+ */
+static void test_commands_rearm(void)
+{
+	struct daemon d;
+	int st;
+	int fd;
+	static const char *const extra[] = { "--timeout", "1", NULL };
+	int i;
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		for (i = 0; i < 5; i++) {
+			expect_ok(&d, fd, "0300", 4, "FFF11FF00001");
+			if (i < 4)
+				usleep(600000);
+		}
+		close(fd);
+	}
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* An idle connection blocks other clients for at most --timeout
+ * seconds, never longer (DMN-05, DMN-06).
+ */
+static void test_timeout_frees_daemon(void)
+{
+	struct daemon d;
+	int st;
+	int fda, fdb;
+	long long t0, elapsed;
+	char reply[64];
+	static const char *const extra[] = { "--timeout", "1", NULL };
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	fda = client_connect("127.0.0.1", d.port);
+	CHECK(fda >= 0);
+
+	t0 = now_ms();
+	fdb = client_connect("127.0.0.1", d.port);
+	CHECK(fdb >= 0);
+	if (fdb >= 0)
+		CHECK_EQ(client_send(fdb, "0300", 4), 0);
+
+	if (fdb >= 0) {
+		CHECK_EQ(client_line(fdb, reply, sizeof(reply), 3000), 1);
+		elapsed = now_ms() - t0;
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+		CHECK(elapsed >= 800 && elapsed < 2500);
+		close(fdb);
+	}
+
+	if (fda >= 0)
+		close(fda);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
+/* A client that fills the daemon's send buffer and never reads cannot
+ * block another client past --timeout: SO_SNDTIMEO bounds the reply
+ * write (DMN-05).
+ */
+static void test_stuck_reader(void)
+{
+	struct daemon d;
+	int st;
+	int fda, fdb;
+	long long t0;
+	char reply[64];
+	static const char *const extra[] = { "--timeout", "1", NULL };
+	int i;
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	{
+		struct sockaddr_in sa;
+		int rcvbuf = 2048;
+
+		fda = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+		CHECK(fda >= 0);
+		if (fda >= 0) {
+			setsockopt(fda, SOL_SOCKET, SO_RCVBUF, &rcvbuf,
+				   sizeof(rcvbuf));
+
+			memset(&sa, 0, sizeof(sa));
+			sa.sin_family = AF_INET;
+			sa.sin_port = htons((uint16_t)d.port);
+			inet_pton(AF_INET, "127.0.0.1", &sa.sin_addr);
+			CHECK_EQ(connect(fda, (struct sockaddr *)&sa,
+					  sizeof(sa)), 0);
+
+			for (i = 0; i < 2000; i++)
+				client_send_ignore_sigpipe(fda, "x\n", 2);
+		}
+	}
+
+	t0 = now_ms();
+	fdb = client_connect("127.0.0.1", d.port);
+	CHECK(fdb >= 0);
+	if (fdb >= 0) {
+		CHECK_EQ(client_send(fdb, "0300", 4), 0);
+		CHECK_EQ(client_line(fdb, reply, sizeof(reply), 5000), 1);
+		CHECK_EQ(strcmp(reply, "OK"), 0);
+		CHECK(now_ms() - t0 < 5000);
+		close(fdb);
+	}
+
+	if (fda >= 0)
+		close(fda);
+
+	daemon_stop(&d, SIGTERM, &st);
+}
+
 /* Neither a reply nor a syslog line ever contains raw client bytes
  * (D-15) -- checked here at the reply, escape sequences and garbage
  * alike collapse to the same fixed text.
@@ -2049,6 +2417,12 @@ int main(int argc, char *argv[])
 	test_no_echo();
 	test_serialized_replies();
 	test_early_disconnect();
+	test_timeout_option();
+	test_idle_timeout();
+	test_trickle_timeout();
+	test_commands_rearm();
+	test_timeout_frees_daemon();
+	test_stuck_reader();
 
 	return MT_REPORT();
 }
