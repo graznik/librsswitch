@@ -763,3 +763,145 @@ def test_switch_after_move_records_on_moved_socket(fake_daemon, switch_app):
     assert [s["id"] for s in kitchen] == [HEATER]
     assert kitchen[0]["last_sent"] == {"state": "off",
                                        "at": "2026-09-29T10:00:00.000Z"}
+
+
+DUPLICATE = "another socket uses the same type, group and number"
+
+
+def warning(*ids):
+    return [{"code": "duplicate_address", "message": DUPLICATE,
+             "socket_ids": list(ids)}]
+
+
+def heater_twin(**changes):
+    changes.setdefault("name", "Zweiter")
+    return new_socket(type="pollin_2605", group=17, number=23, **changes)
+
+
+def test_duplicate_address_on_create_warns_with_other_ids(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = add(client, KITCHEN, heater_twin())
+    assert resp.status_code == 201
+    assert resp.get_json()["warnings"] == warning(HEATER)
+
+
+def test_duplicate_is_still_saved(make_app):
+    app = make_app(sample_doc())
+    client = app.test_client()
+    resp = add(client, KITCHEN, heater_twin())
+    sid = resp.get_json()["socket"]["id"]
+    assert [s["id"] for s in data_doc(app)["rooms"][1]["sockets"]] == [sid]
+    assert resp.get_json()["socket"]["last_sent"] is None
+
+
+def test_same_numbers_other_type_no_warning(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = add(client, KITCHEN, new_socket(type="pollin_2605", group=0,
+                                           number=0))
+    assert resp.status_code == 201
+    assert resp.get_json()["warnings"] == []
+    resp = add(client, KITCHEN, new_socket(name="Zweite", type="rev_008345",
+                                           group=0, number=0))
+    assert resp.get_json()["warnings"] == warning(LAMP)
+
+
+@pytest.mark.parametrize("group, number", [(17, 24), (17, 22), (16, 23),
+                                           (18, 23), (23, 17)])
+def test_group_or_number_off_by_one_no_warning(make_app, group, number):
+    client = make_app(sample_doc()).test_client()
+    resp = add(client, KITCHEN, new_socket(type="pollin_2605", group=group,
+                                           number=number))
+    assert resp.status_code == 201
+    assert resp.get_json()["warnings"] == []
+
+
+def test_duplicate_across_rooms_detected(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = add(client, KITCHEN, new_socket(group=0, number=0))
+    assert resp.get_json()["warnings"] == warning(LAMP)
+    assert sockets_of(client, LIVING)[0]["id"] == LAMP
+
+
+def test_edit_onto_other_address_warns(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = edit(client, LAMP, {"type": "pollin_2605", "group": 17,
+                               "number": 23})
+    assert resp.status_code == 200
+    assert resp.get_json()["warnings"] == warning(HEATER)
+    assert resp.get_json()["socket"]["type"] == "pollin_2605"
+
+
+def test_edit_onto_a_free_address_has_no_warning(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = edit(client, LAMP, {"group": 1})
+    assert resp.get_json()["warnings"] == []
+
+
+def test_own_address_is_never_listed(make_app):
+    client = make_app(sample_doc()).test_client()
+    for sid in (LAMP, HEATER):
+        resp = edit(client, sid, {})
+        assert resp.get_json()["warnings"] == []
+    twin = add(client, KITCHEN, heater_twin()).get_json()["socket"]["id"]
+    assert edit(client, twin, {}).get_json()["warnings"] == warning(HEATER)
+    assert edit(client, HEATER, {}).get_json()["warnings"] == warning(twin)
+
+
+def test_three_way_duplicate_lists_others_in_display_order(make_app):
+    client = make_app(sample_doc()).test_client()
+    in_kitchen = add(client, KITCHEN, heater_twin()).get_json()[
+        "socket"]["id"]
+    resp = add(client, LIVING, heater_twin(name="Dritter"))
+    in_living = resp.get_json()["socket"]["id"]
+    assert resp.get_json()["warnings"] == warning(HEATER, in_kitchen)
+
+    resp = edit(client, HEATER, {"name": "Radiator"})
+    assert resp.get_json()["warnings"] == warning(in_living, in_kitchen)
+
+    json_request(client, "PUT", "/api/rooms/order",
+                 {"ids": [KITCHEN, LIVING]})
+    resp = edit(client, in_living, {})
+    assert resp.get_json()["warnings"] == warning(in_kitchen, HEATER)
+
+
+def test_move_reports_the_duplicates_as_saved(make_app):
+    client = make_app(sample_doc()).test_client()
+    twin = add(client, KITCHEN, heater_twin()).get_json()["socket"]["id"]
+    resp = move(client, twin, LIVING)
+    assert resp.get_json()["warnings"] == warning(HEATER)
+
+
+def test_warnings_key_always_present(make_app):
+    client = make_app(sample_doc()).test_client()
+    created = add(client, KITCHEN)
+    edited = edit(client, LAMP, {"name": "Leselampe"})
+    noop = edit(client, LAMP, {})
+    for resp in (created, edited, noop):
+        assert resp.get_json()["warnings"] == []
+    assert "warnings" not in client.get("/api/sockets/" + LAMP).get_json()
+
+
+def test_concurrent_creates_of_one_address_warn_as_saved(make_app):
+    app = make_app(sample_doc())
+    barrier = threading.Barrier(2)
+    results = []
+
+    def post(name):
+        client = app.test_client()
+        barrier.wait()
+        results.append(add(client, KITCHEN, new_socket(
+            name=name, type="pollin_2605", group=2, number=2)))
+
+    threads = [threading.Thread(target=post, args=(n,)) for n in "AB"]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    made = [r.get_json() for r in results]
+    assert [r.status_code for r in results] == [201, 201]
+    # The requests are serialised: the one that was saved second sees
+    # the first, and the one saved first sees nothing.
+    warned = [m for m in made if m["warnings"]]
+    quiet = [m for m in made if not m["warnings"]]
+    assert len(warned) == 1 and len(quiet) == 1
+    assert warned[0]["warnings"] == warning(quiet[0]["socket"]["id"])

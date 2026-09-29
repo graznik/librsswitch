@@ -65,6 +65,28 @@ def address_of(sock):
     return (sock["type"], sock["group"], sock["number"])
 
 
+def duplicate_warnings(data, sid) -> list:
+    """Return the warnings about the address of the socket sid.
+
+    Two sockets with the same type, group and number switch the same
+    receivers. That is sometimes intended, so it is a warning and never
+    a refusal. The list is empty when no other socket has the address of
+    sid, and else holds one warning that names those sockets in display
+    order, the sockets of every room included and sid itself left out.
+    """
+    _, sock = find_socket(data, sid)
+    address = address_of(sock)
+    others = [other["id"] for room in data["rooms"]
+              for other in room["sockets"]
+              if other["id"] != sid and address_of(other) == address]
+    if not others:
+        return []
+    return [{"code": "duplicate_address",
+             "message": "another socket uses the same type, group and "
+                        "number",
+             "socket_ids": others}]
+
+
 @bp.route("/sockets/<sid>", methods=["GET"])
 def read_socket(sid):
     """Return one socket."""
@@ -90,7 +112,8 @@ def create_socket(rid):
                 "type": address["type"], "group": address["group"],
                 "number": address["number"], "last_sent": None}
         room["sockets"].append(sock)
-        return {"socket": socket_json(room, sock), "warnings": []}
+        return {"socket": socket_json(room, sock),
+                "warnings": duplicate_warnings(data, sock["id"])}
 
     return jsonify(state().store.mutate(create)), 201
 
@@ -148,7 +171,8 @@ def edit_socket(sid):
         if target is not room:
             room["sockets"].remove(sock)
             target["sockets"].append(sock)
-        return {"socket": socket_json(target, sock), "warnings": []}
+        return {"socket": socket_json(target, sock),
+                "warnings": duplicate_warnings(data, sid)}
 
     return jsonify(state().store.mutate(edit))
 
