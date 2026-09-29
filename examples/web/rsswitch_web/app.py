@@ -23,6 +23,7 @@ from flask import Flask
 
 from .api import register_blueprints
 from .config import resolve_config
+from .errors import MAX_BODY_BYTES, register_error_handlers
 from .store import Store
 
 
@@ -50,5 +51,7 @@ def create_app(config=None) -> Flask:
     # objects keep the order of their fields.
     app.json.ensure_ascii = False
     app.json.sort_keys = False
+    app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
+    register_error_handlers(app)
     register_blueprints(app)
     return app

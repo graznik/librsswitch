@@ -20,8 +20,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from flask import abort, jsonify
 
 from rsswitch_web import create_app
+from rsswitch_web.errors import ApiError, json_body, reject_unknown_fields
 
 
 def write_doc(path, doc):
@@ -82,3 +84,38 @@ def make_app(tmp_path):
         return create_app({"data_file": str(path), **overrides})
 
     return factory
+
+
+@pytest.fixture
+def probe_app(make_app):
+    """A make_app() app with routes that only the tests use.
+
+    They are registered before the first request.
+    """
+    app = make_app()
+
+    @app.route("/api/_probe",
+               methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    def probe():
+        return jsonify(json_body(required=False))
+
+    @app.route("/api/_probe/strict", methods=["POST"])
+    def probe_strict():
+        body = json_body()
+        reject_unknown_fields(body, {"name"})
+        return jsonify(body)
+
+    @app.route("/api/_probe/boom")
+    def probe_boom():
+        raise RuntimeError("secret failure in /srv/private/rsswitch.db")
+
+    @app.route("/api/_probe/api-error")
+    def probe_api_error():
+        raise ApiError(409, "name_conflict", "taken", field="name",
+                       headers={"X-Probe": "1"})
+
+    @app.route("/api/_probe/abort/<int:code>")
+    def probe_abort(code):
+        abort(code)
+
+    return app
