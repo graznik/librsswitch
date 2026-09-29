@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 from collections import namedtuple
 
 # The version of the data file. A file with any other version is refused.
@@ -43,6 +44,26 @@ def empty_document() -> dict:
 # Ids are made by the server. They end up in URLs and log lines, so the
 # alphabet is small. Match with ID_PATTERN.fullmatch().
 ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def new_id(prefix, data) -> str:
+    """Return an id for a new room ("r_") or socket ("s_").
+
+    It is the prefix and 12 random hex digits, 48 bits. A clash with
+    the id of a room or socket that is in data is astronomically rare
+    for a household of a few dozen ids, and the loop makes it
+    impossible.
+    """
+    taken = set()
+    for room in data["rooms"]:
+        taken.add(room["id"])
+        for sock in room["sockets"]:
+            taken.add(sock["id"])
+    while True:
+        candidate = prefix + secrets.token_hex(6)
+        if candidate not in taken:
+            return candidate
+
 
 _DOCUMENT_KEYS = ("version", "rooms")
 _ROOM_KEYS = ("id", "name", "sockets")

@@ -304,6 +304,29 @@ def post_json(app, path, body=None):
         headers={"Content-Type": "application/json"})
 
 
+def json_request(client, method, url, body=None):
+    """Send body as JSON with the given method, and return the response.
+
+    The Content-Type is always application/json, because the app
+    refuses a state change without it. Without a body, none is sent.
+    """
+    kwargs = {"headers": {"Content-Type": "application/json"}}
+    if body is not None:
+        kwargs["data"] = json.dumps(body)
+    return client.open(url, method=method, **kwargs)
+
+
+def data_bytes(app):
+    """Return the bytes of the data file of app."""
+    with open(app.config["RSSWITCH_WEB"]["data_file"], "rb") as f:
+        return f.read()
+
+
+def data_doc(app):
+    """Return the data file of app as a document."""
+    return json.loads(data_bytes(app).decode("utf-8"))
+
+
 _LISTENING = "rsswitchd: listening on "
 
 
