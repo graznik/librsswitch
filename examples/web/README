@@ -1,0 +1,32 @@
+rsswitch-web
+============
+
+rsswitch-web is a Flask app that keeps rooms and sockets in a JSON
+file and switches them through rsswitchd [1] over TCP. It never
+touches GPIO itself.
+
+
+Installation (Raspberry Pi)
+============================
+ $ sudo apt install python3-venv
+ $ cd librsswitch/examples/web/
+ $ python3 -m venv venv
+ $ venv/bin/pip install -r requirements.txt
+
+The app gets its own virtual environment so that pip never touches
+the system Python (PEP 668). Never use sudo pip or
+--break-system-packages.
+
+
+Installation (x86_64 host)
+============================
+From examples/web:
+ $ python3 -m venv venv
+ $ venv/bin/pip install -r requirements.txt
+ $ venv/bin/pip install -r requirements-dev.txt
+ $ venv/bin/python -m pytest
+
+requirements-dev.txt adds pytest. Python 3.9 or newer is required.
+
+
+[1] ../network/README
