@@ -17,22 +17,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from flask import Flask
 
 from .api import register_blueprints
 from .config import resolve_config
+from .daemon import RsswitchdClient
 from .errors import MAX_BODY_BYTES, register_error_handlers
 from .store import Store
+from .switching import utc_now
 
 
 @dataclass
 class AppState:
-    """What the request handlers share: the settings and the store."""
+    """What the request handlers share.
+
+    daemon and clock are fields so that tests can replace them.
+    """
 
     config: dict
     store: Store
+    daemon: RsswitchdClient
+    clock: Callable[[], str] = utc_now
 
 
 def create_app(config=None) -> Flask:
@@ -46,7 +54,10 @@ def create_app(config=None) -> Flask:
     store.check()
     app = Flask(__name__)
     app.config["RSSWITCH_WEB"] = cfg
-    app.extensions["rsswitch_web"] = AppState(cfg, store)
+    daemon = RsswitchdClient(cfg["daemon_host"], cfg["daemon_port"],
+                             cfg["daemon_connect_timeout"],
+                             cfg["daemon_read_timeout"])
+    app.extensions["rsswitch_web"] = AppState(cfg, store, daemon)
     # Non-ASCII names go out as UTF-8 instead of \u escapes, and
     # objects keep the order of their fields.
     app.json.ensure_ascii = False

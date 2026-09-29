@@ -92,6 +92,38 @@ class Store:
         finally:
             self._lock.release()
 
+    def record_last_sent(self, ids, address, state, at) -> list:
+        """Record a command that rsswitchd confirmed, and return the ids
+        of the sockets that were changed.
+
+        address is (type, group, number) as it was sent. The sockets
+        are looked up again under the lock, because the document may
+        have changed while the command was on its way. A socket that
+        is gone, or that has another address now, is left alone: the
+        command did not reach it. So is one whose last_sent is newer
+        than at, since a later command was confirmed first. The times
+        have a fixed width, so comparing the strings compares the
+        instants. An equal time is overwritten.
+        """
+        address = tuple(address)
+
+        def record(data):
+            written = []
+            for sid in ids:
+                _, sock = find_socket(data, sid)
+                if sock is None:
+                    continue
+                if (sock["type"], sock["group"], sock["number"]) != address:
+                    continue
+                last = sock["last_sent"]
+                if last is not None and last["at"] > at:
+                    continue
+                sock["last_sent"] = {"state": state, "at": at}
+                written.append(sid)
+            return written
+
+        return self.mutate(record)
+
     def _require_parent(self):
         parent = os.path.dirname(self.path)
         if not os.path.isdir(parent):
@@ -148,6 +180,18 @@ class Store:
                 except FileNotFoundError:
                     pass
             raise self._fail("cannot be written: %s" % e)
+
+
+def find_socket(data, sid):
+    """Return (room, socket) for the socket with the id sid.
+
+    Return (None, None) when no room holds it.
+    """
+    for room in data["rooms"]:
+        for sock in room["sockets"]:
+            if sock["id"] == sid:
+                return room, sock
+    return None, None
 
 
 def socket_json(room, sock) -> dict:

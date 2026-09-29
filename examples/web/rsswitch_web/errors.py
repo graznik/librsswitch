@@ -26,6 +26,8 @@ import json
 from flask import jsonify, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
+from .daemon import (DaemonError, DaemonProtocolError, DaemonReplyError,
+                     DaemonTimeout, DaemonUnreachable)
 from .store import StoreError
 
 # Request bodies are small JSON objects. Werkzeug answers 413 for more.
@@ -41,6 +43,15 @@ HTTP_CODES = {
     413: "payload_too_large",
     415: "unsupported_media_type",
 }
+
+# The message of each way rsswitchd can fail. The exception text goes to
+# the log, not to the client.
+_DAEMON_MESSAGES = (
+    (DaemonUnreachable, "rsswitchd cannot be reached"),
+    (DaemonTimeout, "rsswitchd did not answer in time"),
+    (DaemonProtocolError, "rsswitchd sent a reply that was not understood"),
+    (DaemonReplyError, "rsswitchd refused the command"),
+)
 
 _STORE_ERROR_MESSAGE = "the data store is unavailable"
 _INTERNAL_ERROR_MESSAGE = "internal server error"
@@ -64,6 +75,25 @@ class ApiError(Exception):
         if field is not None:
             self.extra["field"] = field
         self.extra.update(extra)
+
+
+def daemon_error_info(exc) -> dict:
+    """Return the error object that describes a DaemonError.
+
+    It has code and message. An ERR reply adds daemon_class and
+    daemon_message, which are what rsswitchd said, already reduced to
+    printable ASCII. A client must show them as text and nothing else.
+    """
+    message = "rsswitchd failed"
+    for cls, text in _DAEMON_MESSAGES:
+        if isinstance(exc, cls):
+            message = text
+            break
+    info = {"code": exc.code, "message": message}
+    if isinstance(exc, DaemonReplyError):
+        info["daemon_class"] = exc.daemon_class
+        info["daemon_message"] = exc.daemon_message
+    return info
 
 
 def error_response(status, code, message, headers=None, **extra):
@@ -108,6 +138,13 @@ def register_error_handlers(app):
         # The text names the data file. It belongs in the log only.
         app.logger.error("%s", e)
         return error_response(500, "store_error", _STORE_ERROR_MESSAGE)
+
+    @app.errorhandler(DaemonError)
+    def daemon_failure(e):
+        app.logger.warning("rsswitchd: %s", e)
+        info = daemon_error_info(e)
+        return error_response(e.status, info.pop("code"),
+                              info.pop("message"), **info)
 
     @app.errorhandler(HTTPException)
     def http_exception(e):

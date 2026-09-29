@@ -257,3 +257,31 @@ def refused_port():
     port = s.getsockname()[1]
     s.close()
     return port
+
+
+@pytest.fixture
+def switch_app(make_app):
+    """Return a factory: switch_app(daemon, doc=None, **overrides) -> app.
+
+    daemon is a FakeDaemon or a port number. The app talks to it with
+    short timeouts, and its data file holds sample_doc() unless doc is
+    given.
+    """
+    def factory(daemon, doc=None, **overrides):
+        port = daemon if isinstance(daemon, int) else daemon.port
+        config = {
+            "daemon_port": port,
+            "daemon_connect_timeout": 0.5,
+            "daemon_read_timeout": 0.5,
+        }
+        config.update(overrides)
+        return make_app(sample_doc() if doc is None else doc, **config)
+
+    return factory
+
+
+def post_json(app, path, body=None):
+    """POST body as JSON to path, and return the response."""
+    return app.test_client().post(
+        path, data=json.dumps({} if body is None else body),
+        headers={"Content-Type": "application/json"})
