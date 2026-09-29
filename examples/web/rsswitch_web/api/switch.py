@@ -20,7 +20,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify
 
 from ..errors import ApiError, json_body, reject_unknown_fields
-from ..switching import switch_socket
+from ..switching import all_off, switch_socket
 from . import state
 
 bp = Blueprint("switch", __name__, url_prefix="/api")
@@ -38,3 +38,25 @@ def switch(sid):
     app_state = state()
     return jsonify(switch_socket(app_state.store, app_state.daemon, sid,
                                  wanted, clock=app_state.clock))
+
+
+def _all_off(room_id):
+    body = json_body(required=False)
+    reject_unknown_fields(body, set())
+    app_state = state()
+    return jsonify(all_off(
+        app_state.store, app_state.daemon, room_id,
+        gap_seconds=app_state.config["all_off_gap_ms"] / 1000,
+        sleep=app_state.sleep, clock=app_state.clock))
+
+
+@bp.route("/rooms/<rid>/all-off", methods=["POST"])
+def room_all_off(rid):
+    """Switch off every socket of one room. The body is empty or {}."""
+    return _all_off(rid)
+
+
+@bp.route("/all-off", methods=["POST"])
+def household_all_off():
+    """Switch off every socket of every room. The body is empty or {}."""
+    return _all_off(None)

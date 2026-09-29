@@ -194,6 +194,14 @@ def find_socket(data, sid):
     return None, None
 
 
+def find_room(data, rid):
+    """Return the room with the id rid, or None when there is none."""
+    for room in data["rooms"]:
+        if room["id"] == rid:
+            return room
+    return None
+
+
 def socket_json(room, sock) -> dict:
     """Return a socket as the API shows it, with the id of its room."""
     return {

@@ -151,10 +151,15 @@ class FakeDaemon:
     back, None to send nothing, or one of HANG, CLOSE, RESET and Drip.
     It may run any code first, for example change the data file.
     connections counts the connections that were accepted.
+
+    With serial=True it serves one connection at a time, as rsswitchd
+    does: a connection that is accepted later waits until the one
+    before it is closed.
     """
 
-    def __init__(self, behaviour=None):
+    def __init__(self, behaviour=None, serial=False):
         self.behaviour = behaviour or (lambda line: b"OK\n")
+        self._serial = threading.Lock() if serial else None
         self.lines = []
         self.connections = 0
         self._stop = threading.Event()
@@ -185,7 +190,12 @@ class FakeDaemon:
     def _serve(self, conn):
         conn.settimeout(0.05)
         buf = b""
+        held = False
         try:
+            while self._serial and not held:
+                if self._stop.is_set():
+                    return
+                held = self._serial.acquire(timeout=0.05)
             while not self._stop.is_set():
                 try:
                     chunk = conn.recv(256)
@@ -204,6 +214,8 @@ class FakeDaemon:
             pass
         finally:
             conn.close()
+            if held:
+                self._serial.release()
 
     def _act(self, conn, action):
         """Do what a behaviour asked for. False ends the connection."""
@@ -238,15 +250,15 @@ class FakeDaemon:
 
 @pytest.fixture
 def fake_daemon():
-    """Return a factory: fake_daemon(behaviour=None) -> FakeDaemon.
+    """Return a factory: fake_daemon(behaviour=None, serial=False).
 
     Every daemon it made is closed at teardown, so no thread of a test
     outlives it.
     """
     made = []
 
-    def factory(behaviour=None):
-        daemon = FakeDaemon(behaviour)
+    def factory(behaviour=None, serial=False):
+        daemon = FakeDaemon(behaviour, serial)
         made.append(daemon)
         return daemon
 

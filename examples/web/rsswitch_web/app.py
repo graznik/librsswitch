@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -34,13 +35,14 @@ from .switching import utc_now
 class AppState:
     """What the request handlers share.
 
-    daemon and clock are fields so that tests can replace them.
+    daemon, clock and sleep are fields so that tests can replace them.
     """
 
     config: dict
     store: Store
     daemon: RsswitchdClient
     clock: Callable[[], str] = utc_now
+    sleep: Callable[[float], None] = time.sleep
 
 
 def create_app(config=None) -> Flask:
