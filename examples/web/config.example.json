@@ -1,0 +1,12 @@
+{
+  "daemon_host": "127.0.0.1",
+  "daemon_port": 5000,
+  "daemon_connect_timeout": 2,
+  "daemon_read_timeout": 5,
+  "listen_address": "0.0.0.0",
+  "listen_port": 8080,
+  "data_file": "/var/lib/rsswitch-web/data.json",
+  "all_off_gap_ms": 200,
+  "username": null,
+  "password_hash": null
+}

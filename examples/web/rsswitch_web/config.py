@@ -13,9 +13,12 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Configuration keys of rsswitch-web and their default values."""
+"""Configuration keys of rsswitch-web, and the file they are read from."""
 
 from __future__ import annotations
+
+import json
+import sys
 
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
@@ -33,6 +36,49 @@ DEFAULTS = {
     "username": None,
     "password_hash": None,
 }
+
+
+class ConfigError(Exception):
+    """The configuration cannot be used. The message is one line for the
+    operator and starts with "config: "."""
+
+
+def _reject_constant(name):
+    raise ValueError("invalid JSON constant %s" % name)
+
+
+def load_config(path=None) -> dict:
+    """Return the mapping in the JSON file at path, unchecked.
+
+    Without a path the default file is read, and when it does not exist
+    the built-in defaults are used, which is said on stderr. A file that
+    was asked for by name must exist. create_app() checks the keys and
+    values of the mapping.
+    """
+    explicit = path is not None
+    if not explicit:
+        path = DEFAULT_CONFIG_PATH
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except FileNotFoundError as e:
+        if explicit:
+            raise ConfigError("config: cannot read %s: %s"
+                              % (path, e.strerror))
+        sys.stderr.write("rsswitch-web: warning: %s not found, "
+                         "using built-in defaults\n" % path)
+        sys.stderr.flush()
+        return {}
+    except OSError as e:
+        raise ConfigError("config: cannot read %s: %s" % (path, e.strerror))
+    try:
+        mapping = json.loads(raw.decode("utf-8"),
+                             parse_constant=_reject_constant)
+    except (ValueError, RecursionError) as e:
+        raise ConfigError("config: %s: not valid JSON: %s" % (path, e))
+    if not isinstance(mapping, dict):
+        raise ConfigError("config: %s: must be a JSON object" % path)
+    return mapping
 
 
 def resolve_config(mapping=None) -> dict:
