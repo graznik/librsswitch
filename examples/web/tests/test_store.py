@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import copy
 import errno
 import multiprocessing
 import os
@@ -25,6 +26,7 @@ import threading
 import time
 
 import pytest
+from conftest import write_doc
 from filelock import FileLock
 
 from rsswitch_web import store as store_module
@@ -291,3 +293,171 @@ def test_mutate_missing_parent_dir_creates_nothing(tmp_path):
     with pytest.raises(StoreError):
         store.mutate(incr)
     assert not (tmp_path / "nodir").exists()
+
+
+def base_doc():
+    """A valid document with two rooms and three sockets."""
+    return {
+        "version": 1,
+        "rooms": [
+            {"id": "r1", "name": "One", "sockets": [
+                {"id": "s1", "name": "A", "type": "rev_008345",
+                 "group": 3, "number": 2, "last_sent": None},
+                {"id": "s2", "name": "B", "type": "pollin_2605",
+                 "group": 17, "number": 23,
+                 "last_sent": {"state": "on", "at": "2026-09-29T08:00Z"}},
+            ]},
+            {"id": "r2", "name": "Two", "sockets": [
+                {"id": "s3", "name": "C", "type": "pollin_2605",
+                 "group": 31, "number": 31, "last_sent": None},
+            ]},
+        ],
+    }
+
+
+def set_at(path, value):
+    """Return an edit that stores value at the given path of keys."""
+    def edit(doc):
+        node = doc
+        for key in path[:-1]:
+            node = node[key]
+        node[path[-1]] = value
+    return edit
+
+
+def drop_at(path):
+    def edit(doc):
+        node = doc
+        for key in path[:-1]:
+            node = node[key]
+        del node[path[-1]]
+    return edit
+
+
+S0 = ("rooms", 0, "sockets", 0)
+S1 = ("rooms", 0, "sockets", 1)
+
+MALFORMED = [
+    ("unknown-top-level-key", set_at(("extra",), 1), "extra"),
+    ("room-not-an-object", set_at(("rooms", 1), "x"), "rooms[1]"),
+    ("room-without-sockets", drop_at(("rooms", 1, "sockets")),
+     "rooms[1].sockets"),
+    ("sockets-not-a-list", set_at(("rooms", 1, "sockets"), {}),
+     "rooms[1].sockets"),
+    ("unknown-room-key", set_at(("rooms", 0, "color"), "red"),
+     "rooms[0].color"),
+    ("room-id-int", set_at(("rooms", 0, "id"), 7), "rooms[0].id"),
+    ("room-id-space", set_at(("rooms", 0, "id"), "a b"), "rooms[0].id"),
+    ("room-id-newline", set_at(("rooms", 0, "id"), "r1\n"),
+     "rooms[0].id"),
+    ("room-id-empty", set_at(("rooms", 0, "id"), ""), "rooms[0].id"),
+    ("room-id-65-chars", set_at(("rooms", 0, "id"), "x" * 65),
+     "rooms[0].id"),
+    ("duplicate-room-id", set_at(("rooms", 1, "id"), "r1"),
+     "rooms[1].id"),
+    ("socket-id-equals-room-id", set_at(S1 + ("id",), "r1"),
+     "rooms[0].sockets[1].id"),
+    ("duplicate-socket-id", set_at(("rooms", 1, "sockets", 0, "id"), "s1"),
+     "rooms[1].sockets[0].id"),
+    ("room-name-int", set_at(("rooms", 0, "name"), 1), "rooms[0].name"),
+    ("socket-name-null", set_at(S0 + ("name",), None),
+     "rooms[0].sockets[0].name"),
+    ("socket-not-an-object", set_at(S0, []), "rooms[0].sockets[0]"),
+    ("unknown-socket-key", set_at(S0 + ("color",), "red"),
+     "rooms[0].sockets[0].color"),
+    ("socket-without-last-sent", drop_at(S0 + ("last_sent",)),
+     "rooms[0].sockets[0].last_sent"),
+    ("type-upper-case", set_at(S0 + ("type",), "REV_008345"),
+     "rooms[0].sockets[0].type"),
+    ("type-list", set_at(S0 + ("type",), ["rev_008345"]),
+     "rooms[0].sockets[0].type"),
+    ("group-string", set_at(S0 + ("group",), "3"),
+     "rooms[0].sockets[0].group"),
+    ("group-true", set_at(S0 + ("group",), True),
+     "rooms[0].sockets[0].group"),
+    ("group-float", set_at(S0 + ("group",), 3.0),
+     "rooms[0].sockets[0].group"),
+    ("group-negative", set_at(S0 + ("group",), -1),
+     "rooms[0].sockets[0].group"),
+    ("number-true", set_at(S0 + ("number",), True),
+     "rooms[0].sockets[0].number"),
+    ("rev-group-4", set_at(S0 + ("group",), 4),
+     "rooms[0].sockets[0].group"),
+    ("rev-number-3", set_at(S0 + ("number",), 3),
+     "rooms[0].sockets[0].number"),
+    ("pollin-group-32", set_at(S1 + ("group",), 32),
+     "rooms[0].sockets[1].group"),
+    ("pollin-number-32", set_at(S1 + ("number",), 32),
+     "rooms[0].sockets[1].number"),
+    ("last-sent-string", set_at(S1 + ("last_sent",), "on"),
+     "rooms[0].sockets[1].last_sent"),
+    ("last-sent-state-upper", set_at(S1 + ("last_sent",),
+                                     {"state": "ON", "at": "x"}),
+     "rooms[0].sockets[1].last_sent.state"),
+    ("last-sent-state-int", set_at(S1 + ("last_sent", "state"), 1),
+     "rooms[0].sockets[1].last_sent.state"),
+    ("last-sent-without-at", drop_at(S1 + ("last_sent", "at")),
+     "rooms[0].sockets[1].last_sent.at"),
+    ("last-sent-at-int", set_at(S1 + ("last_sent", "at"), 5),
+     "rooms[0].sockets[1].last_sent.at"),
+    ("last-sent-unknown-key", set_at(S1 + ("last_sent", "by"), "me"),
+     "rooms[0].sockets[1].last_sent.by"),
+]
+
+
+@pytest.mark.parametrize("edit, fragment",
+                         [(c[1], c[2]) for c in MALFORMED],
+                         ids=[c[0] for c in MALFORMED])
+def test_malformed_document_rejected(tmp_path, edit, fragment):
+    doc = copy.deepcopy(base_doc())
+    edit(doc)
+    path = tmp_path / "data.json"
+    write_doc(path, doc)
+    before = read_bytes(path)
+    store = Store(str(path))
+    with pytest.raises(StoreError) as info:
+        store.snapshot()
+    assert fragment in str(info.value)
+    with pytest.raises(StoreError):
+        store.check()
+    with pytest.raises(StoreError):
+        store.mutate(incr)
+    assert read_bytes(path) == before
+    assert temp_files(tmp_path) == []
+
+
+def test_valid_base_document_is_accepted(tmp_path):
+    path = tmp_path / "data.json"
+    write_doc(path, base_doc())
+    assert Store(str(path)).snapshot() == base_doc()
+
+
+def test_valid_edge_document_accepted(tmp_path):
+    doc = base_doc()
+    # Duplicate names, an empty name and a long name are not checked on
+    # load, and neither are duplicate addresses.
+    doc["rooms"][0]["sockets"][1]["name"] = "A"
+    doc["rooms"][1]["name"] = doc["rooms"][0]["name"]
+    doc["rooms"][1]["sockets"][0]["name"] = ""
+    doc["rooms"][1]["sockets"].append(
+        {"id": "s4", "name": "x" * 500, "type": "rev_008345", "group": 3,
+         "number": 2, "last_sent": {"state": "off", "at": ""}})
+    path = tmp_path / "data.json"
+    write_doc(path, doc)
+    store = Store(str(path))
+    assert store.snapshot() == doc
+    store.check()
+
+
+def test_mutate_on_malformed_file_writes_nothing(tmp_path):
+    doc = base_doc()
+    doc["rooms"][0]["sockets"][0]["group"] = "3"
+    path = tmp_path / "data.json"
+    write_doc(path, doc)
+    before = read_bytes(path)
+    mtime = os.stat(str(path)).st_mtime_ns
+    with pytest.raises(StoreError):
+        Store(str(path)).mutate(incr)
+    assert read_bytes(path) == before
+    assert os.stat(str(path)).st_mtime_ns == mtime
+    assert temp_files(tmp_path) == []

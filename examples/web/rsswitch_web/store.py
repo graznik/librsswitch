@@ -24,7 +24,7 @@ import tempfile
 
 from filelock import FileLock, Timeout
 
-from .model import FORMAT_VERSION, empty_document
+from .model import DocumentError, check_document, empty_document
 
 
 class StoreError(Exception):
@@ -113,13 +113,10 @@ class Store:
                               parse_constant=_reject_constant)
         except (ValueError, RecursionError) as e:
             raise self._fail("is not UTF-8 JSON: %s" % e)
-        if not isinstance(data, dict):
-            raise self._fail("is not a JSON object")
-        version = data.get("version")
-        if type(version) is not int or version != FORMAT_VERSION:
-            raise self._fail("has a missing or unsupported version")
-        if not isinstance(data.get("rooms"), list):
-            raise self._fail("has no list of rooms")
+        try:
+            check_document(data)
+        except DocumentError as e:
+            raise self._fail(str(e))
         return data
 
     def _write(self, data):
