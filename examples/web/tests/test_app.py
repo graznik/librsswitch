@@ -17,8 +17,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from rsswitch_web import create_app
+from rsswitch_web.app import AppState
 from rsswitch_web.config import DEFAULT_CONFIG_PATH, DEFAULTS, resolve_config
+from rsswitch_web.store import Store, StoreError
 
 
 def test_resolve_config_defaults():
@@ -54,6 +58,32 @@ def test_resolve_config_overrides_one_key():
     assert cfg == expected
 
 
-def test_create_app_keeps_resolved_config():
-    app = create_app({"listen_port": 9090})
-    assert app.config["RSSWITCH_WEB"] == resolve_config({"listen_port": 9090})
+def test_create_app_keeps_resolved_config(tmp_path):
+    path = str(tmp_path / "data.json")
+    app = create_app({"data_file": path, "listen_port": 9090})
+    expected = resolve_config({"data_file": path, "listen_port": 9090})
+    assert app.config["RSSWITCH_WEB"] == expected
+    state = app.extensions["rsswitch_web"]
+    assert isinstance(state, AppState)
+    assert state.config is app.config["RSSWITCH_WEB"]
+    assert isinstance(state.store, Store)
+    assert state.store.path == path
+
+
+def test_create_app_with_missing_data_dir_raises_store_error(tmp_path):
+    path = tmp_path / "nodir" / "data.json"
+    with pytest.raises(StoreError):
+        create_app({"data_file": str(path)})
+    assert not (tmp_path / "nodir").exists()
+
+
+@pytest.mark.parametrize("content", [b"{", b'{"version": 2, "rooms": []}'],
+                         ids=["not-json", "unknown-version"])
+def test_create_app_with_corrupt_file_raises_and_keeps_bytes(tmp_path,
+                                                             content):
+    path = tmp_path / "data.json"
+    path.write_bytes(content)
+    with pytest.raises(StoreError):
+        create_app({"data_file": str(path)})
+    assert path.read_bytes() == content
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["data.json"]

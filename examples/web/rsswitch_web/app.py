@@ -17,14 +17,38 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from flask import Flask
 
+from .api import register_blueprints
 from .config import resolve_config
+from .store import Store
+
+
+@dataclass
+class AppState:
+    """What the request handlers share: the settings and the store."""
+
+    config: dict
+    store: Store
 
 
 def create_app(config=None) -> Flask:
-    """Build the Flask app. config is a mapping laid over the defaults."""
+    """Build the Flask app. config is a mapping laid over the defaults.
+
+    A data file that cannot be used raises StoreError, so no app exists
+    that would serve or overwrite a corrupt file.
+    """
     cfg = resolve_config(config)
+    store = Store(cfg["data_file"])
+    store.check()
     app = Flask(__name__)
     app.config["RSSWITCH_WEB"] = cfg
+    app.extensions["rsswitch_web"] = AppState(cfg, store)
+    # Non-ASCII names go out as UTF-8 instead of \u escapes, and
+    # objects keep the order of their fields.
+    app.json.ensure_ascii = False
+    app.json.sort_keys = False
+    register_blueprints(app)
     return app

@@ -151,3 +151,30 @@ class Store:
                 except FileNotFoundError:
                     pass
             raise self._fail("cannot be written: %s" % e)
+
+
+def socket_json(room, sock) -> dict:
+    """Return a socket as the API shows it, with the id of its room."""
+    return {
+        "id": sock["id"],
+        "room_id": room["id"],
+        "name": sock["name"],
+        "type": sock["type"],
+        "group": sock["group"],
+        "number": sock["number"],
+        "last_sent": sock["last_sent"],
+    }
+
+
+def room_json(room) -> dict:
+    """Return a room with all of its sockets, in their stored order."""
+    return {
+        "id": room["id"],
+        "name": room["name"],
+        "sockets": [socket_json(room, s) for s in room["sockets"]],
+    }
+
+
+def tree_json(data) -> dict:
+    """Return the whole household, in the stored order of its rooms."""
+    return {"rooms": [room_json(r) for r in data["rooms"]]}
