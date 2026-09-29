@@ -25,7 +25,7 @@ from flask import Flask
 from .api import register_blueprints
 from .config import resolve_config
 from .daemon import RsswitchdClient
-from .errors import MAX_BODY_BYTES, register_error_handlers
+from .errors import MAX_BODY_BYTES, content_type_gate, register_error_handlers
 from .store import Store
 from .switching import utc_now
 
@@ -64,5 +64,9 @@ def create_app(config=None) -> Flask:
     app.json.sort_keys = False
     app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
     register_error_handlers(app)
+    # Hooks run in the order they are registered. An authentication
+    # hook must be registered before this gate, so that a client that
+    # has not logged in gets 401 and not 415.
+    app.before_request(content_type_gate)
     register_blueprints(app)
     return app

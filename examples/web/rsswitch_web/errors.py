@@ -157,6 +157,31 @@ def register_error_handlers(app):
                               _INTERNAL_ERROR_MESSAGE)
 
 
+def content_type_gate():
+    """Refuse a state changing request that is not declared as JSON.
+
+    Every POST, PUT and PATCH needs the Content-Type application/json,
+    with or without a body, and so does a DELETE that has a body. A
+    body-less POST such as All-off needs it too. A browser sends the
+    cached credentials of Basic authentication along with a form that a
+    page on another site submits, and such a form cannot set this type
+    without a CORS preflight, which the app does not answer. Checking
+    the type therefore keeps those forms out without a CSRF token. The
+    parameters of the type, such as "; charset=utf-8", are ignored.
+
+    GET, HEAD and OPTIONS are never looked at. Register the gate with
+    app.before_request(), so that it runs before the routing and an
+    unknown path is answered like a known one.
+    """
+    if request.method in ("POST", "PUT", "PATCH") or (
+            request.method == "DELETE" and (
+                request.content_length
+                or "Transfer-Encoding" in request.headers)):
+        if request.mimetype != "application/json":
+            raise ApiError(415, "unsupported_media_type",
+                           "Content-Type must be application/json")
+
+
 def _reject_constant(name):
     raise ValueError("invalid JSON constant %s" % name)
 
