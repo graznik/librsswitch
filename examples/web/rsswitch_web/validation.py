@@ -21,6 +21,7 @@ from __future__ import annotations
 import unicodedata
 
 from .errors import ApiError
+from .model import SOCKET_TYPES, address_problem
 
 # The longest name, counted in code points after normalisation.
 MAX_NAME_LEN = 64
@@ -67,3 +68,29 @@ def name_key(name) -> str:
     """
     folded = unicodedata.normalize("NFC", name).casefold()
     return unicodedata.normalize("NFC", folded)
+
+
+def check_socket_fields(fields) -> dict:
+    """Check the type and the address of a socket, or raise ApiError 422.
+
+    fields is a mapping with the keys type, group and number. The
+    first bad field is reported, in that order, so an unknown type is
+    named before a group that only makes sense for a known one. A
+    missing key counts as None. group and number must be JSON
+    integers within the limits of the type: a float, a string or a
+    boolean is refused, never converted, and a number that is too large
+    is refused, never clamped. The limits have one source, SOCKET_TYPES.
+
+    Return {"type", "group", "number"}.
+    """
+    type_name = fields.get("type")
+    if not isinstance(type_name, str) or type_name not in SOCKET_TYPES:
+        raise ApiError(422, "validation",
+                       "must be one of %s" % ", ".join(SOCKET_TYPES),
+                       field="type")
+    group = fields.get("group")
+    number = fields.get("number")
+    problem = address_problem(type_name, group, number)
+    if problem is not None:
+        raise ApiError(422, "validation", problem[1], field=problem[0])
+    return {"type": type_name, "group": group, "number": number}

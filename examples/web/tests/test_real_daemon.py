@@ -26,6 +26,9 @@ from __future__ import annotations
 import pytest
 
 from rsswitch_web.daemon import DaemonReplyError, RsswitchdClient
+from rsswitch_web.errors import ApiError
+from rsswitch_web.model import SOCKET_TYPES
+from rsswitch_web.validation import check_socket_fields
 
 
 def client_for(real_daemon):
@@ -52,3 +55,41 @@ def test_real_daemon_serves_consecutive_connections(real_daemon):
     client = client_for(real_daemon)
     client.send(1, 17, 23, 1)
     client.send(1, 17, 23, 0)
+
+
+def refused_field(type_name, group, number):
+    """Return the field check_socket_fields() names, or None."""
+    try:
+        check_socket_fields({"type": type_name, "group": group,
+                             "number": number})
+    except ApiError as e:
+        return e.extra["field"]
+    return None
+
+
+@pytest.mark.parametrize("type_name", sorted(SOCKET_TYPES))
+def test_limits_match_the_real_daemon(real_daemon, type_name):
+    """The address limits of the web app are those of rsswitchd.
+
+    The largest group and number are accepted by both. One more is
+    refused by both, and each refusal names the same field.
+    """
+    limits = SOCKET_TYPES[type_name]
+    client = client_for(real_daemon)
+    top_group = limits.groups - 1
+    top_number = limits.sockets - 1
+
+    assert refused_field(type_name, top_group, top_number) is None
+    client.send(limits.dev, top_group, top_number, 1)
+
+    assert refused_field(type_name, limits.groups, 0) == "group"
+    with pytest.raises(DaemonReplyError) as info:
+        client.send(limits.dev, limits.groups, 0, 1)
+    assert info.value.daemon_class == "range"
+    assert info.value.daemon_message.startswith("group ")
+
+    assert refused_field(type_name, 0, limits.sockets) == "number"
+    with pytest.raises(DaemonReplyError) as info:
+        client.send(limits.dev, 0, limits.sockets, 1)
+    assert info.value.daemon_class == "range"
+    assert info.value.daemon_message.startswith("socket ")
