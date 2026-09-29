@@ -18,6 +18,9 @@
 from __future__ import annotations
 
 import json
+import socket
+import struct
+import threading
 
 import pytest
 from flask import abort, jsonify
@@ -119,3 +122,138 @@ def probe_app(make_app):
         abort(code)
 
     return app
+
+
+# What a FakeDaemon behaviour may return besides bytes to send back.
+HANG = object()   # never answer, until the daemon is closed
+CLOSE = object()  # close the connection, which the peer sees as EOF
+RESET = object()  # abort the connection, which the peer sees as a reset
+
+
+class Drip:
+    """Send data one byte per interval, and no newline unless data has one."""
+
+    def __init__(self, data, interval):
+        self.data = data
+        self.interval = interval
+
+
+class FakeDaemon:
+    """A stand-in for rsswitchd on 127.0.0.1 and a port of its own.
+
+    Every line that arrives is appended to lines, without its newline.
+    behaviour(line) decides what happens next: it returns bytes to send
+    back, None to send nothing, or one of HANG, CLOSE, RESET and Drip.
+    It may run any code first, for example change the data file.
+    connections counts the connections that were accepted.
+    """
+
+    def __init__(self, behaviour=None):
+        self.behaviour = behaviour or (lambda line: b"OK\n")
+        self.lines = []
+        self.connections = 0
+        self._stop = threading.Event()
+        self._threads = []
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.bind(("127.0.0.1", 0))
+        self._sock.listen(16)
+        self._sock.settimeout(0.05)
+        self.port = self._sock.getsockname()[1]
+        self._acceptor = threading.Thread(target=self._accept_loop,
+                                          daemon=True)
+        self._acceptor.start()
+
+    def _accept_loop(self):
+        while not self._stop.is_set():
+            try:
+                conn, _ = self._sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            self.connections += 1
+            t = threading.Thread(target=self._serve, args=(conn,),
+                                 daemon=True)
+            self._threads.append(t)
+            t.start()
+
+    def _serve(self, conn):
+        conn.settimeout(0.05)
+        buf = b""
+        try:
+            while not self._stop.is_set():
+                try:
+                    chunk = conn.recv(256)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    return
+                buf += chunk
+                while b"\n" in buf:
+                    raw, buf = buf.split(b"\n", 1)
+                    line = raw.decode("ascii", errors="replace")
+                    self.lines.append(line)
+                    if not self._act(conn, self.behaviour(line)):
+                        return
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    def _act(self, conn, action):
+        """Do what a behaviour asked for. False ends the connection."""
+        if action is HANG:
+            self._stop.wait()
+            return False
+        if action is CLOSE:
+            return False
+        if action is RESET:
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                            struct.pack("ii", 1, 0))
+            return False
+        if isinstance(action, Drip):
+            for i in range(len(action.data)):
+                conn.sendall(action.data[i:i + 1])
+                if self._stop.wait(action.interval):
+                    break
+            self._stop.wait()
+            return False
+        if action:
+            conn.sendall(action)
+        return True
+
+    def close(self):
+        """Release every HANG and Drip, close the socket, join the threads."""
+        self._stop.set()
+        self._sock.close()
+        self._acceptor.join(5)
+        for t in list(self._threads):
+            t.join(5)
+
+
+@pytest.fixture
+def fake_daemon():
+    """Return a factory: fake_daemon(behaviour=None) -> FakeDaemon.
+
+    Every daemon it made is closed at teardown, so no thread of a test
+    outlives it.
+    """
+    made = []
+
+    def factory(behaviour=None):
+        daemon = FakeDaemon(behaviour)
+        made.append(daemon)
+        return daemon
+
+    yield factory
+    for daemon in made:
+        daemon.close()
+
+
+def refused_port():
+    """Return a port on 127.0.0.1 that nothing listens on."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
