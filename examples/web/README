@@ -21,12 +21,15 @@ the system Python (PEP 668). Never use sudo pip or
 Installation (x86_64 host)
 ============================
 From examples/web:
+ $ make -C ../network x86_64
  $ python3 -m venv venv
  $ venv/bin/pip install -r requirements.txt
  $ venv/bin/pip install -r requirements-dev.txt
  $ venv/bin/python -m pytest
 
 requirements-dev.txt adds pytest. Python 3.9 or newer is required.
+The suite includes a smoke test against that x86_64 rsswitchd and
+skips it when the binary is missing.
 
 
 [1] ../network/README

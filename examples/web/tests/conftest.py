@@ -18,9 +18,14 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import socket
 import struct
+import subprocess
 import threading
+import time
+from pathlib import Path
 
 import pytest
 from flask import abort, jsonify
@@ -285,3 +290,105 @@ def post_json(app, path, body=None):
     return app.test_client().post(
         path, data=json.dumps({} if body is None else body),
         headers={"Content-Type": "application/json"})
+
+
+_LISTENING = "rsswitchd: listening on "
+
+
+class RealDaemon:
+    """A running rsswitchd. Its output is collected by reader threads.
+
+    port is the port the kernel picked. stdout holds the lines the
+    daemon printed there, which on the x86_64 build are the codewords.
+    """
+
+    def __init__(self, proc):
+        self.proc = proc
+        self.port = None
+        self.stdout = []
+        self.stderr = []
+        self._ready = threading.Event()
+        self._readers = [
+            threading.Thread(target=self._read_stdout, daemon=True),
+            threading.Thread(target=self._read_stderr, daemon=True),
+        ]
+        for t in self._readers:
+            t.start()
+
+    def _read_stdout(self):
+        for line in self.proc.stdout:
+            self.stdout.append(line.rstrip("\n"))
+
+    def _read_stderr(self):
+        # Read to the end, so the pipe never fills up.
+        for line in self.proc.stderr:
+            line = line.rstrip("\n")
+            self.stderr.append(line)
+            if self.port is None and line.startswith(_LISTENING):
+                self.port = int(line.rsplit(":", 1)[1])
+                self._ready.set()
+
+    def wait_ready(self, timeout):
+        """Wait for the listening line. Fail when the daemon exits first."""
+        deadline = time.monotonic() + timeout
+        while not self._ready.wait(0.02):
+            if self.proc.poll() is not None:
+                for t in self._readers:
+                    t.join(1)
+                pytest.fail("rsswitchd exited with %s: %s"
+                            % (self.proc.returncode, self.stderr))
+            if time.monotonic() > deadline:
+                pytest.fail("rsswitchd did not report its port: %s"
+                            % self.stderr)
+
+    def wait_for_stdout(self, text, timeout):
+        """Return True when a stdout line contains text within timeout."""
+        deadline = time.monotonic() + timeout
+        while True:
+            if any(text in line for line in list(self.stdout)):
+                return True
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.01)
+
+    def stop(self):
+        self.proc.terminate()
+        try:
+            self.proc.wait(5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+        for t in self._readers:
+            t.join(2)
+        self.proc.stdout.close()
+        self.proc.stderr.close()
+
+
+@pytest.fixture
+def real_daemon():
+    """The x86_64 build of rsswitchd, started on a port of its own.
+
+    The test is skipped when the binary is missing or cannot run here.
+    Only an x86_64 host runs it: the x86_64 build prints codewords
+    instead of driving a GPIO line, and a build for a board must never
+    be started by a test.
+    """
+    binary = Path(__file__).resolve().parents[2] / "network" / "rsswitchd"
+    hint = "build rsswitchd with make x86_64 in examples/network"
+    if platform.machine() != "x86_64":
+        pytest.skip(hint)
+    if not (binary.is_file() and os.access(str(binary), os.X_OK)):
+        pytest.skip(hint)
+    try:
+        proc = subprocess.Popen(
+            [str(binary), "--bind", "127.0.0.1", "--port", "0"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True)
+    except OSError:
+        pytest.skip(hint)
+    daemon = RealDaemon(proc)
+    try:
+        daemon.wait_ready(5)
+        yield daemon
+    finally:
+        daemon.stop()
