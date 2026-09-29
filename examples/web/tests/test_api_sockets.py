@@ -594,3 +594,172 @@ def test_reorder_sockets_leaves_the_rooms_alone(make_app):
     order(client, LIVING, [HEATER, LAMP])
     rooms = client.get("/api/rooms").get_json()["rooms"]
     assert [r["id"] for r in rooms] == [LIVING, KITCHEN]
+
+
+def move(client, sid, rid, **more):
+    return edit(client, sid, dict(more, room_id=rid))
+
+
+def test_move_appends_to_target_and_keeps_id_and_last_sent(make_app):
+    client = make_app(sample_doc()).test_client()
+    first = add(client, KITCHEN, new_socket(name="Herd")).get_json()[
+        "socket"]["id"]
+    resp = move(client, HEATER, KITCHEN)
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["socket"] == {
+        "id": HEATER, "room_id": KITCHEN, "name": "Heizl\u00fcfter",
+        "type": "pollin_2605", "group": 17, "number": 23,
+        "last_sent": SWITCHED}
+    assert body["warnings"] == []
+    assert [s["id"] for s in sockets_of(client, KITCHEN)] == [first, HEATER]
+    assert [s["id"] for s in sockets_of(client, LIVING)] == [LAMP]
+    assert sockets_of(client, KITCHEN)[1]["last_sent"] == SWITCHED
+
+
+def test_move_to_unknown_room_is_422_room_id_and_file_untouched(make_app):
+    app = make_app(sample_doc())
+    before = data_bytes(app)
+    resp = move(app.test_client(), HEATER, "r_ffffffffffff")
+    assert resp.status_code == 422
+    assert error_of(resp)["code"] == "validation"
+    assert error_of(resp)["field"] == "room_id"
+    assert data_bytes(app) == before
+
+
+@pytest.mark.parametrize("value", [None, 5, True, [KITCHEN], {"id": KITCHEN}])
+def test_move_room_id_not_a_string_is_422(make_app, value):
+    app = make_app(sample_doc())
+    before = data_bytes(app)
+    resp = move(app.test_client(), HEATER, value)
+    assert resp.status_code == 422
+    assert error_of(resp)["field"] == "room_id"
+    assert data_bytes(app) == before
+
+
+@pytest.mark.parametrize("rid", [
+    KITCHEN.upper(), " " + KITCHEN, KITCHEN + " ", "",
+])
+def test_move_room_id_is_matched_exactly(make_app, rid):
+    app = make_app(sample_doc())
+    before = data_bytes(app)
+    resp = move(app.test_client(), HEATER, rid)
+    assert resp.status_code == 422
+    assert error_of(resp)["field"] == "room_id"
+    assert data_bytes(app) == before
+
+
+def test_move_reports_a_bad_name_before_a_bad_room(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = edit(client, HEATER, {"room_id": "r_ffffffffffff", "name": ""})
+    assert error_of(resp)["field"] == "name"
+    resp = edit(client, HEATER, {"room_id": "r_ffffffffffff", "group": 99})
+    assert error_of(resp)["field"] == "group"
+
+
+def test_move_name_conflict_in_target_is_409(make_app):
+    app = make_app(sample_doc())
+    client = app.test_client()
+    assert add(client, KITCHEN, new_socket(name="HEIZL\u00dcFTER")) \
+        .status_code == 201
+    before = data_bytes(app)
+    resp = move(client, HEATER, KITCHEN)
+    assert resp.status_code == 409
+    assert error_of(resp)["code"] == "name_conflict"
+    assert error_of(resp)["field"] == "name"
+    assert data_bytes(app) == before
+
+
+def test_move_with_a_new_name_avoids_the_conflict(make_app):
+    client = make_app(sample_doc()).test_client()
+    add(client, KITCHEN, new_socket(name="Heizl\u00fcfter"))
+    resp = move(client, HEATER, KITCHEN, name="Radiator")
+    assert resp.status_code == 200
+    assert resp.get_json()["socket"]["name"] == "Radiator"
+    assert resp.get_json()["socket"]["room_id"] == KITCHEN
+
+
+def test_move_to_own_room_keeps_position(make_app):
+    app = make_app(sample_doc())
+    before = data_bytes(app)
+    client = app.test_client()
+    resp = move(client, LAMP, LIVING)
+    assert resp.status_code == 200
+    assert resp.get_json()["socket"]["room_id"] == LIVING
+    assert [s["id"] for s in sockets_of(client, LIVING)] == [LAMP, HEATER]
+    assert data_bytes(app) == before
+
+
+def test_move_with_address_change_clears_last_sent(make_app):
+    client = make_app(sample_doc()).test_client()
+    resp = move(client, HEATER, KITCHEN, number=22)
+    assert resp.status_code == 200
+    sock = resp.get_json()["socket"]
+    assert (sock["room_id"], sock["number"], sock["last_sent"]) == (
+        KITCHEN, 22, None)
+    assert sockets_of(client, KITCHEN)[0]["last_sent"] is None
+
+
+def test_move_leaves_id_exactly_once_in_file(make_app):
+    app = make_app(sample_doc())
+    assert move(app.test_client(), HEATER, KITCHEN).status_code == 200
+    text = data_bytes(app).decode("utf-8")
+    assert text.count(HEATER) == 1
+    doc = data_doc(app)
+    assert [s["id"] for s in doc["rooms"][0]["sockets"]] == [LAMP]
+    assert [s["id"] for s in doc["rooms"][1]["sockets"]] == [HEATER]
+
+
+def test_concurrent_moves_leave_the_socket_exactly_once(make_app):
+    app = make_app(sample_doc())
+    client = app.test_client()
+    hall = json_request(client, "POST", "/api/rooms",
+                        {"name": "Flur"}).get_json()["room"]["id"]
+    barrier = threading.Barrier(2)
+    statuses = []
+
+    def go(rid):
+        own = app.test_client()
+        barrier.wait()
+        statuses.append(move(own, HEATER, rid).status_code)
+
+    threads = [threading.Thread(target=go, args=(KITCHEN,)),
+               threading.Thread(target=go, args=(hall,))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    assert statuses == [200, 200]
+    assert data_bytes(app).decode("utf-8").count(HEATER) == 1
+    homes = [r["id"] for r in client.get("/api/rooms").get_json()["rooms"]
+             if any(s["id"] == HEATER for s in r["sockets"])]
+    assert len(homes) == 1 and homes[0] in (KITCHEN, hall)
+    heater = [s for r in data_doc(app)["rooms"] for s in r["sockets"]
+              if s["id"] == HEATER][0]
+    assert heater["last_sent"] == SWITCHED
+
+
+def test_source_room_can_be_deleted_after_moving_its_last_socket(make_app):
+    client = make_app(sample_doc()).test_client()
+    assert client.delete("/api/rooms/" + LIVING).status_code == 409
+    assert move(client, LAMP, KITCHEN).status_code == 200
+    assert move(client, HEATER, KITCHEN).status_code == 200
+    assert client.delete("/api/rooms/" + LIVING).status_code == 204
+    assert [s["id"] for s in sockets_of(client, KITCHEN)] == [LAMP, HEATER]
+
+
+def test_switch_after_move_records_on_moved_socket(fake_daemon, switch_app):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    app.extensions["rsswitch_web"].clock = lambda: "2026-09-29T10:00:00.000Z"
+    client = app.test_client()
+    assert move(client, HEATER, KITCHEN).status_code == 200
+    resp = json_request(client, "POST", "/api/sockets/%s/switch" % HEATER,
+                        {"state": "off"})
+    assert resp.status_code == 200
+    assert resp.get_json()["recorded"] is True
+    assert fake.lines == ["1 17 23 0"]
+    kitchen = data_doc(app)["rooms"][1]["sockets"]
+    assert [s["id"] for s in kitchen] == [HEATER]
+    assert kitchen[0]["last_sent"] == {"state": "off",
+                                       "at": "2026-09-29T10:00:00.000Z"}

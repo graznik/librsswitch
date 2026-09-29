@@ -18,7 +18,7 @@
 They follow the rules of the room routes (see rooms.py): one
 Store.mutate() does the lookup, the checks and the change, and the
 checks run in this order: 404 for the id in the URL, 422 for the body
-in the order name, type, group, number, 409 for a conflict.
+in the order name, type, group, number, room_id, 409 for a conflict.
 
 An edit is validated as the record it produces, not as the fields the
 client sent: the type of a Pollin socket at group 20 cannot be changed
@@ -31,7 +31,7 @@ from flask import Blueprint, jsonify
 
 from ..errors import ApiError, json_body, reject_unknown_fields
 from ..model import new_id
-from ..store import find_socket, socket_json
+from ..store import find_room, find_socket, socket_json
 from ..validation import check_socket_fields, clean_name, name_key
 from . import state
 from .rooms import check_permutation, get_room, id_list
@@ -39,6 +39,7 @@ from .rooms import check_permutation, get_room, id_list
 bp = Blueprint("sockets", __name__, url_prefix="/api")
 
 FIELDS = {"name", "type", "group", "number"}
+EDIT_FIELDS = FIELDS | {"room_id"}
 
 
 def get_socket(data, sid):
@@ -94,11 +95,35 @@ def create_socket(rid):
     return jsonify(state().store.mutate(create)), 201
 
 
+def target_room(data, room, body):
+    """Return the room the socket is in after an edit of body.
+
+    That is room, unless body has a room_id of another room. Raise
+    ApiError 422 when room_id is not a string or names no room: the
+    socket in the URL exists, what is wrong is the reference in the body.
+    """
+    if "room_id" not in body:
+        return room
+    rid = body["room_id"]
+    if not isinstance(rid, str):
+        raise ApiError(422, "validation", "must be a string",
+                       field="room_id")
+    if rid == room["id"]:
+        return room
+    target = find_room(data, rid)
+    if target is None:
+        raise ApiError(422, "validation", "no room with this id",
+                       field="room_id")
+    return target
+
+
 @bp.route("/sockets/<sid>", methods=["PATCH"])
 def edit_socket(sid):
-    """Change the name, type, group or number of a socket.
+    """Change the name, type, group or number of a socket, or move it.
 
-    Only the fields that are in the body change. A change of the
+    Only the fields that are in the body change. room_id moves the
+    socket to the end of another room. It keeps its id, and its
+    last_sent unless the address changes with it. A change of the
     address makes last_sent null, because what was sent before was
     meant for another receiver.
     """
@@ -106,20 +131,24 @@ def edit_socket(sid):
 
     def edit(data):
         room, sock = get_socket(data, sid)
-        reject_unknown_fields(body, FIELDS)
+        reject_unknown_fields(body, EDIT_FIELDS)
         merged = {key: sock[key] for key in FIELDS}
-        merged.update(body)
+        merged.update((key, body[key]) for key in FIELDS if key in body)
         if "name" in body:
             merged["name"] = clean_name(body["name"])
         address = check_socket_fields(merged)
-        if "name" in body:
-            check_socket_name(room, merged["name"], own=sock)
+        target = target_room(data, room, body)
+        if "name" in body or target is not room:
+            check_socket_name(target, merged["name"], own=sock)
         changed = tuple(address.values()) != address_of(sock)
         sock["name"] = merged["name"]
         sock.update(address)
         if changed:
             sock["last_sent"] = None
-        return {"socket": socket_json(room, sock), "warnings": []}
+        if target is not room:
+            room["sockets"].remove(sock)
+            target["sockets"].append(sock)
+        return {"socket": socket_json(target, sock), "warnings": []}
 
     return jsonify(state().store.mutate(edit))
 
