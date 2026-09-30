@@ -29,7 +29,7 @@ from rsswitch_web import daemon
 from rsswitch_web.daemon import (DaemonProtocolError, DaemonReplyError,
                                  DaemonTimeout, DaemonUnreachable)
 from rsswitch_web.errors import ApiError
-from rsswitch_web.store import Store
+from rsswitch_web.store import Store, StoreError
 from rsswitch_web.switching import all_off
 
 AT = "2026-09-29T10:00:00.000Z"
@@ -454,3 +454,29 @@ def test_a_serial_fake_blocks_while_a_connection_is_held(api):
         assert resp.status_code == 504
     finally:
         held.close()
+
+
+def test_store_failure_does_not_stop_the_batch(tmp_path, caplog):
+    rig = Rig(tmp_path, make_doc([(REV, 0, 0), (POLLIN, 1, 1)],
+                                 [(POLLIN, 2, 2)]))
+
+    def refuse(data):
+        raise StoreError("data file %s: cannot be written: disk full"
+                         % rig.path)
+
+    rig.store._write = refuse
+    before = rig.doc()
+    report = rig.run()
+    assert rig.client.calls == [(0, 0, 0, 0), (1, 1, 1, 0), (1, 2, 2, 0)]
+    assert report["ok"] is True
+    assert report["summary"] == {"ok": 3, "error": 0, "skipped": 0}
+    assert report["results"] == [
+        {"socket_id": "s1", "room_id": "r1", "status": "ok",
+         "recorded": False},
+        {"socket_id": "s2", "room_id": "r1", "status": "ok",
+         "recorded": False},
+        {"socket_id": "s3", "room_id": "r2", "status": "ok",
+         "recorded": False},
+    ]
+    assert rig.doc() == before
+    assert "cannot be written" in caplog.text

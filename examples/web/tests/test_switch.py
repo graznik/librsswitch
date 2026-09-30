@@ -25,7 +25,7 @@ import pytest
 from conftest import (CLOSE, HANG, RESET, post_json, refused_port,
                       sample_doc)
 
-from rsswitch_web.store import Store
+from rsswitch_web.store import Store, StoreError
 
 REV = "s_000000000001"
 POLLIN = "s_000000000002"
@@ -298,3 +298,52 @@ def test_record_last_sent_for_missing_ids_writes_nothing(make_app):
                                      "on", LATE)
     assert written == []
     assert file_bytes(app) == before
+
+
+def fail_writes(app):
+    """Make every write of the data file of app fail, as a full disk does."""
+    def refuse(data):
+        raise StoreError("data file %s: cannot be written: disk full"
+                         % data_path(app))
+
+    app.extensions["rsswitch_web"].store._write = refuse
+
+
+def test_store_failure_after_ok_is_still_a_success(fake_daemon, switch_app,
+                                                   caplog):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    fail_writes(app)
+    before = file_bytes(app)
+    resp = switch(app, POLLIN, "off")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["recorded"] is False
+    assert body["socket"]["id"] == POLLIN
+    assert body["socket"]["last_sent"] == {"state": "on", "at": EARLY}
+    assert fake.lines == ["1 17 23 0"]
+    assert file_bytes(app) == before
+    assert "cannot be written" in caplog.text
+
+
+def test_store_unreadable_after_ok_is_still_a_success(fake_daemon,
+                                                      switch_app):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    store = app.extensions["rsswitch_web"].store
+    real = store.snapshot
+    calls = []
+
+    def snapshot():
+        calls.append(1)
+        if len(calls) > 1:
+            raise StoreError("data file: cannot be read")
+        return real()
+
+    store.snapshot = snapshot
+    resp = switch(app, POLLIN, "off")
+    assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True
+    assert resp.get_json()["socket"] is None
+    assert fake.lines == ["1 17 23 0"]

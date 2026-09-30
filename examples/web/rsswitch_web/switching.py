@@ -24,6 +24,7 @@ checked again under the lock (see Store.record_last_sent).
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -31,13 +32,41 @@ from datetime import datetime, timezone
 from .daemon import DaemonError, DaemonTimeout, DaemonUnreachable
 from .errors import ApiError, daemon_error_info
 from .model import SOCKET_TYPES
-from .store import find_room, find_socket, socket_json
+from .store import StoreError, find_room, find_socket, socket_json
+
+log = logging.getLogger(__name__)
 
 
 def utc_now() -> str:
     """Return the current UTC time as 2026-09-29T08:23:04.273Z."""
     now = datetime.now(timezone.utc)
     return now.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _record(store, ids, address, state, at) -> list:
+    """Record a confirmed command, and never let the store fail it.
+
+    The radio has transmitted by now, so a data file that cannot be
+    written must not turn the answer into an error, and in All-off it
+    must not keep the remaining commands from going out. The failure
+    is logged, and the command counts as sent but not recorded.
+    """
+    try:
+        return store.record_last_sent(ids, address, state, at)
+    except StoreError as e:
+        log.error("last_sent not recorded: %s", e)
+        return []
+
+
+def _socket_now(store, sid):
+    """Return the socket as it is now, or None when it is gone or the
+    data file cannot be read."""
+    try:
+        room, sock = find_socket(store.snapshot(), sid)
+    except StoreError as e:
+        log.error("socket not read back: %s", e)
+        return None
+    return None if sock is None else socket_json(room, sock)
 
 
 def switch_socket(store, client, sid, state, clock=utc_now) -> dict:
@@ -50,7 +79,9 @@ def switch_socket(store, client, sid, state, clock=utc_now) -> dict:
     Return {"ok": True, "recorded": bool, "socket": dict or None}.
     recorded is False when the command went out but the socket was
     deleted or given another address in the meantime, or a newer
-    command was already confirmed. socket is the record as it is now.
+    command was already confirmed, or the data file could not be
+    written. socket is the record as it is now, or None when it is
+    gone or the data file cannot be read.
     """
     _, sock = find_socket(store.snapshot(), sid)
     if sock is None:
@@ -62,12 +93,11 @@ def switch_socket(store, client, sid, state, clock=utc_now) -> dict:
     # After the OK, so that of two commands that finish close together
     # the one that was confirmed last is the one that is recorded.
     at = clock()
-    written = store.record_last_sent([sid], address, state, at)
-    room, sock = find_socket(store.snapshot(), sid)
+    written = _record(store, [sid], address, state, at)
     return {
         "ok": True,
         "recorded": bool(written),
-        "socket": None if sock is None else socket_json(room, sock),
+        "socket": _socket_now(store, sid),
     }
 
 
@@ -87,7 +117,9 @@ def all_off(store, client, room_id=None, *, gap_seconds, sleep=time.sleep,
     that cannot be reached or that times out ends the batch, so a dead
     daemon costs one attempt, not one per socket: every address that
     is left is skipped and carries that error. last_sent is written
-    for each address right after its OK, before the next command.
+    for each address right after its OK, before the next command. A
+    data file that cannot be written does not stop the batch: the
+    sockets are reported ok with recorded false.
 
     Raise ApiError 404 for an unknown room_id. Return the report:
     {"ok": bool, "results": [...], "summary": {"ok", "error",
@@ -135,7 +167,7 @@ def all_off(store, client, room_id=None, *, gap_seconds, sleep=time.sleep,
                 stop_error = info
             continue
         at = clock()
-        written = store.record_last_sent(ids, address, "off", at)
+        written = _record(store, ids, address, "off", at)
         for sid in ids:
             if sid in written:
                 outcome[sid] = {"status": "ok", "recorded": True,

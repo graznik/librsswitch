@@ -239,10 +239,12 @@ answers after rsswitchd has replied:
 
 recorded is false when the command was sent, but the socket was
 deleted or given another address while it was on its way, or a
-newer command was already confirmed. socket is then the socket as
-it is now, or null when it is gone. When rsswitchd does not confirm
-the command, the answer is one of the 502 or 504 errors below and
-last_sent does not change.
+newer command was already confirmed, or the data file could not be
+written. The command went out in every one of these cases, so the
+answer is still a success. socket is the socket as it is now, or
+null when it is gone or the data file cannot be read. When
+rsswitchd does not confirm the command, the answer is one of the
+502 or 504 errors below and last_sent does not change.
 
 All-off
 -------
@@ -274,10 +276,12 @@ does not exist is a 404.
 
 There is one entry per socket, in display order. status is ok,
 error or skipped. An ok entry has recorded, which is false when the
-socket was changed or deleted in the meantime, and has last_sent
-only when recorded is true. An error or skipped entry has error,
-in the form of the error object below. ok is true when every entry
-is ok, which includes a household without sockets.
+socket was changed or deleted in the meantime or the data file
+could not be written, and has last_sent only when recorded is
+true. A data file that cannot be written does not stop the batch.
+An error or skipped entry has error, in the form of the error
+object below. ok is true when every entry is ok, which includes a
+household without sockets.
 
 Warnings
 --------
