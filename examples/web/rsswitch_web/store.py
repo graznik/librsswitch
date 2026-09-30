@@ -19,12 +19,38 @@ reaches the disk as a complete file put in place atomically."""
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
+from datetime import datetime
 
 from filelock import FileLock, Timeout
 
 from .model import DocumentError, check_document, empty_document
+
+log = logging.getLogger(__name__)
+
+# How far ahead of a new command the stored last_sent may be for the
+# command to count as older. It covers two commands that were confirmed
+# within moments of each other and recorded in the other order. A
+# stored time further ahead was not written by such a race: the clock
+# was wrong, and then set back, as on a board without a real-time clock.
+RACE_WINDOW = 2.0
+
+_AT_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+
+def _seconds_ahead(stored, at):
+    """Return how many seconds stored is later than at.
+
+    Return 0 when either is not a time of the form that the server
+    writes, so that such a value is overwritten and does not stick.
+    """
+    try:
+        return (datetime.strptime(stored, _AT_FORMAT)
+                - datetime.strptime(at, _AT_FORMAT)).total_seconds()
+    except ValueError:
+        return 0.0
 
 
 class StoreError(Exception):
@@ -101,9 +127,12 @@ class Store:
         have changed while the command was on its way. A socket that
         is gone, or that has another address now, is left alone: the
         command did not reach it. So is one whose last_sent is newer
-        than at, since a later command was confirmed first. The times
-        have a fixed width, so comparing the strings compares the
-        instants. An equal time is overwritten.
+        than at by at most RACE_WINDOW seconds, since a later command
+        was confirmed first. The wall clock decides only that close:
+        a last_sent that is further ahead comes from a clock that was
+        wrong, and it is overwritten, or no command would ever be
+        recorded again until the clock caught up. An equal time is
+        overwritten.
         """
         address = tuple(address)
 
@@ -116,8 +145,14 @@ class Store:
                 if (sock["type"], sock["group"], sock["number"]) != address:
                     continue
                 last = sock["last_sent"]
-                if last is not None and last["at"] > at:
-                    continue
+                if last is not None:
+                    ahead = _seconds_ahead(last["at"], at)
+                    if 0 < ahead <= RACE_WINDOW:
+                        continue
+                    if ahead > RACE_WINDOW:
+                        log.warning("last_sent of %s is %.0f s in the "
+                                    "future: the clock went back",
+                                    sid, ahead)
                 sock["last_sent"] = {"state": state, "at": at}
                 written.append(sid)
             return written

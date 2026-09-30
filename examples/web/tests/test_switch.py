@@ -266,7 +266,7 @@ def test_unrelated_edit_during_send_is_not_lost(fake_daemon, switch_app):
 
 
 def test_older_timestamp_does_not_overwrite_newer(fake_daemon, switch_app):
-    newer = {"state": "on", "at": LATE}
+    newer = {"state": "on", "at": "2026-09-29T08:00:00.500Z"}
     app = switch_app(fake_daemon(), doc_with(POLLIN, last_sent=newer))
     set_clock(app, EARLY)
     before = file_bytes(app)
@@ -347,3 +347,45 @@ def test_store_unreadable_after_ok_is_still_a_success(fake_daemon,
     assert resp.get_json()["ok"] is True
     assert resp.get_json()["socket"] is None
     assert fake.lines == ["1 17 23 0"]
+
+
+def test_timestamp_from_a_clock_that_went_back_is_overwritten(
+        fake_daemon, switch_app, caplog):
+    future = {"state": "on", "at": "2100-01-01T00:00:00.000Z"}
+    app = switch_app(fake_daemon(), doc_with(POLLIN, last_sent=future))
+    set_clock(app, LATE)
+    body = switch(app, POLLIN, "off").get_json()
+    assert body["recorded"] is True
+    assert body["socket"]["last_sent"] == {"state": "off", "at": LATE}
+    assert socket_of(file_doc(app), POLLIN)["last_sent"] == {
+        "state": "off", "at": LATE}
+    assert "clock went back" in caplog.text
+
+
+def test_timestamp_just_outside_the_race_window_is_overwritten(
+        fake_daemon, switch_app):
+    stored = {"state": "on", "at": "2026-09-29T10:00:02.001Z"}
+    app = switch_app(fake_daemon(), doc_with(POLLIN, last_sent=stored))
+    set_clock(app, LATE)
+    assert switch(app, POLLIN, "off").get_json()["recorded"] is True
+
+
+def test_timestamp_at_the_edge_of_the_race_window_is_kept(fake_daemon,
+                                                          switch_app):
+    stored = {"state": "on", "at": "2026-09-29T10:00:02.000Z"}
+    app = switch_app(fake_daemon(), doc_with(POLLIN, last_sent=stored))
+    set_clock(app, LATE)
+    body = switch(app, POLLIN, "off").get_json()
+    assert body["recorded"] is False
+    assert body["socket"]["last_sent"] == stored
+
+
+def test_unparsable_stored_time_is_overwritten(make_app):
+    doc = doc_with(POLLIN, last_sent={"state": "on", "at": "yesterday"})
+    app = make_app(doc)
+    store = Store(data_path(app))
+    written = store.record_last_sent([POLLIN], ("pollin_2605", 17, 23),
+                                     "off", LATE)
+    assert written == [POLLIN]
+    assert socket_of(file_doc(app), POLLIN)["last_sent"] == {
+        "state": "off", "at": LATE}
