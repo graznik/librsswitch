@@ -57,8 +57,16 @@ def make_auth_hook(username, password_hash):
     # the header itself, and the hash is checked only once per
     # credential. Wrong credentials are never remembered and always pay
     # the full cost.
+    #
+    # That cost is also what anybody who can reach the app can make it
+    # pay, with a new wrong password in every request. So at most one
+    # check runs at a time, which bounds the memory and the CPU that
+    # logins can take from the daemon client threads. A request waits
+    # its turn, and looks at the cache again when it gets it, because
+    # the credential it carries may have been accepted in the meantime.
     cache = []
     lock = threading.Lock()
+    verify_lock = threading.Lock()
     wanted_user = username.encode("utf-8")
 
     def hook():
@@ -79,7 +87,11 @@ def make_auth_hook(username, password_hash):
             # which of the two was wrong.
             user_ok = hmac.compare_digest(auth.username.encode("utf-8"),
                                           wanted_user)
-            pass_ok = check_password_hash(password_hash, auth.password)
+            with verify_lock:
+                with lock:
+                    if any(hmac.compare_digest(digest, d) for d in cache):
+                        return None
+                pass_ok = check_password_hash(password_hash, auth.password)
             if user_ok and pass_ok:
                 with lock:
                     if not any(hmac.compare_digest(digest, d)

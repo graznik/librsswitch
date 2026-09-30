@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import logging
 import threading
+import time
 
 import pytest
 from werkzeug.security import generate_password_hash
@@ -343,3 +344,100 @@ def test_auth_never_logs_credentials(locked, caplog):
     assert header not in text
     assert HASH not in text
     assert b64("admin:" + password) not in text
+
+
+class Probe:
+    """Stands in for check_password_hash and counts the overlap."""
+
+    def __init__(self, real):
+        self.real = real
+        self.active = 0
+        self.peak = 0
+        self.calls = 0
+        self._lock = threading.Lock()
+
+    def __call__(self, *args, **kwargs):
+        with self._lock:
+            self.calls += 1
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+        try:
+            time.sleep(0.05)
+            return self.real(*args, **kwargs)
+        finally:
+            with self._lock:
+                self.active -= 1
+
+
+def test_only_one_hash_check_runs_at_a_time(locked, monkeypatch):
+    probe = Probe(auth.check_password_hash)
+    monkeypatch.setattr(auth, "check_password_hash", probe)
+    statuses = []
+    start = threading.Barrier(6)
+
+    def work(n):
+        client = locked.test_client()
+        start.wait()
+        resp = client.get("/api/rooms",
+                          headers=basic("admin", "wrong-%d" % n))
+        statuses.append(resp.status_code)
+
+    threads = [threading.Thread(target=work, args=(n,)) for n in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert statuses == [401] * 6
+    assert probe.calls == 6
+    assert probe.peak == 1
+
+
+def test_waiting_request_uses_a_credential_accepted_meanwhile(
+        locked, monkeypatch):
+    probe = Probe(auth.check_password_hash)
+    monkeypatch.setattr(auth, "check_password_hash", probe)
+    statuses = []
+    start = threading.Barrier(4)
+
+    def work():
+        client = locked.test_client()
+        start.wait()
+        resp = client.get("/api/rooms", headers=basic("admin", "secret"))
+        statuses.append(resp.status_code)
+
+    threads = [threading.Thread(target=work) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert statuses == [200] * 4
+    assert probe.calls == 1
+    assert probe.peak == 1
+
+
+def test_cached_credentials_do_not_wait_for_a_hash_check(locked,
+                                                         monkeypatch):
+    client = locked.test_client()
+    assert client.get("/api/rooms",
+                      headers=basic("admin", "secret")).status_code == 200
+    probe = Probe(auth.check_password_hash)
+    probe.real = lambda *a, **k: False
+    monkeypatch.setattr(auth, "check_password_hash", probe)
+    done = []
+
+    def slow():
+        locked.test_client().get("/api/rooms",
+                                 headers=basic("admin", "wrong"))
+        done.append(1)
+
+    worker = threading.Thread(target=slow)
+    worker.start()
+    deadline = time.monotonic() + 5
+    while probe.active == 0 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    assert probe.active == 1
+    resp = client.get("/api/rooms", headers=basic("admin", "secret"))
+    assert resp.status_code == 200
+    assert not done
+    worker.join(10)
+    assert done
