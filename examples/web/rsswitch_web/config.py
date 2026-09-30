@@ -17,8 +17,15 @@
 
 from __future__ import annotations
 
+import difflib
+import hashlib
+import ipaddress
 import json
+import os
+import re
 import sys
+import unicodedata
+from collections.abc import Mapping
 
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
@@ -81,9 +88,163 @@ def load_config(path=None) -> dict:
     return mapping
 
 
+def _suggest(key):
+    """Return the key of DEFAULTS that key was probably meant to be."""
+    matches = difflib.get_close_matches(key, DEFAULTS, n=1)
+    return matches[0] if matches else None
+
+
+def _is_int(value, low, high):
+    # bool is a subclass of int, and true is not a port.
+    return type(value) is int and low <= value <= high
+
+
+def _check_host(value):
+    if type(value) is not str or not value:
+        return "must be a non-empty string"
+    if any(c.isspace() for c in value):
+        return "must not contain whitespace"
+    return None
+
+
+def _port_check(low):
+    def check(value):
+        if not _is_int(value, low, 65535):
+            return "must be an integer from %d to 65535" % low
+        return None
+    return check
+
+
+def _check_timeout(value):
+    if type(value) not in (int, float) or not 0 < value <= 60:
+        return "must be a number greater than 0 and at most 60 (seconds)"
+    return None
+
+
+def _check_listen_address(value):
+    if type(value) is not str:
+        return "must be an IP address such as 0.0.0.0 or ::"
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return "must be an IP address such as 0.0.0.0 or ::, not a name"
+    return None
+
+
+def _check_data_file(value):
+    if type(value) is not str or not os.path.isabs(value):
+        return "must be an absolute path"
+    if "\0" in value:
+        return "must not contain a NUL character"
+    return None
+
+
+def _check_gap(value):
+    if not _is_int(value, 0, 10000):
+        return "must be an integer from 0 to 10000 (milliseconds)"
+    return None
+
+
+def _check_username(value):
+    if value is None:
+        return None
+    if type(value) is not str or not value:
+        return "must be null or a non-empty string"
+    if ":" in value:
+        return "must not contain ':', which Basic authentication cannot carry"
+    # Cc is a control character. A lone surrogate (Cs) cannot be encoded
+    # as UTF-8, so it could never match a login.
+    if any(unicodedata.category(c) in ("Cc", "Cs") for c in value):
+        return "must not contain control characters"
+    return None
+
+
+def _positive_int(text):
+    """Return the int that text spells in decimal digits, else 0."""
+    return int(text) if re.fullmatch("[0-9]+", text) else 0
+
+
+def _check_hash(value):
+    """Return why value is not a Werkzeug password hash, or None.
+
+    A hash is method$salt$hash. The method is scrypt:N:r:p or
+    pbkdf2:<hash function>:<iterations>. Anything else would make
+    every login fail, or fail with an error, so it is refused here.
+    """
+    if value is None:
+        return None
+    what = ("must be null or a Werkzeug password hash such as "
+            "scrypt:32768:8:1$salt$hash")
+    if type(value) is not str:
+        return what
+    parts = value.split("$")
+    if len(parts) != 3 or not parts[1] or not parts[2]:
+        return what
+    method = parts[0].split(":")
+    if method[0] == "scrypt" and len(method) == 4:
+        n, r, p = (_positive_int(m) for m in method[1:])
+        if n >= 2 and n & (n - 1) == 0 and r >= 1 and p >= 1:
+            return None
+        return ("the scrypt parameters must be positive integers and "
+                "N a power of two")
+    if method[0] == "pbkdf2" and len(method) == 3:
+        if method[1] not in hashlib.algorithms_guaranteed:
+            return "unknown pbkdf2 hash function '%s'" % method[1]
+        try:
+            hashlib.pbkdf2_hmac(method[1], b"", b"", 1)
+        except ValueError:
+            return "the hash function '%s' cannot be used" % method[1]
+        if _positive_int(method[2]) < 1:
+            return "the pbkdf2 iterations must be a positive integer"
+        return None
+    return what
+
+
+# The checks of every key, in the order of DEFAULTS. Each returns why a
+# value is not acceptable, or None.
+_CHECKS = {
+    "daemon_host": _check_host,
+    "daemon_port": _port_check(1),
+    "daemon_connect_timeout": _check_timeout,
+    "daemon_read_timeout": _check_timeout,
+    "listen_address": _check_listen_address,
+    "listen_port": _port_check(0),
+    "data_file": _check_data_file,
+    "all_off_gap_ms": _check_gap,
+    "username": _check_username,
+    "password_hash": _check_hash,
+}
+
+
 def resolve_config(mapping=None) -> dict:
-    """Return a new dict made of DEFAULTS with mapping laid over it."""
+    """Return a new dict made of DEFAULTS with mapping laid over it.
+
+    Every key and value is checked, and the first problem raises a
+    ConfigError that names the key and the reason. An unknown key is
+    one of them. A misspelt password_hash would otherwise be ignored,
+    and the app would start without the password its operator meant to
+    set, and nobody would notice.
+    """
+    if mapping is None:
+        mapping = {}
+    if not isinstance(mapping, Mapping):
+        raise ConfigError("config: must be a JSON object")
+    unknown = sorted((k for k in mapping if k not in DEFAULTS), key=str)
+    if unknown:
+        text = "config: unknown key '%s'" % unknown[0]
+        match = _suggest(str(unknown[0]))
+        if match:
+            text += " (did you mean '%s'?)" % match
+        raise ConfigError(text)
     cfg = dict(DEFAULTS)
-    if mapping:
-        cfg.update(mapping)
+    cfg.update(mapping)
+    for key, check in _CHECKS.items():
+        reason = check(cfg[key])
+        if reason:
+            raise ConfigError("config: key '%s': %s" % (key, reason))
+    if cfg["username"] is not None and cfg["password_hash"] is None:
+        raise ConfigError("config: key 'username': needs a password_hash, "
+                          "or the app would not ask for a login")
+    if cfg["password_hash"] is not None and cfg["username"] is None:
+        cfg["username"] = "admin"
     return cfg

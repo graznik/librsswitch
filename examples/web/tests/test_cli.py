@@ -175,6 +175,15 @@ def test_run_non_object_config_exits_2(tmp_path):
                    % path)
 
 
+def test_run_with_typo_key_exits_2_with_suggestion(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"pasword_hash": "scrypt:32768:8:1$s$h"}))
+    status, err = run_cli("--config", str(path), "run")
+    assert status == 2
+    assert err == ("rsswitch-web: config: unknown key 'pasword_hash' "
+                   "(did you mean 'password_hash'?)\n")
+
+
 def test_run_corrupt_data_file_exits_1(tmp_path):
     data = tmp_path / "data.json"
     data.write_text("{")

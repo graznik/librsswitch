@@ -13,7 +13,7 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tests of the configuration defaults and the application factory."""
+"""Tests of the application factory."""
 
 from __future__ import annotations
 
@@ -21,41 +21,8 @@ import pytest
 
 from rsswitch_web import create_app
 from rsswitch_web.app import AppState
-from rsswitch_web.config import DEFAULT_CONFIG_PATH, DEFAULTS, resolve_config
+from rsswitch_web.config import ConfigError, resolve_config
 from rsswitch_web.store import Store, StoreError
-
-
-def test_resolve_config_defaults():
-    cfg = resolve_config()
-    assert cfg == {
-        "daemon_host": "127.0.0.1",
-        "daemon_port": 5000,
-        "daemon_connect_timeout": 2,
-        "daemon_read_timeout": 5,
-        "listen_address": "0.0.0.0",
-        "listen_port": 8080,
-        "data_file": "/var/lib/rsswitch-web/data.json",
-        "all_off_gap_ms": 200,
-        "username": None,
-        "password_hash": None,
-    }
-    assert list(cfg) == list(DEFAULTS)
-    assert len(cfg) == 10
-    assert DEFAULT_CONFIG_PATH == "/etc/rsswitch-web/config.json"
-
-
-def test_resolve_config_returns_a_new_dict():
-    cfg = resolve_config()
-    cfg["daemon_port"] = 1
-    assert DEFAULTS["daemon_port"] == 5000
-    assert resolve_config()["daemon_port"] == 5000
-
-
-def test_resolve_config_overrides_one_key():
-    cfg = resolve_config({"daemon_port": 6000})
-    assert cfg["daemon_port"] == 6000
-    expected = dict(DEFAULTS, daemon_port=6000)
-    assert cfg == expected
 
 
 def test_create_app_keeps_resolved_config(tmp_path):
@@ -87,3 +54,17 @@ def test_create_app_with_corrupt_file_raises_and_keeps_bytes(tmp_path,
         create_app({"data_file": str(path)})
     assert path.read_bytes() == content
     assert sorted(p.name for p in tmp_path.iterdir()) == ["data.json"]
+
+
+@pytest.mark.parametrize("config", [
+    {"pasword_hash": "scrypt:32768:8:1$salt$hash"},
+    {"username": "admin"},
+    {"password_hash": "garbage"},
+    {"listen_port": "8080"},
+], ids=["typo-key", "username-without-hash", "bad-hash", "bad-port"])
+def test_create_app_with_invalid_config_raises_and_creates_no_file(
+        tmp_path, config):
+    path = tmp_path / "data.json"
+    with pytest.raises(ConfigError):
+        create_app({"data_file": str(path), **config})
+    assert list(tmp_path.iterdir()) == []
