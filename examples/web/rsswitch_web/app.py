@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from flask import Flask
 
 from .api import register_blueprints
+from .auth import make_auth_hook
 from .config import resolve_config
 from .daemon import RsswitchdClient
 from .errors import MAX_BODY_BYTES, content_type_gate, register_error_handlers
@@ -69,6 +70,9 @@ def create_app(config=None) -> Flask:
     # Hooks run in the order they are registered. An authentication
     # hook must be registered before this gate, so that a client that
     # has not logged in gets 401 and not 415.
+    hook = make_auth_hook(cfg["username"], cfg["password_hash"])
+    if hook is not None:
+        app.before_request(hook)
     app.before_request(content_type_gate)
     register_blueprints(app)
     return app
