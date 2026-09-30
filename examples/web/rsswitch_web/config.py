@@ -27,6 +27,8 @@ import sys
 import unicodedata
 from collections.abc import Mapping
 
+from werkzeug.security import check_password_hash
+
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
 # Every configuration key with its default. Timeouts are in seconds,
@@ -164,12 +166,23 @@ def _positive_int(text):
     return int(text) if re.fullmatch("[0-9]+", text) else 0
 
 
+# The largest scrypt cost that is accepted. Every login pays it, on a
+# board with little memory and a slow CPU. These are far above what
+# anybody sets, and far below what makes a login fail or hang.
+MAX_SCRYPT_MEMORY = 256 * 1024 * 1024
+MAX_SCRYPT_P = 16
+MAX_PBKDF2_ITERATIONS = 10 ** 7
+
+
 def _check_hash(value):
     """Return why value is not a Werkzeug password hash, or None.
 
     A hash is method$salt$hash. The method is scrypt:N:r:p or
     pbkdf2:<hash function>:<iterations>. Anything else would make
     every login fail, or fail with an error, so it is refused here.
+    A scrypt hash is also tried once with an empty password, because
+    whether OpenSSL accepts its parameters cannot be told from the
+    numbers alone.
     """
     if value is None:
         return None
@@ -183,10 +196,16 @@ def _check_hash(value):
     method = parts[0].split(":")
     if method[0] == "scrypt" and len(method) == 4:
         n, r, p = (_positive_int(m) for m in method[1:])
-        if n >= 2 and n & (n - 1) == 0 and r >= 1 and p >= 1:
-            return None
-        return ("the scrypt parameters must be positive integers and "
-                "N a power of two")
+        if not (n >= 2 and n & (n - 1) == 0 and r >= 1 and p >= 1):
+            return ("the scrypt parameters must be positive integers "
+                    "and N a power of two")
+        if 128 * n * r > MAX_SCRYPT_MEMORY or p > MAX_SCRYPT_P:
+            return "the scrypt parameters are too large"
+        try:
+            check_password_hash(value, "")
+        except (ValueError, MemoryError) as e:
+            return "the scrypt parameters cannot be used: %s" % e
+        return None
     if method[0] == "pbkdf2" and len(method) == 3:
         if method[1] not in hashlib.algorithms_guaranteed:
             return "unknown pbkdf2 hash function '%s'" % method[1]
@@ -194,8 +213,11 @@ def _check_hash(value):
             hashlib.pbkdf2_hmac(method[1], b"", b"", 1)
         except ValueError:
             return "the hash function '%s' cannot be used" % method[1]
-        if _positive_int(method[2]) < 1:
+        iterations = _positive_int(method[2])
+        if iterations < 1:
             return "the pbkdf2 iterations must be a positive integer"
+        if iterations > MAX_PBKDF2_ITERATIONS:
+            return "the pbkdf2 iterations are too many"
         return None
     return what
 

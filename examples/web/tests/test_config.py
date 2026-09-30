@@ -115,7 +115,9 @@ def test_password_hash_formats():
         generate_password_hash("pw"),
         generate_password_hash("pw", "pbkdf2:sha256:1000"),
         generate_password_hash("pw", "pbkdf2:sha512:600000"),
-        "scrypt:2:1:1$s$h",
+        "scrypt:1024:1:1$s$h",
+        "scrypt:131072:8:1$s$h",
+        "pbkdf2:sha256:10000000$s$h",
     ]
     for value in accepted:
         assert resolve_config({"password_hash": value})["password_hash"] \
@@ -145,6 +147,13 @@ def test_password_hash_formats():
         "pbkdf2:sha256:1000$s$",
         "$s$h",
         "scrypt$s$h",
+        "scrypt:1073741824:8:1$salt$abcd",   # too much memory
+        "scrypt:2:1:1$s$h",                  # below what OpenSSL runs
+        "scrypt:524288:8:1$s$h",             # above the memory cap
+        "scrypt:1024:1:17$s$h",              # p above the cap
+        "scrypt:1024:1:1000000000$s$h",
+        "pbkdf2:sha256:10000001$s$h",        # above the iteration cap
+        "pbkdf2:sha256:1000000000000$s$h",
     ]
     for value in refused:
         with pytest.raises(ConfigError,

@@ -441,3 +441,14 @@ def test_cached_credentials_do_not_wait_for_a_hash_check(locked,
     assert not done
     worker.join(10)
     assert done
+
+
+def test_a_hash_that_cannot_be_checked_is_401_not_500(locked, monkeypatch,
+                                                      caplog):
+    def broken(*args, **kwargs):
+        raise ValueError("memory limit exceeded")
+
+    monkeypatch.setattr(auth, "check_password_hash", broken)
+    client = locked.test_client()
+    is_401(client.get("/api/rooms", headers=basic("admin", "secret")))
+    assert "cannot be checked" in caplog.text

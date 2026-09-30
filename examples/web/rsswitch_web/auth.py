@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import threading
 
 from flask import request
 from werkzeug.security import check_password_hash
 
 from .errors import ApiError
+
+log = logging.getLogger(__name__)
 
 REALM = "rsswitch"
 
@@ -91,7 +94,14 @@ def make_auth_hook(username, password_hash):
                 with lock:
                     if any(hmac.compare_digest(digest, d) for d in cache):
                         return None
-                pass_ok = check_password_hash(password_hash, auth.password)
+                try:
+                    pass_ok = check_password_hash(password_hash,
+                                                  auth.password)
+                except ValueError as e:
+                    # A hash that cannot be checked refuses the login
+                    # like a wrong password, and does not become a 500.
+                    log.error("password_hash cannot be checked: %s", e)
+                    pass_ok = False
             if user_ok and pass_ok:
                 with lock:
                     if not any(hmac.compare_digest(digest, d)

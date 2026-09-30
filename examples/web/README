@@ -113,6 +113,10 @@ on a slow board such as an ARMv6 Raspberry Pi that check still takes
 a while. A cheaper hash is made with
  $ venv/bin/python -m rsswitch_web hash-password --method pbkdf2:sha256:600000
 
+The app refuses a scrypt hash that OpenSSL cannot compute here, or
+that needs more than 256 MiB of memory or has p above 16, and a
+pbkdf2 hash with more than 10000000 iterations, when it starts.
+
 hash-password reads no config file. It exits with 1 when the two
 entries differ, when the password is empty or when the input ends,
 and with 2 when --method is not a method that the app accepts. It
