@@ -89,7 +89,14 @@ class Store:
 
         This is safe because every write puts a complete file in place
         with os.replace().
+
+        A missing file is an empty household, as on a first run. A
+        missing data directory is not: it means a volume that is not
+        mounted or a directory that was removed, and an empty answer
+        would invite the owner to create everything again next to the
+        data that is still somewhere. It raises StoreError.
         """
+        self._require_parent()
         return self._load()
 
     def mutate(self, fn):

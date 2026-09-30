@@ -288,6 +288,13 @@ def test_check_rejects_missing_parent_dir(tmp_path):
         store.check()
 
 
+def test_snapshot_rejects_missing_parent_dir(tmp_path):
+    store = Store(str(tmp_path / "nodir" / "data.json"))
+    with pytest.raises(StoreError, match="does not exist"):
+        store.snapshot()
+    assert not (tmp_path / "nodir").exists()
+
+
 def test_mutate_missing_parent_dir_creates_nothing(tmp_path):
     store = Store(str(tmp_path / "nodir" / "data.json"))
     with pytest.raises(StoreError):

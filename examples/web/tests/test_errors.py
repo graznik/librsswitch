@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 
 import pytest
-from conftest import sample_doc
+from conftest import sample_doc, write_doc
 
+from rsswitch_web import create_app
 from rsswitch_web.errors import HTTP_CODES, MAX_BODY_BYTES
 
 JSON = {"Content-Type": "application/json"}
@@ -169,3 +171,21 @@ def test_store_error_at_runtime_is_500_store_error_and_file_untouched(
     assert b"data.json" not in resp.data
     assert path.read_bytes() == b"{"
     assert str(path) in caplog.text
+
+
+def test_vanished_data_dir_is_500_store_error_not_an_empty_list(tmp_path,
+                                                                caplog):
+    data_dir = tmp_path / "volume"
+    data_dir.mkdir()
+    write_doc(data_dir / "data.json", sample_doc())
+    app = create_app({"data_file": str(data_dir / "data.json")})
+    client = app.test_client()
+    assert len(client.get("/api/rooms").get_json()["rooms"]) == 2
+
+    shutil.rmtree(str(data_dir))
+    with caplog.at_level(logging.ERROR):
+        resp = client.get("/api/rooms")
+    error_of(resp, 500, "store_error")
+    assert str(tmp_path).encode("utf-8") not in resp.data
+    assert str(data_dir) in caplog.text
+    assert not data_dir.exists()
