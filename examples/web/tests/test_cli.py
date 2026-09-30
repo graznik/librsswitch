@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import signal
 import socket
@@ -24,10 +25,12 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 import pytest
+from werkzeug.security import check_password_hash
 
 from rsswitch_web import config as config_module
 from rsswitch_web.__main__ import main
@@ -281,3 +284,153 @@ def test_config_example_matches_defaults():
     assert resolve_config(example) == DEFAULTS
     assert text == json.dumps(example, indent=2) + "\n"
     assert DEFAULT_CONFIG_PATH == "/etc/rsswitch-web/config.json"
+
+
+def type_passwords(monkeypatch, *answers):
+    """Make getpass return the answers in turn, and raise EOFError after."""
+    pending = list(answers)
+    asked = []
+
+    def fake(prompt="Password: ", stream=None):
+        asked.append(prompt)
+        if not pending:
+            raise EOFError
+        return pending.pop(0)
+
+    monkeypatch.setattr("rsswitch_web.__main__.getpass.getpass", fake)
+    return asked
+
+
+def test_hash_password_prints_one_verifiable_hash(monkeypatch, capsys):
+    asked = type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password"]) == 0
+    out = capsys.readouterr()
+    assert asked == ["Password: ", "Repeat password: "]
+    lines = out.out.splitlines()
+    assert len(lines) == 1 and out.out.endswith("\n")
+    assert check_password_hash(lines[0], "s3cret")
+    assert not check_password_hash(lines[0], "s3cre")
+    assert resolve_config({"password_hash": lines[0]})["username"] == "admin"
+    assert "s3cret" not in out.out
+    assert "s3cret" not in out.err
+
+
+def test_hash_password_default_is_scrypt(monkeypatch, capsys):
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password"]) == 0
+    assert capsys.readouterr().out.startswith("scrypt:")
+
+
+def test_hash_password_method_pbkdf2(monkeypatch, capsys):
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password", "--method", "pbkdf2:sha256:600000"]) == 0
+    line = capsys.readouterr().out.strip()
+    assert line.startswith("pbkdf2:sha256:600000$")
+    assert check_password_hash(line, "s3cret")
+    assert resolve_config({"password_hash": line})["password_hash"] == line
+
+
+def test_hash_password_mismatch_exits_1_and_prints_nothing(
+        monkeypatch, capsys):
+    type_passwords(monkeypatch, "s3cret", "s3cret2")
+    assert main(["hash-password"]) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == "rsswitch-web: passwords do not match\n"
+
+
+def test_hash_password_empty_exits_1(monkeypatch, capsys):
+    type_passwords(monkeypatch, "", "")
+    assert main(["hash-password"]) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == "rsswitch-web: refusing an empty password\n"
+
+
+def test_hash_password_eof_exits_1(monkeypatch, capsys):
+    type_passwords(monkeypatch)
+    assert main(["hash-password"]) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == "rsswitch-web: no password given\n"
+
+
+def test_hash_password_eof_at_the_repeat_exits_1(monkeypatch, capsys):
+    type_passwords(monkeypatch, "s3cret")
+    assert main(["hash-password"]) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert "s3cret" not in out.err
+
+
+@pytest.mark.parametrize("method", ["md5", "nonsense", "pbkdf2:nope:1",
+                                    "scrypt:x:y:z"])
+def test_hash_password_invalid_method_exits_2(monkeypatch, capsys, method):
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password", "--method", method]) == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err.startswith("rsswitch-web: invalid --method: ")
+    assert "s3cret" not in out.err
+
+
+def test_hash_password_refuses_a_hash_the_app_would_refuse(
+        monkeypatch, capsys):
+    # Werkzeug accepts this method, the app does not start with its hash.
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password", "--method", "pbkdf2:shake_128:1"]) == 2
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err.startswith("rsswitch-web: ")
+    assert "s3cret" not in out.err
+
+
+def test_hash_password_reads_no_config(monkeypatch, tmp_path, capsys):
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    missing = str(tmp_path / "nope.json")
+    assert main(["--config", missing, "hash-password"]) == 0
+    out = capsys.readouterr()
+    assert len(out.out.splitlines()) == 1
+    assert out.err == ""
+
+
+def test_hash_password_takes_no_password_argument(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["hash-password", "s3cret"])
+    assert exc.value.code == 2
+    assert "s3cret" not in capsys.readouterr().out
+
+
+def test_generated_hash_locks_the_running_app(tmp_path, monkeypatch, capsys):
+    type_passwords(monkeypatch, "s3cret", "s3cret")
+    assert main(["hash-password"]) == 0
+    hashed = capsys.readouterr().out.strip()
+    config = write_config(tmp_path, password_hash=hashed)
+    child = Child("--config", config, "run")
+    try:
+        child.wait_ready()
+        url = "http://127.0.0.1:%d/api/rooms" % child.port
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            opener.open(url, timeout=5)
+        assert exc.value.code == 401
+        assert exc.value.headers["WWW-Authenticate"].startswith("Basic ")
+        exc.value.close()
+        token = base64.b64encode(b"admin:s3cret").decode("ascii")
+        req = urllib.request.Request(
+            url, headers={"Authorization": "Basic " + token})
+        with opener.open(req, timeout=5) as r:
+            assert r.status == 200
+            tree = json.loads(r.read().decode("utf-8"))
+        assert [r["name"] for r in tree["rooms"]] == ["Wohnzimmer", "Küche"]
+        bad = base64.b64encode(b"admin:s3cre").decode("ascii")
+        req = urllib.request.Request(
+            url, headers={"Authorization": "Basic " + bad})
+        with pytest.raises(urllib.error.HTTPError) as exc:
+            opener.open(req, timeout=5)
+        assert exc.value.code == 401
+        exc.value.close()
+        child.proc.send_signal(signal.SIGTERM)
+        assert child.proc.wait(5) == 0
+    finally:
+        child.stop()

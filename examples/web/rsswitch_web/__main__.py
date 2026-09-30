@@ -13,7 +13,10 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The command line: python -m rsswitch_web [--config PATH] run
+"""The command line: python -m rsswitch_web [--config PATH] COMMAND
+
+The commands are run, which serves the app, and hash-password, which
+turns a password into the hash that goes into the configuration.
 
 The run command is for development and testing. It serves with the
 development server of Werkzeug, which is not meant to face a network
@@ -22,21 +25,26 @@ WSGI server.
 
 Exit status is 0 for --help or a clean stop by SIGTERM or SIGINT, 1
 for a data file that cannot be used or an address that cannot be
-listened on, and 2 for a usage or configuration error. Every
+listened on, and 2 for a usage or configuration error. The
+hash-password command exits with 1 when no usable password was typed
+and with 2 for a method that cannot be used. Every
 diagnostic is one line on stderr that starts with "rsswitch-web: ".
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import signal
 import socket
 import sys
 
+from werkzeug.security import generate_password_hash
 from werkzeug.serving import make_server
 
 from . import create_app
-from .config import DEFAULT_CONFIG_PATH, ConfigError, load_config
+from .config import (DEFAULT_CONFIG_PATH, ConfigError, load_config,
+                     resolve_config)
 from .store import StoreError
 
 
@@ -107,6 +115,44 @@ def _run(args) -> int:
     return 0
 
 
+def _hash_password(args) -> int:
+    """Print the hash of a password that is typed twice, without echo.
+
+    The password never goes through the command line, where the shell
+    history and the process list would keep it, and is never printed.
+    The configuration file is not read.
+    """
+    try:
+        first = getpass.getpass("Password: ")
+        second = getpass.getpass("Repeat password: ")
+    except EOFError:
+        _say("rsswitch-web: no password given")
+        return 1
+    if first != second:
+        _say("rsswitch-web: passwords do not match")
+        return 1
+    if not first:
+        _say("rsswitch-web: refusing an empty password")
+        return 1
+    try:
+        if args.method:
+            hashed = generate_password_hash(first, method=args.method)
+        else:
+            hashed = generate_password_hash(first)
+    except ValueError as e:
+        _say("rsswitch-web: invalid --method: %s" % e)
+        return 2
+    # A method that Werkzeug accepts, but that the app would refuse at
+    # start-up, is reported now and not when the app is started.
+    try:
+        resolve_config({"password_hash": hashed})
+    except ConfigError as e:
+        _say("rsswitch-web: %s" % e)
+        return 2
+    print(hashed)
+    return 0
+
+
 def main(argv=None) -> int:
     """Run the command line and return the exit status."""
     parser = argparse.ArgumentParser(prog="python -m rsswitch_web",
@@ -119,6 +165,14 @@ def main(argv=None) -> int:
     run = commands.add_parser("run", help="serve the app with the "
                               "development server")
     run.set_defaults(func=_run)
+    hashing = commands.add_parser(
+        "hash-password",
+        help="print the hash of a password for password_hash")
+    hashing.add_argument(
+        "--method", metavar="METHOD",
+        help="hash method, scrypt by default, which needs about 32 MiB "
+        "per check; pbkdf2:sha256:600000 is cheaper for slow boards")
+    hashing.set_defaults(func=_hash_password)
     args = parser.parse_args(argv)
     return args.func(args)
 
