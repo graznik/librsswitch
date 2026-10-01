@@ -241,6 +241,16 @@ A change of type, group or number clears the "Last sent" label of the
 socket, because what was sent before was meant for another address;
 the form says so. The bin deletes the socket after asking, naming it.
 
+Room heads and socket rows in edit mode also have an up and a down
+button, which swap the item with its neighbour. The first item
+cannot go up and the last one cannot go down, so a room with a
+single socket has both buttons of that socket disabled. While one
+change is on its way, every button of the edit mode is disabled, so
+the page never sends two at once. When another phone changed the
+order or removed the item in the meantime, the server refuses the
+change. The page then loads the rooms again and says "The order was
+changed on another device; the page was reloaded."
+
 The page is plain HTML, CSS and JavaScript from the package, with no
 build step and nothing loaded from another host. It needs a browser
 from 2022 or later, such as Safari on iOS 15.4 and later.

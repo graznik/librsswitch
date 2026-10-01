@@ -346,3 +346,19 @@ def test_sockets_are_edited_moved_and_deleted_from_the_page():
     # The owner is asked before the request goes out.
     body = js[js.index("async function deleteSocket"):]
     assert body.index("confirm(") < body.index('"DELETE"')
+
+
+def test_rooms_and_sockets_are_reordered_from_the_page():
+    js = source("app.js")
+    for text in ("/api/rooms/order", "/sockets/order", "order_mismatch",
+                 "The order was changed on another device",
+                 '"Move "', '" up"', '" down"'):
+        assert text in js, text
+    # One request helper, and every management request goes through
+    # manage(), which disables the management buttons meanwhile.
+    for name in ("saveSocket", "saveRoom", "deleteRoom", "deleteSocket",
+                 "reorder"):
+        start = js.index("function " + name)
+        end = js.index("\n}\n", start)
+        assert "await manage(" in js[start:end], name
+    assert "disabled: ui.busy" in js

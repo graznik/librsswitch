@@ -238,7 +238,7 @@ async function loadTree() {
 	render();
 }
 
-function renderSocket(sock) {
+function renderSocket(sock, index, room) {
 	const wanted = ui.pending.get(sock.id);
 	const busy = wanted !== undefined;
 	const note = ui.notes.get(sock.id);
@@ -271,7 +271,10 @@ function renderSocket(sock) {
 			type: "button", disabled: ui.busy, text: "\u{1F5D1}\uFE0E",
 			"aria-label": "Delete " + sock.name});
 		remove.addEventListener("click", () => deleteSocket(sock));
-		row.append(el("div", {class: "edit-controls"}, edit, remove));
+		const arrows = arrowButtons(sock.name, index, room.sockets.length,
+			(delta) => moveSocket(room, index, delta));
+		row.append(el("div", {class: "edit-controls"}, ...arrows, edit,
+			remove));
 	}
 	if (note) {
 		row.append(el("p", {
@@ -280,8 +283,9 @@ function renderSocket(sock) {
 	return row;
 }
 
-function renderRoom(room) {
-	const sockets = room.sockets.map(renderSocket);
+function renderRoom(room, index) {
+	const sockets = room.sockets.map(
+		(sock, at) => renderSocket(sock, at, room));
 	if (sockets.length === 0) {
 		sockets.push(el("p", {class: "hint", text: "No sockets yet."}));
 	}
@@ -306,7 +310,10 @@ function renderRoom(room) {
 			type: "button", disabled: ui.busy, text: "\u{1F5D1}\uFE0E",
 			"aria-label": "Delete " + room.name});
 		remove.addEventListener("click", () => deleteRoom(room));
-		head.append(el("div", {class: "edit-controls"}, rename, remove));
+		const arrows = arrowButtons(room.name, index, ui.tree.rooms.length,
+			(delta) => moveRoom(index, delta));
+		head.append(el("div", {class: "edit-controls"}, ...arrows, rename,
+			remove));
 		const add = el("button", {
 			class: "add-socket", type: "button", disabled: ui.busy,
 			"aria-label": "Add a socket to " + room.name,
@@ -552,6 +559,23 @@ function setMessage(node, text) {
 	node.hidden = !text;
 }
 
+/*
+ * The up and down buttons of the item at index among count items.
+ * The first item cannot go up and the last one cannot go down. A tap
+ * calls move(-1) or move(1).
+ */
+function arrowButtons(name, index, count, move) {
+	const up = el("button", {
+		type: "button", disabled: ui.busy || index === 0,
+		"aria-label": "Move " + name + " up", text: "\u25B2"});
+	up.addEventListener("click", () => move(-1));
+	const down = el("button", {
+		type: "button", disabled: ui.busy || index === count - 1,
+		"aria-label": "Move " + name + " down", text: "\u25BC"});
+	down.addEventListener("click", () => move(1));
+	return [up, down];
+}
+
 /* Hide every field error and the dialog error of a dialog. */
 function clearErrors(dialog) {
 	for (const node of dialog.querySelectorAll(
@@ -773,6 +797,62 @@ async function deleteSocket(sock) {
 		ui.notes.set(sock.id, {
 			kind: "error", text: errorText(res.error, res.retryAfter)});
 		render();
+	}
+}
+
+/*
+ * Send the whole order of a list to the server. When another device
+ * changed the list meanwhile, the server refuses the stale ids with
+ * order_mismatch, or answers 404 for a room that is gone; either way
+ * the page shows the rooms as they are and says so.
+ */
+async function reorder(path, ids) {
+	const res = await manage(async () => {
+		const answer = await api("PUT", path, {ids: ids});
+		if (answer.ok || answer.status === 404
+				|| (answer.error && answer.error.code === "order_mismatch")) {
+			await loadTree();
+		}
+		return answer;
+	});
+	if (res.ok) {
+		return;
+	}
+	if (res.status === 404 || res.error.code === "order_mismatch") {
+		showBanner("The order was changed on another device; the page "
+			+ "was reloaded.", "info");
+	} else {
+		showBanner(errorText(res.error, res.retryAfter), "error");
+	}
+}
+
+/* The ids of items with the one at index swapped with its neighbour
+ * delta places away, or null when there is no such neighbour. */
+function swapped(items, index, delta) {
+	const other = index + delta;
+	if (other < 0 || other >= items.length) {
+		return null;
+	}
+	const ids = items.map((item) => item.id);
+	ids[index] = items[other].id;
+	ids[other] = items[index].id;
+	return ids;
+}
+
+/* Move the room at index one place up (delta -1) or down (1). */
+async function moveRoom(index, delta) {
+	const ids = ui.busy ? null : swapped(ui.tree.rooms, index, delta);
+	if (ids !== null) {
+		await reorder("/api/rooms/order", ids);
+	}
+}
+
+/* Move the socket at index of room one place up or down. */
+async function moveSocket(room, index, delta) {
+	const ids = ui.busy ? null : swapped(room.sockets, index, delta);
+	if (ids !== null) {
+		await reorder("/api/rooms/" + encodeURIComponent(room.id)
+			+ "/sockets/order", ids);
 	}
 }
 
