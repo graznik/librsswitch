@@ -362,7 +362,7 @@ change, like the text of an rsswitchd reply.
 
 | Code | Status | Meaning |
 |------|--------|---------|
-| `bad_json` | 400 | body is empty, is not JSON, or is not a JSON object |
+| `bad_json` | 400 | body is empty, is not JSON, or is not a JSON object; only the body checks give it |
 | `unauthorized` | 401 | login needed or wrong; the answer has a `WWW-Authenticate` header |
 | `not_found` | 404 | no such URL, room or socket |
 | `method_not_allowed` | 405 | the route does not take this method; `Allow` names the ones it does |
@@ -379,7 +379,7 @@ change, like the text of an rsswitchd reply.
 | `daemon_timeout` | 504 | rsswitchd did not answer in time |
 | `store_error` | 500 | the data file cannot be used |
 | `internal_error` | 500 | a bug in the app |
-| `http_error` | other | any other HTTP error; the status is the one of the response |
+| `http_error` | other | any other HTTP error, also a 400 that is not about the body; the status is the one of the response |
 
 
 ### The last command

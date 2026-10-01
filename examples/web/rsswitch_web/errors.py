@@ -34,9 +34,10 @@ from .store import StoreError
 MAX_BODY_BYTES = 16 * 1024
 
 # The code of every HTTP status the API knows about. Any other status
-# keeps its number and gets the code http_error.
+# keeps its number and gets the code http_error. That includes a 400
+# that json_body() did not raise, such as a client that disconnects
+# while its body is read: bad_json is only about the body checks.
 HTTP_CODES = {
-    400: "bad_json",
     401: "unauthorized",
     404: "not_found",
     405: "method_not_allowed",

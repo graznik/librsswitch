@@ -123,9 +123,9 @@ def test_api_error_passes_status_code_field_and_headers(probe_app):
     assert resp.headers["X-Probe"] == "1"
 
 
-def test_abort_400_is_bad_json(probe_app):
+def test_abort_400_is_http_error(probe_app):
     resp = probe_app.test_client().get("/api/_probe/abort/400")
-    error_of(resp, 400, "bad_json")
+    error_of(resp, 400, "http_error")
 
 
 @pytest.mark.parametrize("status, code", sorted(HTTP_CODES.items()))
