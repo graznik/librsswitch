@@ -139,6 +139,12 @@ def _hash_password(args) -> int:
             hashed = generate_password_hash(first, method=args.method)
         else:
             hashed = generate_password_hash(first)
+    except UnicodeEncodeError:
+        # A password from a terminal with another encoding can hold a
+        # lone surrogate, which has no UTF-8 form. It is not a problem
+        # of --method, although UnicodeEncodeError is a ValueError.
+        _say("rsswitch-web: password is not valid text")
+        return 1
     except ValueError as e:
         _say("rsswitch-web: invalid --method: %s" % e)
         return 2

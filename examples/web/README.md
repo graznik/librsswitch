@@ -114,8 +114,9 @@ that needs more than 256 MiB of memory or has p above 16, and a
 pbkdf2 hash with more than 10000000 iterations, when it starts.
 
 hash-password reads no config file. It exits with 1 when the two
-entries differ, when the password is empty or when the input ends,
-and with 2 when --method is not a method that the app accepts. It
+entries differ, when the password is empty or is not valid text
+(it cannot be encoded as UTF-8), or when the input ends, and
+with 2 when --method is not a method that the app accepts. It
 prints nothing on stdout in these cases.
 
 

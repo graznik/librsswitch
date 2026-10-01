@@ -347,6 +347,19 @@ def test_hash_password_empty_exits_1(monkeypatch, capsys):
     assert out.err == "rsswitch-web: refusing an empty password\n"
 
 
+@pytest.mark.parametrize("method", [None, "pbkdf2:sha256:1000"],
+                         ids=["default", "pbkdf2"])
+def test_hash_password_not_valid_text_exits_1(monkeypatch, capsys, method):
+    type_passwords(monkeypatch, "pw\udcff", "pw\udcff")
+    argv = ["hash-password"]
+    if method:
+        argv += ["--method", method]
+    assert main(argv) == 1
+    out = capsys.readouterr()
+    assert out.out == ""
+    assert out.err == "rsswitch-web: password is not valid text\n"
+
+
 def test_hash_password_eof_exits_1(monkeypatch, capsys):
     type_passwords(monkeypatch)
     assert main(["hash-password"]) == 1
