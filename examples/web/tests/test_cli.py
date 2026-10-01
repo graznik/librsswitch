@@ -21,13 +21,8 @@ import base64
 import json
 import signal
 import socket
-import subprocess
-import sys
-import threading
-import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 import pytest
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -37,95 +32,8 @@ from rsswitch_web.__main__ import main
 from rsswitch_web.config import (DEFAULT_CONFIG_PATH, DEFAULTS, ConfigError,
                                  load_config, resolve_config)
 
-from conftest import refused_port, sample_doc, write_doc
-
-WEB_DIR = Path(__file__).resolve().parents[1]
-LISTENING = "rsswitch-web: listening on "
-DEV_WARNING = "rsswitch-web: development server only, not for production use"
-
-
-class Child:
-    """A python -m rsswitch_web process whose stderr is read to the end.
-
-    Werkzeug logs one line per request on stderr, and a pipe that nobody
-    empties would stop the server once it is full.
-    """
-
-    def __init__(self, *args):
-        self.proc = subprocess.Popen(
-            [sys.executable, "-m", "rsswitch_web"] + list(args),
-            cwd=str(WEB_DIR), stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-        self.lines = []
-        self.port = None
-        self._ready = threading.Event()
-        self._reader = threading.Thread(target=self._read, daemon=True)
-        self._reader.start()
-
-    def _read(self):
-        for line in self.proc.stderr:
-            line = line.rstrip("\n")
-            self.lines.append(line)
-            if self.port is None and line.startswith(LISTENING):
-                self.port = int(line.rsplit(":", 1)[1])
-                self._ready.set()
-
-    def wait_ready(self, timeout=10):
-        """Wait for the listening line. Fail when the child exits first."""
-        deadline = time.monotonic() + timeout
-        while not self._ready.wait(0.02):
-            if self.proc.poll() is not None:
-                self._reader.join(2)
-                pytest.fail("exited with %s: %s"
-                            % (self.proc.returncode, self.lines))
-            if time.monotonic() > deadline:
-                pytest.fail("no listening line: %s" % self.lines)
-
-    def stop(self):
-        """Terminate the child if it still runs, and return its status."""
-        if self.proc.poll() is None:
-            self.proc.terminate()
-        try:
-            status = self.proc.wait(5)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-            status = self.proc.wait()
-        self._reader.join(2)
-        self.proc.stderr.close()
-        return status
-
-
-def run_cli(*args):
-    """Run the command line to its end and return (status, stderr)."""
-    proc = subprocess.run(
-        [sys.executable, "-m", "rsswitch_web"] + list(args),
-        cwd=str(WEB_DIR), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE, text=True, timeout=30)
-    return proc.returncode, proc.stderr
-
-
-def get_json(port, path):
-    """GET path from 127.0.0.1:port, without any proxy."""
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open("http://127.0.0.1:%d%s" % (port, path), timeout=5) as r:
-        return json.loads(r.read().decode("utf-8"))
-
-
-def write_config(tmp_path, **overrides):
-    """Write a config file for a data file below tmp_path, and return it."""
-    data = tmp_path / "data.json"
-    if not data.exists():
-        write_doc(data, sample_doc())
-    cfg = {
-        "data_file": str(data),
-        "listen_address": "127.0.0.1",
-        "listen_port": 0,
-        "daemon_port": refused_port(),
-    }
-    cfg.update(overrides)
-    path = tmp_path / "config.json"
-    path.write_text(json.dumps(cfg))
-    return str(path)
+from conftest import (DEV_WARNING, LISTENING, WEB_DIR, Child, get_json,
+                      run_cli, write_config)
 
 
 def test_run_serves_api_from_config_file(tmp_path):
