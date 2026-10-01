@@ -1,0 +1,54 @@
+[Unit]
+Description=rsswitch-web, web UI for rsswitchd
+# The app switches sockets through rsswitchd, so it starts after it and
+# pulls it in. It does not require it: the app starts and reports
+# "rsswitchd unreachable" for a switch while the daemon is down.
+After=network.target rsswitchd.service
+Wants=rsswitchd.service
+
+[Service]
+Type=simple
+# Runs as the unprivileged system user make install creates. This user
+# is in no other group; the app does not touch GPIO, rsswitchd does.
+User=rsswitch-web
+# python -m finds the package through the working directory, and the
+# default working directory of systemd is /.
+WorkingDirectory=/opt/rsswitch-web
+# serve runs the app under waitress. The venv python is the one that
+# has Flask and waitress installed.
+ExecStart=/opt/rsswitch-web/venv/bin/python -m rsswitch_web --config /etc/rsswitch-web/config.json serve
+# Creates /var/lib/rsswitch-web for the user, which stays writable
+# although ProtectSystem=strict makes the rest of the tree read-only.
+StateDirectory=rsswitch-web
+# The data file is for this user only.
+StateDirectoryMode=0750
+# Files that the app creates are not readable by anybody else.
+UMask=0077
+# The app can never gain privileges, e.g. via setuid binaries.
+NoNewPrivileges=yes
+# Read-only file system, except the state directory above.
+ProtectSystem=strict
+# Home directories are not visible.
+ProtectHome=yes
+# A private /tmp.
+PrivateTmp=yes
+# The app needs no device. rsswitchd owns the GPIO lines.
+PrivateDevices=yes
+# The app has no reason to change kernel tunables.
+ProtectKernelTunables=yes
+# The app has no reason to load kernel modules.
+ProtectKernelModules=yes
+# The app has no reason to change control groups.
+ProtectControlGroups=yes
+# The app does not switch the execution domain.
+LockPersonality=yes
+# TCP to rsswitchd and from the phones. AF_UNIX is for the name
+# service when daemon_host is a name.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# Restart after a crash.
+Restart=on-failure
+# A failing start does not spin, e.g. when the port is in use.
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
