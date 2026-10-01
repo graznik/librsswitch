@@ -153,7 +153,47 @@ venv/bin/python -m pytest
 
 requirements-dev.txt adds pytest. Python 3.9 or newer is required.
 The suite includes a smoke test against that x86_64 rsswitchd and
-skips it when the binary is missing.
+skips it when the binary is missing. See Tests below for the one
+command that runs everything.
+
+
+## Tests
+
+One command runs every test of the repository, the C tests first and
+the tests of this app second. From examples/web, with the venv made
+as above (the first two commands make it, once):
+
+```bash
+python3 -m venv venv
+venv/bin/pip install -r requirements-dev.txt
+make -C ../../tests test
+```
+
+That is `make -C tests test` from the repository root. It needs the
+venv in examples/web/venv with requirements-dev.txt installed. A venv
+at another place is named with WEB_PYTHON, which must be the python of
+that venv, as an absolute path:
+
+```bash
+make -C ../../tests test WEB_PYTHON=$PWD/venv/bin/python
+```
+
+The command builds the x86_64 rsswitchd, starts it for the tests that
+need the real daemon, and runs the end-to-end test: it starts the
+daemon and the app under waitress on ephemeral ports and drives the
+app over HTTP, down to the codeword that the daemon prints. The app
+tests run also when a C test failed, so one run shows both results.
+The command exits non-zero when anything failed, and also when the
+venv, pytest or the daemon is missing. It never skips the app's tests
+or the end-to-end test.
+
+`venv/bin/python -m pytest` in examples/web runs only the app's tests.
+The real-daemon and end-to-end tests are skipped then when
+examples/network/rsswitchd is missing. Two environment variables
+change that: RSSWITCHD_BIN names the rsswitchd binary to start, which
+must be a build for the x86_64 stub board, and RSSWITCH_REQUIRE_DAEMON=1
+makes a missing or unstartable binary fail the tests instead of
+skipping them. make -C tests test sets both.
 
 
 ## Trying the stack on an x86_64 host

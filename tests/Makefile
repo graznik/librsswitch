@@ -7,6 +7,16 @@ LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
 
+# The web app's tests run from `make test` too. WEB_DIR is the app,
+# WEB_PYTHON the Python of the virtual environment that has pytest and
+# the app's requirements (see ../examples/web/README.md). A venv
+# elsewhere is named on the command line: make test
+# WEB_PYTHON=/path/to/venv/bin/python. It must be the venv's own
+# python, not the path that a symlink resolves to, or the venv's
+# packages are not found.
+WEB_DIR := $(abspath ../examples/web)
+WEB_PYTHON ?= $(WEB_DIR)/venv/bin/python
+
 # test_rpi links against libgpiod, whose headers are not guaranteed to
 # be installed on every host that runs `make test`. GPIOD_CFLAGS/
 # GPIOD_LIBS let a caller point at a different libgpiod (see the D-15
@@ -28,12 +38,29 @@ endif
 
 .PHONY: test clean tsan
 
+# Runs the C tests, then the web app's tests, and exits non-zero when
+# any of them failed. The web tests run also after a C failure, so one
+# run shows both results. They are never skipped: without the venv, its
+# pytest or the daemon (test_rsswitchd_bin, a prerequisite, which they
+# start through RSSWITCHD_BIN) the target fails instead.
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
 		./$$t > /dev/null || status=1; \
 	done; \
 	sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
+	py="$(abspath $(WEB_PYTHON))"; \
+	if [ ! -x "$$py" ]; then \
+		echo "web tests: $$py not found; create the venv as described in examples/web/README.md, or run make test WEB_PYTHON=/path/to/venv/bin/python" >&2; \
+		status=1; \
+	elif ! "$$py" -c 'import pytest' > /dev/null 2>&1; then \
+		echo "web tests: pytest missing in $$py; install requirements-dev.txt into the venv (see examples/web/README.md)" >&2; \
+		status=1; \
+	else \
+		(cd $(WEB_DIR) && RSSWITCHD_BIN="$(CURDIR)/test_rsswitchd_bin" \
+			RSSWITCH_REQUIRE_DAEMON=1 \
+			"$$py" -m pytest -q -p no:cacheprovider) || status=1; \
+	fi; \
 	exit $$status
 
 test_socket_send: test_socket_send.c $(TEST_DEPS)
