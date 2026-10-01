@@ -23,6 +23,7 @@ import re
 import pytest
 from werkzeug.security import generate_password_hash
 
+from rsswitch_web import config as config_module
 from rsswitch_web import create_app
 from rsswitch_web.config import (DEFAULT_CONFIG_PATH, DEFAULTS, ConfigError,
                                  load_config, resolve_config)
@@ -109,6 +110,30 @@ def test_boundaries_between_accepted_and_refused():
         resolve_config({"listen_port": 65536})
 
 
+def test_hashes_at_the_cost_caps_are_accepted(monkeypatch):
+    # The start-up check hashes the empty password once. The test must
+    # not pay for the biggest hashes that are allowed, so the check is
+    # replaced by one that finds no match.
+    monkeypatch.setattr(config_module, "check_password_hash",
+                        lambda hashed, password: False)
+    for value in ("scrypt:131072:8:1$s$h", "pbkdf2:sha256:10000000$s$h"):
+        assert resolve_config({"password_hash": value})["password_hash"] \
+            == value
+
+
+@pytest.mark.parametrize("method", [None, "pbkdf2:sha256:1000"],
+                         ids=["scrypt", "pbkdf2"])
+def test_hash_of_the_empty_password_is_refused(method):
+    hashed = (generate_password_hash("", method) if method
+              else generate_password_hash(""))
+    with pytest.raises(ConfigError) as info:
+        resolve_config({"password_hash": hashed})
+    text = str(info.value)
+    assert text.startswith("config: key 'password_hash': is the hash of "
+                           "an empty password; ")
+    assert "hash-password" in text
+
+
 def test_password_hash_formats():
     accepted = [
         None,
@@ -116,8 +141,6 @@ def test_password_hash_formats():
         generate_password_hash("pw", "pbkdf2:sha256:1000"),
         generate_password_hash("pw", "pbkdf2:sha512:600000"),
         "scrypt:1024:1:1$s$h",
-        "scrypt:131072:8:1$s$h",
-        "pbkdf2:sha256:10000000$s$h",
     ]
     for value in accepted:
         assert resolve_config({"password_hash": value})["password_hash"] \

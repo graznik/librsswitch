@@ -176,14 +176,18 @@ def _check_hash(value):
     A hash is method$salt$hash. The method is scrypt:N:r:p or
     pbkdf2:<hash function>:<iterations>. Anything else would make
     every login fail, or fail with an error, so it is refused here.
-    A scrypt hash is also tried once with an empty password, because
-    whether OpenSSL accepts its parameters cannot be told from the
-    numbers alone.
+    A hash is also tried once with an empty password. For scrypt this
+    shows whether OpenSSL accepts the parameters, which cannot be told
+    from the numbers alone. For both methods a hash that the empty
+    password matches is refused, because the login would let anybody
+    in. That costs one hash at start-up, bounded by the caps below.
     """
     if value is None:
         return None
     what = ("must be null or a Werkzeug password hash such as "
             "scrypt:32768:8:1$salt$hash")
+    empty = ("is the hash of an empty password; make a hash of a real "
+             "password with hash-password")
     if type(value) is not str:
         return what
     parts = value.split("$")
@@ -198,10 +202,10 @@ def _check_hash(value):
         if 128 * n * r > MAX_SCRYPT_MEMORY or p > MAX_SCRYPT_P:
             return "the scrypt parameters are too large"
         try:
-            check_password_hash(value, "")
+            matches = check_password_hash(value, "")
         except (ValueError, MemoryError) as e:
             return "the scrypt parameters cannot be used: %s" % e
-        return None
+        return empty if matches else None
     if method[0] == "pbkdf2" and len(method) == 3:
         if method[1] not in hashlib.algorithms_guaranteed:
             return "unknown pbkdf2 hash function '%s'" % method[1]
@@ -214,7 +218,7 @@ def _check_hash(value):
             return "the pbkdf2 iterations must be a positive integer"
         if iterations > MAX_PBKDF2_ITERATIONS:
             return "the pbkdf2 iterations are too many"
-        return None
+        return empty if check_password_hash(value, "") else None
     return what
 
 

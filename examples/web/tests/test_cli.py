@@ -30,7 +30,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from rsswitch_web import config as config_module
 from rsswitch_web.__main__ import main
@@ -197,6 +197,16 @@ def test_run_corrupt_data_file_exits_1(tmp_path):
     assert "data file: data file" not in err
     assert LISTENING not in err
     assert data.read_text() == "{"
+
+
+def test_run_hash_of_the_empty_password_exits_2(tmp_path):
+    config = write_config(tmp_path, password_hash=generate_password_hash(
+        "", "pbkdf2:sha256:1000"))
+    status, err = run_cli("--config", config, "run")
+    assert status == 2
+    assert err.startswith("rsswitch-web: config: key 'password_hash': "
+                          "is the hash of an empty password")
+    assert LISTENING not in err
 
 
 def test_run_port_in_use_exits_1(tmp_path):

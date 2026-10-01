@@ -113,6 +113,10 @@ The app refuses a scrypt hash that OpenSSL cannot compute here, or
 that needs more than 256 MiB of memory or has p above 16, and a
 pbkdf2 hash with more than 10000000 iterations, when it starts.
 
+It also refuses a hash of the empty password when it starts, because
+that would let anybody in with an empty password, and a login that
+looks protected is worse than none. This costs one hash at start-up.
+
 hash-password reads no config file. It exits with 1 when the two
 entries differ, when the password is empty or is not valid text
 (it cannot be encoded as UTF-8), or when the input ends, and
