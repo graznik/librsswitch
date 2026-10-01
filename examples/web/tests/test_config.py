@@ -38,6 +38,7 @@ ACCEPTED = {
     "daemon_read_timeout": [0.05, 2, 60],
     "listen_address": ["0.0.0.0", "127.0.0.1", "::"],
     "listen_port": [0, 65535],
+    "threads": [1, 4, 16],
     "data_file": ["/tmp/x.json"],
     "all_off_gap_ms": [0, 200, 10000],
     "username": ["admin", "Ölmühle"],
@@ -52,6 +53,7 @@ REFUSED = {
                             float("nan"), float("inf")],
     "listen_address": ["localhost", "", "999.1.1.1", "0.0.0", 5, None],
     "listen_port": [-1, 65536, True, "8080", 80.0, None],
+    "threads": [0, 17, -1, True, 4.0, "4", None],
     "data_file": ["data.json", "", 7, None, "/tmp/a\0b"],
     "all_off_gap_ms": [-1, 10001, 0.5, True, "200", None],
     "username": ["", "a:b", "a\nb", "a\x00b", "a\ud800b", 5, True],
@@ -108,6 +110,17 @@ def test_boundaries_between_accepted_and_refused():
         resolve_config({"listen_port": -1})
     with pytest.raises(ConfigError, match="'listen_port'"):
         resolve_config({"listen_port": 65536})
+
+
+def test_threads_defaults_to_4_and_says_what_is_allowed():
+    assert resolve_config({})["threads"] == 4
+    assert list(DEFAULTS).index("threads") \
+        == list(DEFAULTS).index("listen_port") + 1
+    for value in (0, 17, True, 4.0, "4", None):
+        with pytest.raises(ConfigError) as exc:
+            resolve_config({"threads": value})
+        assert str(exc.value) == ("config: key 'threads': must be an "
+                                  "integer from 1 to 16")
 
 
 def test_hashes_at_the_cost_caps_are_accepted(monkeypatch):
@@ -239,7 +252,7 @@ def test_empty_mapping_equals_defaults():
     assert resolve_config({}) == DEFAULTS
     assert resolve_config() == DEFAULTS
     assert resolve_config(None) == DEFAULTS
-    assert len(DEFAULTS) == 10
+    assert len(DEFAULTS) == 11
     assert DEFAULT_CONFIG_PATH == "/etc/rsswitch-web/config.json"
 
 

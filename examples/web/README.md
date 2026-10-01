@@ -57,10 +57,16 @@ Every key is optional:
 | `daemon_read_timeout` | seconds to wait for its reply (default 5); a number above 0 and at most 60 |
 | `listen_address` | address the app listens on (default `"0.0.0.0"`, all IPv4 addresses); an IP address, not a host name |
 | `listen_port` | port the app listens on (default 8080); an integer, 0-65535; 0 lets the kernel pick a free port |
+| `threads` | worker threads of `serve` (default 4); an integer, 1-16; `run` ignores it. It bounds how many requests, password checks and rsswitchd calls run at once, see below |
 | `data_file` | the file that holds the rooms and the sockets (default `"/var/lib/rsswitch-web/data.json"`); an absolute path |
 | `all_off_gap_ms` | pause between two commands of an All-off in milliseconds (default 200); an integer, 0-10000 |
 | `username` | the login name (default `null`, which means "admin" when `password_hash` is set); no ":" in it |
 | `password_hash` | hash of the password (default `null`, no login is asked for); a Werkzeug scrypt or pbkdf2 hash, see Password |
+
+One All off holds a thread for its whole run, which lasts as long as
+its sockets need with all_off_gap_ms between them. With the default
+of 4 threads, four All offs at the same time keep every other request
+waiting until one of them has finished.
 
 An unknown key, a value of the wrong type or a value outside its
 range stops the app at start-up with the key named in the message,
@@ -150,15 +156,29 @@ itself out the same way; wait a minute and enter the right one.
 ## Running
 
 ```bash
+venv/bin/python -m rsswitch_web --config /etc/rsswitch-web/config.json serve
+```
+
+serve is the production server. It runs the app under waitress, a
+pure Python WSGI server that also runs on a Raspberry Pi with an
+ARMv6 CPU, with the number of worker threads from the `threads` key.
+It checks the configuration and the data file and binds the address
+before it prints anything, so the exit status and the diagnostics are
+the same as for run. waitress logs no requests. serve needs waitress
+in the venv, which `pip install -r requirements.txt` provides; without
+it the command exits with 1 and says so.
+
+```bash
 venv/bin/python -m rsswitch_web --config /etc/rsswitch-web/config.json run
 ```
 
 run starts the development server of Werkzeug. It is meant for
 development and testing, and says so on stderr when it starts:
-`rsswitch-web: development server only, not for production use`.
+`rsswitch-web: development server only, not for production use`. It
+ignores `threads` and needs no waitress.
 
-As soon as the app is listening, it prints one more line to
-stderr: `rsswitch-web: listening on ADDR:PORT`. With listen_port 0
+As soon as the app is listening, both commands print the line
+`rsswitch-web: listening on ADDR:PORT` to stderr. With listen_port 0
 this is the only way to learn the port the kernel picked; scripts
 and tests can wait for this line instead of guessing a delay.
 

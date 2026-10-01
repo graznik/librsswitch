@@ -15,13 +15,18 @@
 
 """The command line: python -m rsswitch_web [--config PATH] COMMAND
 
-The commands are run, which serves the app, and hash-password, which
-turns a password into the hash that goes into the configuration.
+The commands are serve, run and hash-password.
 
+The serve command is the production server. It runs the app under
+waitress, with the number of worker threads from the configuration.
 The run command is for development and testing. It serves with the
 development server of Werkzeug, which is not meant to face a network
-that anyone can reach. A production setup runs the app under a real
-WSGI server.
+that anyone can reach. The hash-password command turns a password
+into the hash that goes into the configuration.
+
+Both servers start the same way: the configuration is checked, the
+data file is opened and the address is bound before anything is
+printed, and they end in the same way.
 
 Exit status is 0 for --help or a clean stop by SIGTERM or SIGINT, 1
 for a data file that cannot be used or an address that cannot be
@@ -46,6 +51,12 @@ from . import create_app
 from .config import (DEFAULT_CONFIG_PATH, ConfigError, load_config,
                      resolve_config)
 from .store import StoreError
+
+
+# waitress buffers a request body before the app sees it, and its
+# default allows 1 GiB. 64 KiB still lets the app answer 413 in JSON
+# for a body over its own limit of 16 KiB.
+MAX_REQUEST_BODY = 64 * 1024
 
 
 def _say(text):
@@ -76,7 +87,13 @@ def _listen(address, port):
     return sock
 
 
-def _run(args) -> int:
+def _prepare(args):
+    """Return (app, sock) for a server, or the exit status to give.
+
+    This is the start-up that run and serve share: the configuration,
+    the data file and the listening socket. The diagnostic of every
+    failure has been printed when a status is returned.
+    """
     try:
         app = create_app(load_config(args.config))
     except ConfigError as e:
@@ -93,6 +110,15 @@ def _run(args) -> int:
         _say("rsswitch-web: cannot listen on %s:%s: %s"
              % (cfg["listen_address"], cfg["listen_port"], e.strerror))
         return 1
+    return app, sock
+
+
+def _run(args) -> int:
+    prepared = _prepare(args)
+    if isinstance(prepared, int):
+        return prepared
+    app, sock = prepared
+    cfg = app.config["RSSWITCH_WEB"]
     try:
         server = make_server(cfg["listen_address"], cfg["listen_port"], app,
                              threaded=True, fd=sock.fileno())
@@ -113,6 +139,42 @@ def _run(args) -> int:
         pass
     finally:
         server.server_close()
+    return 0
+
+
+def _serve(args) -> int:
+    """Serve the app with waitress, which is meant for production."""
+    try:
+        import waitress
+    except ImportError:
+        _say("rsswitch-web: serve needs waitress; "
+             "install requirements.txt into the venv")
+        return 1
+    prepared = _prepare(args)
+    if isinstance(prepared, int):
+        return prepared
+    app, sock = prepared
+    cfg = app.config["RSSWITCH_WEB"]
+    server = None
+    try:
+        # waitress listens on the socket that was bound above, so the
+        # address is checked before the first line is printed. The
+        # socket is closed by the server.
+        server = waitress.create_server(
+            app, sockets=[sock], threads=cfg["threads"],
+            max_request_body_size=MAX_REQUEST_BODY)
+        host, port = sock.getsockname()[:2]
+        # The handler is in place before the readiness line, as in run.
+        signal.signal(signal.SIGTERM, _stop)
+        _say("rsswitch-web: listening on %s:%s" % (host, port))
+        server.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if server is None:
+            sock.close()
+        else:
+            server.close()
     return 0
 
 
@@ -169,6 +231,9 @@ def main(argv=None) -> int:
                         % DEFAULT_CONFIG_PATH)
     commands = parser.add_subparsers(dest="command", required=True,
                                      metavar="COMMAND")
+    serve = commands.add_parser(
+        "serve", help="serve the app with waitress, for production")
+    serve.set_defaults(func=_serve)
     run = commands.add_parser("run", help="serve the app with the "
                               "development server")
     run.set_defaults(func=_run)

@@ -33,7 +33,10 @@ from .jsonutil import strict_loads
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
 # Every configuration key with its default. Timeouts are in seconds,
-# all_off_gap_ms is the pause between two sends of an All-off.
+# all_off_gap_ms is the pause between two sends of an All-off, threads
+# is the number of worker threads of waitress under the serve command.
+# They bound how many requests, password checks and rsswitchd calls run
+# at once.
 DEFAULTS = {
     "daemon_host": "127.0.0.1",
     "daemon_port": 5000,
@@ -41,6 +44,7 @@ DEFAULTS = {
     "daemon_read_timeout": 5,
     "listen_address": "0.0.0.0",
     "listen_port": 8080,
+    "threads": 4,
     "data_file": "/var/lib/rsswitch-web/data.json",
     "all_off_gap_ms": 200,
     "username": None,
@@ -116,6 +120,12 @@ def _port_check(low):
 def _check_timeout(value):
     if type(value) not in (int, float) or not 0 < value <= 60:
         return "must be a number greater than 0 and at most 60 (seconds)"
+    return None
+
+
+def _check_threads(value):
+    if not _is_int(value, 1, 16):
+        return "must be an integer from 1 to 16"
     return None
 
 
@@ -231,6 +241,7 @@ _CHECKS = {
     "daemon_read_timeout": _check_timeout,
     "listen_address": _check_listen_address,
     "listen_port": _port_check(0),
+    "threads": _check_threads,
     "data_file": _check_data_file,
     "all_off_gap_ms": _check_gap,
     "username": _check_username,
