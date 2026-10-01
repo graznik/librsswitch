@@ -316,6 +316,12 @@ A socket:
   Switches off every socket of a room; see All-off.
 - `POST /api/all-off`:
   Switches off every socket of every room; see All-off.
+- `GET /api/meta`:
+  The limits of each socket type: `{"socket_types": {"rev_008345":
+  {"groups": 4, "sockets": 3}, ...}}`. For each type it gives the
+  number of groups and of sockets per group, so group runs from 0
+  to groups - 1 and number from 0 to sockets - 1. It is read-only,
+  and the page checks a form against it before sending it.
 
 A reorder list that is not exactly the current set of ids, because
 another phone changed it in the meantime, is refused with

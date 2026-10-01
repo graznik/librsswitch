@@ -31,10 +31,12 @@ def state():
 
 def register_blueprints(app):
     """Register every API blueprint on app."""
+    from .meta import bp as meta_bp
     from .rooms import bp as rooms_bp
     from .sockets import bp as sockets_bp
     from .switch import bp as switch_bp
 
+    app.register_blueprint(meta_bp)
     app.register_blueprint(rooms_bp)
     app.register_blueprint(sockets_bp)
     app.register_blueprint(switch_bp)
