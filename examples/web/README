@@ -380,4 +380,4 @@ user; it only needs to read its code, to write its data file and
 to connect to rsswitchd, which owns the GPIO lines.
 
 
-[1] ../network/README
+[1] ../network/README.md
