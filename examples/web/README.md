@@ -6,7 +6,126 @@ file and switches them through
 itself.
 
 
-## Installation (Raspberry Pi)
+## Installation as a service
+
+This is the recommended way on a Raspberry Pi, and on any other host
+with systemd. The app runs under waitress, as the unprivileged user
+rsswitch-web, and starts at boot after rsswitchd. From examples/web:
+
+```bash
+sudo apt install python3-venv
+make -C ../network rpi     # or: rpi3, bbb, x86_64
+sudo make -C ../network install
+sudo make install
+```
+
+The second and third line build and install
+[rsswitchd](../network/README.md), which the app needs to switch
+anything. sudo make install in this directory then
+
+- creates the system user rsswitch-web when it is missing. It has no
+  login shell and no home directory, and is in no group but its own:
+  the app needs no GPIO access, rsswitchd owns the GPIO lines;
+- installs the app into /opt/rsswitch-web, and creates the virtual
+  environment /opt/rsswitch-web/venv there when it is missing, with
+  the packages of requirements.txt. This needs network access, and
+  takes a while on a slow board;
+- installs config.example.json as /etc/rsswitch-web/config.json,
+  only when that file does not exist yet. It is readable by the user
+  rsswitch-web and by nobody else but root;
+- creates /var/lib/rsswitch-web, which holds the data file and
+  belongs to the user rsswitch-web;
+- installs the unit /etc/systemd/system/rsswitch-web.service, enables
+  it and restarts it.
+
+The configuration that is installed listens on all addresses, port
+8080, and asks for no password. Anybody who can reach the host can
+switch every socket until you set a password, see the next section,
+or set listen_address to 127.0.0.1.
+
+The unit is hardened: besides the unprivileged user, it makes the
+file system read-only except the data directory, hides the home
+directories and the devices, and allows no address family but IP and
+local sockets. See the comments in rsswitch-web.service.
+
+
+## Setting a password for the service
+
+Make a hash of the password, as described under Password. The
+command asks for the password twice and prints the hash; it reads no
+configuration, so any user can run it:
+
+```bash
+cd /opt/rsswitch-web && venv/bin/python -m rsswitch_web hash-password
+```
+
+Put the username and the printed hash into the configuration, and
+restart the service, because the file is read once at start-up:
+
+```bash
+sudoedit /etc/rsswitch-web/config.json
+sudo systemctl restart rsswitch-web
+```
+
+
+## Running alongside rsswitchd
+
+rsswitchd.service starts rsswitchd with `--bind 127.0.0.1`, so it
+listens on 127.0.0.1:5000 only. These are the defaults of
+daemon_host and daemon_port, so the app needs no setting to find it.
+Keep rsswitchd on 127.0.0.1: the app is then the only way to reach
+it, and the app can have a password.
+
+rsswitch-web.service is ordered after rsswitchd.service and wants it,
+so both start at boot, the daemon first. The app does not need the
+daemon to start: while it is down, a switch fails with "rsswitchd
+unreachable" and the page says so.
+
+```bash
+systemctl status rsswitchd rsswitch-web
+journalctl -u rsswitch-web
+```
+
+The journal of rsswitch-web has the listening line and the errors of
+the app, such as a data file that cannot be used. waitress logs no
+requests. The journal of rsswitchd shows each codeword that was sent.
+
+
+## Upgrading
+
+Update the source tree, build and install rsswitchd again when it
+has changed, and run sudo make install once more in this directory:
+
+```bash
+sudo make install
+```
+
+The code is replaced, so a module that the new version no longer has
+is gone, and requirements.txt is installed into the venv again. The
+configuration and the data file are not touched, and the service is
+restarted to run the new code.
+
+
+## Staged install
+
+make install DESTDIR=DIR only copies the files below DIR. It creates
+no user, no venv, and runs no systemctl, which makes it fit for
+packaging, and for looking at what an install puts where:
+
+```bash
+make install DESTDIR=/tmp/rsswitch-web-stage
+ls -l /tmp/rsswitch-web-stage/etc/systemd/system/rsswitch-web.service /tmp/rsswitch-web-stage/etc/rsswitch-web/config.json
+```
+
+A venv cannot be moved, because it records its own path; the
+packager makes it at the final place, from requirements.txt.
+
+
+## Manual installation (Raspberry Pi)
+
+For development, or to run the app without systemd, make a virtual
+environment by hand. For production use the service installation
+above.
 
 ```bash
 sudo apt install python3-venv
@@ -35,6 +154,30 @@ venv/bin/python -m pytest
 requirements-dev.txt adds pytest. Python 3.9 or newer is required.
 The suite includes a smoke test against that x86_64 rsswitchd and
 skips it when the binary is missing.
+
+
+## Trying the stack on an x86_64 host
+
+This needs no root and no systemd. It runs the daemon of the x86_64
+build, which only prints the codeword it would send, and the app
+against it. After the steps of the installation above, from
+examples/web:
+
+```bash
+make -C ../network x86_64
+../network/rsswitchd --bind 127.0.0.1 --port 5000 &
+cat > /tmp/rsswitch-web-try.json <<'CONFIG'
+{
+  "listen_address": "127.0.0.1",
+  "data_file": "/tmp/rsswitch-web-try-data.json"
+}
+CONFIG
+venv/bin/python -m rsswitch_web --config /tmp/rsswitch-web-try.json serve
+```
+
+Open `http://127.0.0.1:8080/`, add a room and a socket, and switch
+it: the daemon prints the codeword. Stop the app with Ctrl-C and the
+daemon with `kill %1`.
 
 
 ## Configuration
