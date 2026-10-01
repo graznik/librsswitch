@@ -388,6 +388,15 @@ class RealDaemon:
                 return False
             time.sleep(0.01)
 
+    def wait_for_lines(self, count, timeout):
+        """Return True when stdout has count lines within timeout."""
+        deadline = time.monotonic() + timeout
+        while len(self.stdout) < count:
+            if time.monotonic() > deadline:
+                return False
+            time.sleep(0.01)
+        return True
+
     def stop(self):
         self.proc.terminate()
         try:
