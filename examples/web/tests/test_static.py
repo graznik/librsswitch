@@ -263,7 +263,6 @@ def test_page_has_all_off_buttons():
         assert text in js, text
     # The household asks once, with the number of sockets.
     assert js.count("Switch off all ") == 1
-    assert js.count("window.confirm(") == 1
 
 
 SOCKET_DIALOG_IDS = (
@@ -308,3 +307,31 @@ def test_inputs_do_not_make_a_phone_zoom():
     css = source("app.css")
     assert "font-size: 16px" in css
     assert "min-height: 44px" in css
+
+
+ROOM_DIALOG_IDS = (
+    "add-room", "room-dialog", "room-form", "room-dialog-title",
+    "room-name", "room-name-error", "room-dialog-error", "room-cancel",
+    "room-save")
+
+
+def test_room_dialog_has_its_elements():
+    by_id = {a["id"]: (t, a) for t, a in parse() if "id" in a}
+    for name in ROOM_DIALOG_IDS:
+        assert name in by_id, name
+    assert by_id["room-dialog"][0] == "dialog"
+    assert by_id["room-form"][1]["method"] == "dialog"
+    name = by_id["room-name"][1]
+    assert name["maxlength"] == "64"
+    assert "required" in name
+    assert "hidden" in by_id["add-room"][1]
+
+
+def test_room_delete_asks_first_and_explains_a_refusal():
+    js = source("app.js")
+    assert 'Delete room "' in js
+    assert "confirm(" in js
+    assert "roomNotes" in js
+    # The question comes before the request.
+    body = js[js.index("async function deleteRoom"):]
+    assert body.index("confirm(") < body.index('"DELETE"')

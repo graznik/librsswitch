@@ -224,6 +224,15 @@ says "Same address as: " followed by the other sockets and their
 rooms. A browser without the dialog element shows a note instead of
 edit mode, and switching keeps working.
 
+In edit mode a "+ Room" button follows the room cards. It asks for a
+name, and a name that another room has already is refused inside the
+form. Each room head has a pencil button that renames the room and a
+bin button that deletes it. Delete asks first, naming the room, and
+does nothing when the answer is no. A room must be empty before it
+can be deleted: for a room that still holds sockets, the server's
+reason appears on its card until the next action on that card, and
+the room stays.
+
 The page is plain HTML, CSS and JavaScript from the package, with no
 build step and nothing loaded from another host. It needs a browser
 from 2022 or later, such as Safari on iOS 15.4 and later.

@@ -48,6 +48,8 @@ const FIELD_ERRORS = {
  *   meta     the "socket_types" of GET /api/meta, or null before it loads
  *   busy     true while a management request is in flight; every
  *            management button is disabled meanwhile
+ *   roomNotes   room id -> text of the refusal shown on that room card
+ *   editedRoom  id of the room the room form renames, or null to add one
  */
 const HOUSEHOLD = "*";
 
@@ -63,6 +65,8 @@ const ui = {
 	meta: null,
 	metaFailed: false,
 	busy: false,
+	roomNotes: new Map(),
+	editedRoom: null,
 };
 
 /* Build an element. Text goes in as text, never as markup. */
@@ -177,13 +181,20 @@ function hideBanner() {
 	banner.hidden = true;
 }
 
-/* Forget what is left of sockets that are no longer in the tree. A
+/* Forget what is left of sockets and rooms that are no longer in the tree. A
  * request in flight removes its own entry when it ends. */
 function dropGoneSockets() {
 	const ids = new Set();
+	const roomIds = new Set();
 	for (const room of ui.tree.rooms) {
+		roomIds.add(room.id);
 		for (const sock of room.sockets) {
 			ids.add(sock.id);
+		}
+	}
+	for (const id of Array.from(ui.roomNotes.keys())) {
+		if (!roomIds.has(id)) {
+			ui.roomNotes.delete(id);
 		}
 	}
 	for (const id of Array.from(ui.notes.keys())) {
@@ -274,6 +285,15 @@ function renderRoom(room) {
 		allOffButton.addEventListener("click", () => allOff(room.id));
 		head.append(allOffButton);
 	} else {
+		const rename = el("button", {
+			type: "button", disabled: ui.busy, text: "\u270E",
+			"aria-label": "Rename " + room.name});
+		rename.addEventListener("click", () => openRoomDialog(room));
+		const remove = el("button", {
+			type: "button", disabled: ui.busy, text: "\u{1F5D1}\uFE0E",
+			"aria-label": "Delete " + room.name});
+		remove.addEventListener("click", () => deleteRoom(room));
+		head.append(el("div", {class: "edit-controls"}, rename, remove));
 		const add = el("button", {
 			class: "add-socket", type: "button", disabled: ui.busy,
 			"aria-label": "Add a socket to " + room.name,
@@ -281,7 +301,12 @@ function renderRoom(room) {
 		add.addEventListener("click", () => openSocketDialog(room.id));
 		sockets.push(add);
 	}
-	return el("section", {class: "room"}, head, ...sockets);
+	const parts = [head];
+	const note = ui.roomNotes.get(room.id);
+	if (note) {
+		parts.push(el("p", {class: "card-note", text: note}));
+	}
+	return el("section", {class: "room"}, ...parts, ...sockets);
 }
 
 function countSockets() {
@@ -307,6 +332,9 @@ function renderEditButton() {
 	button.disabled = ui.meta === null;
 	button.textContent = ui.edit ? "Done" : "Edit";
 	button.setAttribute("aria-pressed", ui.edit ? "true" : "false");
+	const addRoom = document.getElementById("add-room");
+	addRoom.hidden = !ui.edit;
+	addRoom.disabled = ui.busy;
 }
 
 /* Rebuild the page from ui. */
@@ -487,16 +515,22 @@ function toggleEdit() {
  * until the page shows the result.
  */
 async function manage(request) {
+	setSaveButtons(true);
 	ui.busy = true;
-	document.getElementById("socket-save").disabled = true;
 	render();
 	try {
 		return await request();
 	} finally {
 		ui.busy = false;
-		document.getElementById("socket-save").disabled = false;
+		setSaveButtons(false);
 		render();
 	}
+}
+
+/* The Save buttons of the two forms follow ui.busy too. */
+function setSaveButtons(disabled) {
+	document.getElementById("socket-save").disabled = disabled;
+	document.getElementById("room-save").disabled = disabled;
 }
 
 /* Show text in a hidden error paragraph, or hide it for no text. */
@@ -528,13 +562,14 @@ function dialogError(dialog, text) {
 	setMessage(dialog.querySelector(".dialog-error"), text);
 }
 
-/* Show why a save failed, next to the field when the server names one.
- * The dialog stays open either way. */
-function saveFailed(dialog, res) {
+/* Show why a save failed, next to the field when the server names one
+ * and showField(field, message) knows the field. The dialog stays open
+ * either way. */
+function saveFailed(dialog, res, showField) {
 	const error = res.ok
 		? {code: "http_error", message: "unexpected answer"} : res.error;
 	if (res.status === 422 && error.field
-			&& fieldError(error.field, error.message)) {
+			&& showField(error.field, error.message)) {
 		return;
 	}
 	dialogError(dialog, errorText(error, res.retryAfter));
@@ -593,6 +628,8 @@ function applyLimits() {
 function openSocketDialog(roomId) {
 	const dialog = document.getElementById("socket-dialog");
 	const types = Object.keys(ui.meta);
+	ui.roomNotes.delete(roomId);
+	render();
 	clearErrors(dialog);
 	document.getElementById("socket-dialog-title").textContent
 		= "Add socket";
@@ -644,11 +681,95 @@ async function saveSocket(event) {
 		return answer;
 	});
 	if (!res.ok) {
-		saveFailed(dialog, res);
+		saveFailed(dialog, res, fieldError);
 		return;
 	}
 	dialog.close();
 	showWarnings(res.data && res.data.warnings);
+}
+
+/* Open the form that adds a room, or renames room. */
+function openRoomDialog(room) {
+	const dialog = document.getElementById("room-dialog");
+	clearErrors(dialog);
+	ui.editedRoom = room ? room.id : null;
+	if (room) {
+		ui.roomNotes.delete(room.id);
+		render();
+	}
+	document.getElementById("room-dialog-title").textContent
+		= room ? "Rename room" : "Add room";
+	document.getElementById("room-name").value = room ? room.name : "";
+	dialog.showModal();
+}
+
+/* Show the error of the name field of the room form. */
+function roomFieldError(field, message) {
+	if (field !== "name") {
+		return false;
+	}
+	setMessage(document.getElementById("room-name-error"), message);
+	return true;
+}
+
+async function saveRoom(event) {
+	event.preventDefault();
+	if (ui.busy) {
+		return;
+	}
+	const dialog = document.getElementById("room-dialog");
+	clearErrors(dialog);
+	if (!document.getElementById("room-form").reportValidity()) {
+		return;
+	}
+	const body = {name: document.getElementById("room-name").value};
+	const id = ui.editedRoom;
+	const res = await manage(async () => {
+		const answer = id === null
+			? await api("POST", "/api/rooms", body)
+			: await api("PATCH", "/api/rooms/" + encodeURIComponent(id),
+				body);
+		/* A 404 says the room is gone: show the rooms as they are. */
+		if (answer.ok || answer.status === 404) {
+			await loadTree();
+		}
+		return answer;
+	});
+	if (!res.ok) {
+		saveFailed(dialog, res, roomFieldError);
+		return;
+	}
+	dialog.close();
+}
+
+/*
+ * Delete an empty room after the owner confirmed it by name. A room
+ * that still holds sockets is refused by the server, and the reason
+ * stays on its card until the next action on the card.
+ */
+async function deleteRoom(room) {
+	if (ui.busy) {
+		return;
+	}
+	ui.roomNotes.delete(room.id);
+	if (!window.confirm('Delete room "' + room.name + '"?')) {
+		render();
+		return;
+	}
+	const res = await manage(async () => {
+		const answer = await api("DELETE", "/api/rooms/"
+			+ encodeURIComponent(room.id));
+		if (answer.ok || answer.status === 404) {
+			await loadTree();
+		}
+		return answer;
+	});
+	if (res.status === 404) {
+		showBanner("This room was deleted on another device.", "info");
+	} else if (!res.ok) {
+		ui.roomNotes.set(room.id, errorText(res.error, res.retryAfter));
+		render();
+	}
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -662,6 +783,12 @@ document.addEventListener("DOMContentLoaded", () => {
 		"change", applyLimits);
 	document.getElementById("socket-cancel").addEventListener(
 		"click", () => document.getElementById("socket-dialog").close());
+	document.getElementById("add-room").addEventListener(
+		"click", () => openRoomDialog(null));
+	document.getElementById("room-form").addEventListener(
+		"submit", saveRoom);
+	document.getElementById("room-cancel").addEventListener(
+		"click", () => document.getElementById("room-dialog").close());
 	loadTree();
 	loadMeta();
 });

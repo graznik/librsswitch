@@ -28,6 +28,7 @@
 <p id="hint" class="hint">Last sent shows the last command sent, not the real state of a socket: the 433 MHz radio is one-way.</p>
 <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
 <main id="rooms"></main>
+<button id="add-room" class="add-room" type="button" hidden>+ Room</button>
 <dialog id="socket-dialog" aria-labelledby="socket-dialog-title">
 <form id="socket-form" method="dialog" novalidate>
 <h2 id="socket-dialog-title">Add socket</h2>
@@ -61,6 +62,21 @@
 <div class="dialog-buttons">
 <button id="socket-cancel" type="button">Cancel</button>
 <button id="socket-save" type="submit">Save</button>
+</div>
+</form>
+</dialog>
+<dialog id="room-dialog" aria-labelledby="room-dialog-title">
+<form id="room-form" method="dialog" novalidate>
+<h2 id="room-dialog-title">Add room</h2>
+<div class="field">
+<label for="room-name">Name</label>
+<input id="room-name" name="name" type="text" maxlength="64" autocomplete="off" required aria-describedby="room-name-error">
+<p id="room-name-error" class="field-error" hidden></p>
+</div>
+<p id="room-dialog-error" class="dialog-error" role="alert" hidden></p>
+<div class="dialog-buttons">
+<button id="room-cancel" type="button">Cancel</button>
+<button id="room-save" type="submit">Save</button>
 </div>
 </form>
 </dialog>

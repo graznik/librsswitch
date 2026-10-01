@@ -153,6 +153,7 @@ h2 {
 .all-off,
 .edit-toggle,
 .add-socket,
+.add-room,
 .dialog-buttons button {
 	min-height: 44px;
 	padding: 0 0.9rem;
@@ -234,6 +235,28 @@ button:disabled {
 .edit-controls {
 	display: flex;
 	gap: 0.5rem;
+}
+
+.edit-controls button {
+	min-width: 44px;
+	min-height: 44px;
+	border: 1px solid var(--line);
+	border-radius: 0.5rem;
+	background: var(--off);
+	color: var(--off-text);
+	font: inherit;
+	font-size: 1.1rem;
+	cursor: pointer;
+}
+
+.card-note {
+	margin: 0 0 0.5rem;
+	color: var(--error);
+	font-size: 0.9rem;
+}
+
+.add-room {
+	width: 100%;
 }
 
 .add-socket {
