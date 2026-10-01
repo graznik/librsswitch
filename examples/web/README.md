@@ -209,8 +209,10 @@ A socket:
          JSON integers within the limits of the type, never
          strings, floats or booleans
  name    1-64 characters after trimming, with no control
-         characters. Room names are unique in the household and
-         socket names in their room, ignoring case
+         characters and at least one character that is not a
+         space or an invisible format character such as a
+         zero-width space. Room names are unique in the
+         household and socket names in their room, ignoring case
  last_sent
          null, or the last command confirmed by rsswitchd; see
          below

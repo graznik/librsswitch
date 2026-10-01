@@ -185,6 +185,7 @@ def test_create_first_room_creates_the_data_file(make_app, tmp_path):
     {"name": "   "},
     {"name": "a" * 65},
     {"name": "a\nb"},
+    {"name": "\u200b"},
     {"name": 5},
     {"name": ["x"]},
 ])

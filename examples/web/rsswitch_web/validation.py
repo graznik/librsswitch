@@ -35,7 +35,12 @@ def clean_name(value, field="name") -> str:
     It has 1 to 64 code points. Control characters are refused,
     because they would break the UI and the lines of the log, and so
     are lone surrogates, which JSON can carry but no file can hold.
-    field names the request field in the error.
+    A name needs a character that is neither a space nor a format
+    character, such as a zero-width space or a bidi mark, because the
+    page would show it as an empty or reordered name. Format
+    characters next to visible ones stay allowed: the joiners of an
+    emoji sequence are among them. field names the request field in
+    the error.
     """
     if not isinstance(value, str):
         raise ApiError(422, "validation", "must be a string", field=field)
@@ -56,6 +61,9 @@ def clean_name(value, field="name") -> str:
             raise ApiError(422, "validation",
                            "must not contain invalid characters",
                            field=field)
+    if all(unicodedata.category(char) in ("Cf", "Zs") for char in name):
+        raise ApiError(422, "validation", "must contain a visible character",
+                       field=field)
     return name
 
 
