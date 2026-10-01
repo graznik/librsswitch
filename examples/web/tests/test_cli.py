@@ -192,7 +192,9 @@ def test_run_corrupt_data_file_exits_1(tmp_path):
     data.write_text("{")
     status, err = run_cli("--config", write_config(tmp_path), "run")
     assert status == 1
-    assert err.startswith("rsswitch-web: data file:")
+    assert err.startswith("rsswitch-web: data file ")
+    assert str(data) in err
+    assert "data file: data file" not in err
     assert LISTENING not in err
     assert data.read_text() == "{"
 

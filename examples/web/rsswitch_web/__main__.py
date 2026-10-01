@@ -83,7 +83,8 @@ def _run(args) -> int:
         _say("rsswitch-web: %s" % e)
         return 2
     except StoreError as e:
-        _say("rsswitch-web: data file: %s" % e)
+        # The text names the data file or directory itself.
+        _say("rsswitch-web: %s" % e)
         return 1
     cfg = app.config["RSSWITCH_WEB"]
     try:
