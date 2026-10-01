@@ -249,3 +249,14 @@ def test_page_reloads_when_shown_again_and_does_not_poll():
     # flash of a row.
     for timer in re.findall(r"setTimeout\((.*)", js):
         assert "loadTree" not in timer
+
+
+def test_page_has_all_off_buttons():
+    ids = [a["id"] for _, a in parse() if "id" in a]
+    assert "all-off" in ids
+    js = source("app.js")
+    for text in ("/all-off", "Switch off all ", "All off: ", "skipped: "):
+        assert text in js, text
+    # The household asks once, with the number of sockets.
+    assert js.count("Switch off all ") == 1
+    assert js.count("window.confirm(") == 1

@@ -55,6 +55,13 @@ body {
 	font: 1rem/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+}
+
 h1 {
 	margin: 0.25rem 0;
 	font-size: 1.5rem;
@@ -141,6 +148,18 @@ h2 {
 .switch .off {
 	background: var(--off);
 	color: var(--off-text);
+}
+
+.all-off {
+	min-height: 44px;
+	padding: 0 0.9rem;
+	border: 1px solid var(--line);
+	border-radius: 0.5rem;
+	background: var(--off);
+	color: var(--off-text);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
 }
 
 button:disabled {

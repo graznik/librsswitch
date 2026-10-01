@@ -193,6 +193,17 @@ example "rsswitchd unreachable" or "rsswitchd timed out". The
 message of the daemon is shown as "rsswitchd: ", followed by its
 text.
 
+Each room card has an All off button, which switches off the sockets
+of that room at once, like a tap on a single socket. The All off
+button at the top asks "Switch off all N sockets?" first, with N the
+number of sockets on the page, and does nothing when the answer is
+no. While a request runs, its button shows "Sending…", and the
+request can take a while, because the app pauses between the
+sockets. The answer appears as a banner such as "All off: 5 ok, 1
+failed, 2 skipped". Each socket that failed gets the error under its
+row, and each socket that was skipped gets "skipped: " and the
+reason. The sockets that worked show their new label.
+
 The page loads the rooms again whenever it is shown again, for
 example after switching back to the browser, so that changes made
 from another phone appear without a manual reload. A message under a

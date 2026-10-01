@@ -25,13 +25,17 @@ const HINT = "This is the last command sent, not the real state of the "
  *   pending  socket id -> "on" or "off" for each switch request in flight
  *   notes    socket id -> {kind: "error" | "info", text}
  *   flash    ids of the rows that flash after a successful switch
+ *   busyAllOff  room ids, and HOUSEHOLD, of the All-off requests in flight
  *   loadSeq  number of the newest request for the rooms
  */
+const HOUSEHOLD = "*";
+
 const ui = {
 	tree: null,
 	pending: new Map(),
 	notes: new Map(),
 	flash: new Set(),
+	busyAllOff: new Set(),
 	loadSeq: 0,
 	loadFailed: false,
 };
@@ -136,6 +140,7 @@ function formatLastSent(lastSent) {
 
 function showBanner(text, kind) {
 	const banner = document.getElementById("banner");
+	ui.loadFailed = false;
 	banner.textContent = text;
 	banner.className = kind === "error" ? "banner banner-error" : "banner";
 	banner.hidden = false;
@@ -181,6 +186,8 @@ async function loadTree() {
 			? {code: "http_error", message: "unexpected answer"}
 			: res.error;
 		showBanner(errorText(error, res.retryAfter), "error");
+		/* After showBanner(), which clears the flag: only a banner
+		 * that reports a failed load goes away with the next load. */
 		ui.loadFailed = true;
 		return;
 	}
@@ -227,9 +234,35 @@ function renderRoom(room) {
 	if (sockets.length === 0) {
 		sockets.push(el("p", {class: "hint", text: "No sockets yet."}));
 	}
+	const busy = ui.busyAllOff.has(room.id);
+	const allOffButton = el("button", {
+		class: "all-off" + (busy ? " sending" : ""),
+		type: "button",
+		disabled: busy || room.sockets.length === 0,
+		"aria-label": "Turn off every socket in " + room.name,
+		text: busy ? "Sending\u2026" : "All off"});
+	allOffButton.addEventListener("click", () => allOff(room.id));
 	return el("section", {class: "room"},
-		el("div", {class: "room-head"}, el("h2", {text: room.name})),
+		el("div", {class: "room-head"}, el("h2", {text: room.name}),
+			allOffButton),
 		...sockets);
+}
+
+function countSockets() {
+	let count = 0;
+	for (const room of ui.tree ? ui.tree.rooms : []) {
+		count += room.sockets.length;
+	}
+	return count;
+}
+
+/* The All-off button of the header lives in the HTML. */
+function renderHouseholdButton() {
+	const button = document.getElementById("all-off");
+	const busy = ui.busyAllOff.has(HOUSEHOLD);
+	button.disabled = busy || countSockets() === 0;
+	button.textContent = busy ? "Sending\u2026" : "All off";
+	button.classList.toggle("sending", busy);
 }
 
 /* Rebuild the page from ui. */
@@ -238,11 +271,24 @@ function render() {
 	if (ui.tree === null) {
 		return;
 	}
+	renderHouseholdButton();
 	if (ui.tree.rooms.length === 0) {
 		root.replaceChildren(el("p", {text: "No rooms yet."}));
 		return;
 	}
 	root.replaceChildren(...ui.tree.rooms.map(renderRoom));
+}
+
+/* The socket of the tree with this id, or null. */
+function findSocket(id) {
+	for (const room of ui.tree.rooms) {
+		for (const sock of room.sockets) {
+			if (sock.id === id) {
+				return sock;
+			}
+		}
+	}
+	return null;
 }
 
 /* Put a socket that the server sent in place of the one in the tree. */
@@ -254,6 +300,12 @@ function replaceSocket(sock) {
 			return;
 		}
 	}
+}
+
+/* Show a switch that the server did: flash the row for a second. */
+function flashRow(id) {
+	ui.flash.add(id);
+	setTimeout(() => ui.flash.delete(id), 1000);
 }
 
 /* Switch one socket. Only its own row is locked while the request
@@ -273,8 +325,7 @@ async function switchSocket(id, wanted) {
 		} else {
 			await loadTree();
 		}
-		ui.flash.add(id);
-		setTimeout(() => ui.flash.delete(id), 1000);
+		flashRow(id);
 		if (res.data.recorded === false) {
 			ui.notes.set(id, {kind: "info", text: "Sent, but not recorded"});
 		}
@@ -289,7 +340,64 @@ async function switchSocket(id, wanted) {
 	render();
 }
 
-document.addEventListener("DOMContentLoaded", loadTree);
+/*
+ * Switch off the sockets of one room, or of the household when roomId is
+ * null. The household asks first, with the number of sockets it will
+ * switch off. The request is synchronous: it ends when the last socket
+ * has been tried. The answer lists every socket, and each failed or
+ * skipped socket gets a mark on its row.
+ */
+async function allOff(roomId) {
+	const key = roomId === null ? HOUSEHOLD : roomId;
+	if (ui.busyAllOff.has(key)) {
+		return;
+	}
+	if (roomId === null && !window.confirm(
+			"Switch off all " + countSockets() + " sockets?")) {
+		return;
+	}
+	ui.busyAllOff.add(key);
+	render();
+	const path = roomId === null ? "/api/all-off"
+		: "/api/rooms/" + encodeURIComponent(roomId) + "/all-off";
+	const res = await api("POST", path, {});
+	const data = res.data;
+	if (res.ok && data && Array.isArray(data.results) && data.summary) {
+		for (const result of data.results) {
+			ui.notes.delete(result.socket_id);
+			if (result.status === "ok") {
+				const sock = findSocket(result.socket_id);
+				if (sock && result.last_sent) {
+					sock.last_sent = result.last_sent;
+				}
+				flashRow(result.socket_id);
+				continue;
+			}
+			let text = errorText(result.error
+				|| {code: "failed", message: "failed"});
+			if (result.status === "skipped") {
+				text = "skipped: " + text;
+			}
+			ui.notes.set(result.socket_id, {kind: "error", text: text});
+		}
+		const sum = data.summary;
+		showBanner("All off: " + sum.ok + " ok, " + sum.error + " failed, "
+			+ sum.skipped + " skipped", data.ok === true ? "info" : "error");
+	} else {
+		const error = res.ok
+			? {code: "http_error", message: "unexpected answer"}
+			: res.error;
+		showBanner(errorText(error, res.retryAfter), "error");
+	}
+	ui.busyAllOff.delete(key);
+	render();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+	document.getElementById("all-off").addEventListener(
+		"click", () => allOff(null));
+	loadTree();
+});
 
 /*
  * A page that stays open on one phone shows the rooms as they were when
