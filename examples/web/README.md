@@ -1,39 +1,44 @@
-rsswitch-web
-============
+# rsswitch-web
 
 rsswitch-web is a Flask app that keeps rooms and sockets in a JSON
-file and switches them through rsswitchd [1] over TCP. It never
-touches GPIO itself.
+file and switches them through
+[rsswitchd](../network/README.md) over TCP. It never touches GPIO
+itself.
 
 
-Installation (Raspberry Pi)
-============================
- $ sudo apt install python3-venv
- $ cd librsswitch/examples/web/
- $ python3 -m venv venv
- $ venv/bin/pip install -r requirements.txt
+## Installation (Raspberry Pi)
+
+```bash
+sudo apt install python3-venv
+cd librsswitch/examples/web/
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+```
 
 The app gets its own virtual environment so that pip never touches
 the system Python (PEP 668). Never use sudo pip or
 --break-system-packages.
 
 
-Installation (x86_64 host)
-============================
+## Installation (x86_64 host)
+
 From examples/web:
- $ make -C ../network x86_64
- $ python3 -m venv venv
- $ venv/bin/pip install -r requirements.txt
- $ venv/bin/pip install -r requirements-dev.txt
- $ venv/bin/python -m pytest
+
+```bash
+make -C ../network x86_64
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/python -m pytest
+```
 
 requirements-dev.txt adds pytest. Python 3.9 or newer is required.
 The suite includes a smoke test against that x86_64 rsswitchd and
 skips it when the binary is missing.
 
 
-Configuration
-=============
+## Configuration
+
 The configuration is one JSON object in a file. Its path is given
 with --config PATH, before the command; the default is
 /etc/rsswitch-web/config.json. When the default file does not
@@ -44,35 +49,18 @@ default.
 
 Every key is optional:
 
- daemon_host             where rsswitchd listens (default
-                         "127.0.0.1"); a string without
-                         whitespace
- daemon_port             TCP port of rsswitchd (default 5000);
-                         an integer, 1-65535
- daemon_connect_timeout  seconds to wait for the connection to
-                         rsswitchd (default 2); a number above 0
-                         and at most 60
- daemon_read_timeout     seconds to wait for its reply (default
-                         5); a number above 0 and at most 60
- listen_address          address the app listens on (default
-                         "0.0.0.0", all IPv4 addresses); an IP
-                         address, not a host name
- listen_port             port the app listens on (default 8080);
-                         an integer, 0-65535; 0 lets the kernel
-                         pick a free port
- data_file               the file that holds the rooms and the
-                         sockets (default
-                         "/var/lib/rsswitch-web/data.json"); an
-                         absolute path
- all_off_gap_ms          pause between two commands of an All-off
-                         in milliseconds (default 200); an
-                         integer, 0-10000
- username                the login name (default null, which
-                         means "admin" when password_hash is
-                         set); no ":" in it
- password_hash           hash of the password (default null, no
-                         login is asked for); a Werkzeug scrypt
-                         or pbkdf2 hash, see Password
+| Key | Meaning |
+|-----|---------|
+| `daemon_host` | where rsswitchd listens (default `"127.0.0.1"`); a string without whitespace |
+| `daemon_port` | TCP port of rsswitchd (default 5000); an integer, 1-65535 |
+| `daemon_connect_timeout` | seconds to wait for the connection to rsswitchd (default 2); a number above 0 and at most 60 |
+| `daemon_read_timeout` | seconds to wait for its reply (default 5); a number above 0 and at most 60 |
+| `listen_address` | address the app listens on (default `"0.0.0.0"`, all IPv4 addresses); an IP address, not a host name |
+| `listen_port` | port the app listens on (default 8080); an integer, 0-65535; 0 lets the kernel pick a free port |
+| `data_file` | the file that holds the rooms and the sockets (default `"/var/lib/rsswitch-web/data.json"`); an absolute path |
+| `all_off_gap_ms` | pause between two commands of an All-off in milliseconds (default 200); an integer, 0-10000 |
+| `username` | the login name (default `null`, which means "admin" when `password_hash` is set); no ":" in it |
+| `password_hash` | hash of the password (default `null`, no login is asked for); a Werkzeug scrypt or pbkdf2 hash, see Password |
 
 An unknown key, a value of the wrong type or a value outside its
 range stops the app at start-up with the key named in the message,
@@ -88,21 +76,26 @@ runs. A data file that cannot be read, or that has another format,
 is never overwritten; the app refuses to start instead.
 
 
-Password
-========
+## Password
+
 The configuration holds a hash of the password, never the password
 itself. rsswitch_web creates the hash:
- $ venv/bin/python -m rsswitch_web hash-password
+
+```bash
+venv/bin/python -m rsswitch_web hash-password
+```
 
 It asks for the password twice without echoing it, so that the
 password is neither in the shell history nor in the process list,
 and prints one line, the hash. Paste that line into the config
 file:
 
- {
-   "username": "admin",
-   "password_hash": "<hash from hash-password>"
- }
+```json
+{
+  "username": "admin",
+  "password_hash": "<hash from hash-password>"
+}
+```
 
 The username defaults to admin and may be left out. A username
 without a password_hash is an error.
@@ -111,7 +104,10 @@ The default hash is scrypt, which needs about 32 MiB of memory for
 every check. The app checks a login only once per credential, but
 on a slow board such as an ARMv6 Raspberry Pi that check still takes
 a while. A cheaper hash is made with
- $ venv/bin/python -m rsswitch_web hash-password --method pbkdf2:sha256:600000
+
+```bash
+venv/bin/python -m rsswitch_web hash-password --method pbkdf2:sha256:600000
+```
 
 The app refuses a scrypt hash that OpenSSL cannot compute here, or
 that needs more than 256 MiB of memory or has p above 16, and a
@@ -123,9 +119,11 @@ and with 2 when --method is not a method that the app accepts. It
 prints nothing on stdout in these cases.
 
 
-Running
-=======
- $ venv/bin/python -m rsswitch_web --config /etc/rsswitch-web/config.json run
+## Running
+
+```bash
+venv/bin/python -m rsswitch_web --config /etc/rsswitch-web/config.json run
+```
 
 run starts the development server of Werkzeug. It is meant for
 development and testing, and says so on stderr when it starts:
@@ -143,10 +141,10 @@ refused. Every diagnostic is one line on stderr that starts with
 `rsswitch-web: `.
 
 
-JSON API
-========
-Conventions
------------
+## JSON API
+
+### Conventions
+
 Request and response bodies are JSON objects, in UTF-8. The
 server makes every id, a short string that a client treats as
 opaque. The order of an array is the order in which the rooms, and
@@ -164,17 +162,24 @@ A body is at most 16 KiB, else the answer is 413. A field that is
 not listed for a route is an error, 422 with the field named. A
 body that is not a JSON object is a 400.
 
-Objects
--------
+### Objects
+
 A room:
- {"id": "r_4f3a9c1d22b0", "name": "Kitchen", "sockets": [socket]}
+
+```
+{"id": "r_4f3a9c1d22b0", "name": "Kitchen", "sockets": [socket]}
+```
 
 A socket:
- {"id": "s_0a1b2c3d4e5f", "room_id": "r_4f3a9c1d22b0",
-  "name": "Lamp", "type": "pollin_2605", "group": 17,
-  "number": 23,
-  "last_sent": {"state": "on", "at": "2026-09-29T08:23:04.273Z"}}
 
+```json
+{"id": "s_0a1b2c3d4e5f", "room_id": "r_4f3a9c1d22b0",
+ "name": "Lamp", "type": "pollin_2605", "group": 17,
+ "number": 23,
+ "last_sent": {"state": "on", "at": "2026-09-29T08:23:04.273Z"}}
+```
+
+```
  type    rev_008345 (group 0-3, number 0-2) or pollin_2605
          (group 0-31, number 0-31)
  group, number
@@ -186,60 +191,63 @@ A socket:
  last_sent
          null, or the last command confirmed by rsswitchd; see
          below
+```
 
-Routes
-------
- GET /api/rooms
-     All rooms, with their sockets: {"rooms": [room, ...]}.
- GET /api/rooms/<id>
-     One room: {"room": room}.
- POST /api/rooms
-     Body {"name": ...}. Answers 201 {"room": room}; the new room
-     is last.
- PATCH /api/rooms/<id>
-     Body {"name": ...}, or {} to change nothing. Answers
-     {"room": room}.
- DELETE /api/rooms/<id>
-     Answers 204 without a body. A room that still holds sockets
-     is refused with room_not_empty.
- PUT /api/rooms/order
-     Body {"ids": [room id, ...]} with the id of every room
-     once. Answers {"ids": [...]}.
- POST /api/rooms/<id>/sockets
-     Body {"name", "type", "group", "number"}. Answers 201
-     {"socket": socket, "warnings": [warning, ...]}; the new
-     socket is last in its room.
- PUT /api/rooms/<id>/sockets/order
-     Body {"ids": [socket id, ...]} with the id of every socket of
-     the room once. Answers {"ids": [...]}.
- GET /api/sockets/<id>
-     One socket: {"socket": socket}.
- PATCH /api/sockets/<id>
-     Body with any of name, type, group, number and room_id; only
-     the fields that are sent change. A room_id moves the socket to
-     the end of that room. Answers {"socket": socket, "warnings":
-     [warning, ...]}. The new address must be valid for the type
-     that the socket has afterwards. A change of type, group or
-     number sets last_sent to null.
- DELETE /api/sockets/<id>
-     Answers 204 without a body.
- POST /api/sockets/<id>/switch
-     Body {"state": "on"} or {"state": "off"}; see Switching.
- POST /api/rooms/<id>/all-off
-     Switches off every socket of a room; see All-off.
- POST /api/all-off
-     Switches off every socket of every room; see All-off.
+### Routes
+
+- `GET /api/rooms`:
+  All rooms, with their sockets: `{"rooms": [room, ...]}`.
+- `GET /api/rooms/<id>`:
+  One room: `{"room": room}`.
+- `POST /api/rooms`:
+  Body `{"name": ...}`. Answers 201 `{"room": room}`; the new room
+  is last.
+- `PATCH /api/rooms/<id>`:
+  Body `{"name": ...}`, or `{}` to change nothing. Answers
+  `{"room": room}`.
+- `DELETE /api/rooms/<id>`:
+  Answers 204 without a body. A room that still holds sockets
+  is refused with room_not_empty.
+- `PUT /api/rooms/order`:
+  Body `{"ids": [room id, ...]}` with the id of every room
+  once. Answers `{"ids": [...]}`.
+- `POST /api/rooms/<id>/sockets`:
+  Body `{"name", "type", "group", "number"}`. Answers 201
+  `{"socket": socket, "warnings": [warning, ...]}`; the new
+  socket is last in its room.
+- `PUT /api/rooms/<id>/sockets/order`:
+  Body `{"ids": [socket id, ...]}` with the id of every socket of
+  the room once. Answers `{"ids": [...]}`.
+- `GET /api/sockets/<id>`:
+  One socket: `{"socket": socket}`.
+- `PATCH /api/sockets/<id>`:
+  Body with any of name, type, group, number and room_id; only
+  the fields that are sent change. A room_id moves the socket to
+  the end of that room. Answers `{"socket": socket, "warnings":
+  [warning, ...]}`. The new address must be valid for the type
+  that the socket has afterwards. A change of type, group or
+  number sets last_sent to null.
+- `DELETE /api/sockets/<id>`:
+  Answers 204 without a body.
+- `POST /api/sockets/<id>/switch`:
+  Body `{"state": "on"}` or `{"state": "off"}`; see Switching.
+- `POST /api/rooms/<id>/all-off`:
+  Switches off every socket of a room; see All-off.
+- `POST /api/all-off`:
+  Switches off every socket of every room; see All-off.
 
 A reorder list that is not exactly the current set of ids, because
 another phone changed it in the meantime, is refused with
 order_mismatch; reload and try again.
 
-Switching
----------
-POST /api/sockets/<id>/switch sends one command to rsswitchd and
+### Switching
+
+`POST /api/sockets/<id>/switch` sends one command to rsswitchd and
 answers after rsswitchd has replied:
 
- {"ok": true, "recorded": true, "socket": socket}
+```
+{"ok": true, "recorded": true, "socket": socket}
+```
 
 recorded is false when the command was sent, but the socket was
 deleted or given another address while it was on its way, or a
@@ -250,8 +258,8 @@ null when it is gone or the data file cannot be read. When
 rsswitchd does not confirm the command, the answer is one of the
 502 or 504 errors below and last_sent does not change.
 
-All-off
--------
+### All-off
+
 All-off sends "off" to every socket of a room, or of all rooms. It
 sends one command for each distinct address (type, group and
 number), in display order, so sockets that share an address get one
@@ -264,19 +272,21 @@ daemon costs one attempt and not one per socket.
 The answer is 200 whatever the outcome; look at ok. A room that
 does not exist is a 404.
 
- {"ok": false,
-  "results": [
-    {"socket_id": "s_0a1b2c3d4e5f", "room_id": "r_4f3a9c1d22b0",
-     "status": "ok", "recorded": true,
-     "last_sent": {"state": "off", "at": "2026-09-29T08:23:04.273Z"}},
-    {"socket_id": "s_1a2b3c4d5e6f", "room_id": "r_4f3a9c1d22b0",
-     "status": "error",
-     "error": {"code": "daemon_error", "message": "...",
-               "daemon_class": "range", "daemon_message": "..."}},
-    {"socket_id": "s_2a3b4c5d6e7f", "room_id": "r_8e7d6c5b4a39",
-     "status": "skipped",
-     "error": {"code": "daemon_unreachable", "message": "..."}}],
-  "summary": {"ok": 1, "error": 1, "skipped": 1}}
+```json
+{"ok": false,
+ "results": [
+   {"socket_id": "s_0a1b2c3d4e5f", "room_id": "r_4f3a9c1d22b0",
+    "status": "ok", "recorded": true,
+    "last_sent": {"state": "off", "at": "2026-09-29T08:23:04.273Z"}},
+   {"socket_id": "s_1a2b3c4d5e6f", "room_id": "r_4f3a9c1d22b0",
+    "status": "error",
+    "error": {"code": "daemon_error", "message": "...",
+              "daemon_class": "range", "daemon_message": "..."}},
+   {"socket_id": "s_2a3b4c5d6e7f", "room_id": "r_8e7d6c5b4a39",
+    "status": "skipped",
+    "error": {"code": "daemon_unreachable", "message": "..."}}],
+ "summary": {"ok": 1, "error": 1, "skipped": 1}}
+```
 
 There is one entry per socket, in display order. status is ok,
 error or skipped. An ok entry has recorded, which is false when the
@@ -287,65 +297,62 @@ An error or skipped entry has error, in the form of the error
 object below. ok is true when every entry is ok, which includes a
 household without sockets.
 
-Warnings
---------
+### Warnings
+
 A warning does not refuse anything. Creating or editing a socket
 may answer with warnings, a list that is empty most of the time.
 Two sockets with the same type, group and number switch the same
 receivers, which is sometimes wanted:
 
- {"code": "duplicate_address",
-  "message": "another socket uses the same type, group and number",
-  "socket_ids": ["s_2a3b4c5d6e7f"]}
+```json
+{"code": "duplicate_address",
+ "message": "another socket uses the same type, group and number",
+ "socket_ids": ["s_2a3b4c5d6e7f"]}
+```
 
 socket_ids names the other sockets.
 
-Errors
-------
+### Errors
+
 Every error has the same body:
 
- {"error": {"code": "validation", "message": "must not be empty",
-            "field": "name"}}
+```json
+{"error": {"code": "validation", "message": "must not be empty",
+           "field": "name"}}
+```
 
 field is there for errors about a field of the request. An error
 that comes from rsswitchd has daemon_class and daemon_message as
-well: the class word and the text of the ERR reply (see [1]),
-reduced to printable ASCII and at most 128 characters.
+well: the class word and the text of the ERR reply (see
+[rsswitchd](../network/README.md)), reduced to printable ASCII and
+at most 128 characters.
 
 The code is fixed and a client may branch on it. The message may
 change, like the text of an rsswitchd reply.
 
- code                    status  meaning
- bad_json                400     body is empty, is not JSON, or is
-                                 not a JSON object
- unauthorized            401     login needed or wrong; the answer
-                                 has a WWW-Authenticate header
- not_found               404     no such URL, room or socket
- method_not_allowed      405     the route does not take this
-                                 method; Allow names the ones it
-                                 does
- room_not_empty          409     the room still holds sockets
- name_conflict           409     the name is taken; field is name
- order_mismatch          409     the list of ids is not the
-                                 current set of ids
- payload_too_large       413     body above 16 KiB
- unsupported_media_type  415     Content-Type is not
-                                 application/json
- validation              422     a field is missing, unknown or
-                                 has a bad value; field names it
- daemon_unreachable      502     no connection to rsswitchd
- daemon_error            502     rsswitchd replied ERR; see
-                                 daemon_class, daemon_message
- daemon_protocol         502     rsswitchd sent a reply that was
-                                 not understood, or hung up
- daemon_timeout          504     rsswitchd did not answer in time
- store_error             500     the data file cannot be used
- internal_error          500     a bug in the app
- http_error              other   any other HTTP error; the status
-                                 is the one of the response
+| Code | Status | Meaning |
+|------|--------|---------|
+| `bad_json` | 400 | body is empty, is not JSON, or is not a JSON object |
+| `unauthorized` | 401 | login needed or wrong; the answer has a `WWW-Authenticate` header |
+| `not_found` | 404 | no such URL, room or socket |
+| `method_not_allowed` | 405 | the route does not take this method; `Allow` names the ones it does |
+| `room_not_empty` | 409 | the room still holds sockets |
+| `name_conflict` | 409 | the name is taken; field is name |
+| `order_mismatch` | 409 | the list of ids is not the current set of ids |
+| `payload_too_large` | 413 | body above 16 KiB |
+| `unsupported_media_type` | 415 | `Content-Type` is not `application/json` |
+| `validation` | 422 | a field is missing, unknown or has a bad value; field names it |
+| `daemon_unreachable` | 502 | no connection to rsswitchd |
+| `daemon_error` | 502 | rsswitchd replied ERR; see daemon_class, daemon_message |
+| `daemon_protocol` | 502 | rsswitchd sent a reply that was not understood, or hung up |
+| `daemon_timeout` | 504 | rsswitchd did not answer in time |
+| `store_error` | 500 | the data file cannot be used |
+| `internal_error` | 500 | a bug in the app |
+| `http_error` | other | any other HTTP error; the status is the one of the response |
 
-The last command
-----------------
+
+### The last command
+
 last_sent is the last command that rsswitchd confirmed with OK,
 and the time of that confirmation in UTC. It is not the real state
 of the socket. 433 MHz is one-way: nothing tells the app whether a
@@ -358,8 +365,8 @@ A client must show names and the messages of rsswitchd as text,
 never as HTML. Set textContent, not innerHTML.
 
 
-Security
-========
+## Security
+
 Without password_hash, anyone who can reach listen_address can
 switch every socket. Set listen_address to 127.0.0.1 when a web
 server on the same host is the only client, or set a password.
@@ -369,8 +376,9 @@ cleartext with every request over plain HTTP. Use it only on a LAN
 that you trust, or put the app behind something that provides
 TLS.
 
-Keep rsswitchd bound to 127.0.0.1 behind the web app (see [1]), so
-that the app is the only way to reach it.
+Keep rsswitchd bound to 127.0.0.1 behind the web app (see
+[rsswitchd](../network/README.md)), so that the app is the only way to
+reach it.
 
 Clients must display names and daemon messages as text, never as
 HTML.
@@ -380,4 +388,6 @@ user; it only needs to read its code, to write its data file and
 to connect to rsswitchd, which owns the GPIO lines.
 
 
-[1] ../network/README.md
+## References
+
+- [rsswitchd](../network/README.md)
