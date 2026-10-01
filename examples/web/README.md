@@ -185,6 +185,11 @@ A body is at most 16 KiB, else the answer is 413. A field that is
 not listed for a route is an error, 422 with the field named. A
 body that is not a JSON object is a 400.
 
+Every route checks a request in the same order: 400 for a body that
+is not a JSON object, then 404 for an id in the URL, then 422 for
+the fields, then 409 for a conflict. So a bad field for an id that
+does not exist is answered 404, and nothing is sent to rsswitchd.
+
 ### Objects
 
 A room:

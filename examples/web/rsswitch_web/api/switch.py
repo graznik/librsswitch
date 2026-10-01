@@ -13,13 +13,20 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""The switch routes."""
+"""The switch routes.
+
+The checks run in the order of the room and socket routes: 400 for a
+body that is not a JSON object, 404 for an id in the URL, 422 for a
+field of the body. Nothing is sent to rsswitchd before all of them
+pass.
+"""
 
 from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
 from ..errors import ApiError, json_body, reject_unknown_fields
+from ..store import find_room, find_socket
 from ..switching import all_off, switch_socket
 from . import state
 
@@ -30,20 +37,28 @@ bp = Blueprint("switch", __name__, url_prefix="/api")
 def switch(sid):
     """Switch one socket on or off. The body is {"state": "on"|"off"}."""
     body = json_body()
+    app_state = state()
+    # switch_socket() looks the socket up again, for one that is
+    # deleted while the command is on its way.
+    _, sock = find_socket(app_state.store.snapshot(), sid)
+    if sock is None:
+        raise ApiError(404, "not_found", "socket not found")
     reject_unknown_fields(body, {"state"})
     wanted = body.get("state")
     if not isinstance(wanted, str) or wanted not in ("on", "off"):
         raise ApiError(422, "validation", 'state must be "on" or "off"',
                        field="state")
-    app_state = state()
     return jsonify(switch_socket(app_state.store, app_state.daemon, sid,
                                  wanted, clock=app_state.clock))
 
 
 def _all_off(room_id):
     body = json_body(required=False)
-    reject_unknown_fields(body, set())
     app_state = state()
+    if room_id is not None:
+        if find_room(app_state.store.snapshot(), room_id) is None:
+            raise ApiError(404, "not_found", "room not found")
+    reject_unknown_fields(body, set())
     return jsonify(all_off(
         app_state.store, app_state.daemon, room_id,
         gap_seconds=app_state.config["all_off_gap_ms"] / 1000,

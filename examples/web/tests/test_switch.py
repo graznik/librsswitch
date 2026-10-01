@@ -117,6 +117,44 @@ def test_unknown_socket_is_404_without_daemon_contact(fake_daemon,
     assert file_bytes(app) == before
 
 
+@pytest.mark.parametrize("body", [{"state": "x"}, {"state": "on", "x": 1},
+                                  {}, {"state": 1}])
+def test_unknown_socket_is_404_before_the_fields_are_checked(
+        fake_daemon, switch_app, body):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    before = file_bytes(app)
+    resp = post_json(app, "/api/sockets/s_000000009999/switch", body)
+    assert resp.status_code == 404
+    assert resp.get_json()["error"]["code"] == "not_found"
+    assert fake.connections == 0
+    assert file_bytes(app) == before
+
+
+@pytest.mark.parametrize("raw", [b"", b"nope", b"[1]", b'"on"', b"null"])
+def test_a_body_that_is_not_an_object_is_400_before_the_id(
+        fake_daemon, switch_app, raw):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    for sid in ("s_000000009999", REV):
+        resp = app.test_client().post(
+            "/api/sockets/%s/switch" % sid, data=raw,
+            headers={"Content-Type": "application/json"})
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "bad_json"
+    assert fake.connections == 0
+
+
+def test_known_socket_with_a_bad_state_is_still_422(fake_daemon,
+                                                    switch_app):
+    fake = fake_daemon()
+    app = switch_app(fake)
+    resp = post_json(app, "/api/sockets/%s/switch" % REV, {"state": "x"})
+    assert resp.status_code == 422
+    assert resp.get_json()["error"]["field"] == "state"
+    assert fake.connections == 0
+
+
 MISSING = object()
 
 
@@ -334,11 +372,10 @@ def test_store_unreadable_after_ok_is_still_a_success(fake_daemon,
     app = switch_app(fake)
     store = app.extensions["rsswitch_web"].store
     real = store.snapshot
-    calls = []
 
     def snapshot():
-        calls.append(1)
-        if len(calls) > 1:
+        # Readable until rsswitchd has been sent the command.
+        if fake.lines:
             raise StoreError("data file: cannot be read")
         return real()
 

@@ -351,6 +351,35 @@ def test_unknown_room_is_404_over_http(api):
     assert fake.connections == 0
 
 
+def test_unknown_room_is_404_before_the_fields_are_checked(api):
+    app, fake = api()
+    for body in ({"x": 1}, {"state": "on"}):
+        resp = post_json(app, "/api/rooms/r_000000009999/all-off", body)
+        assert resp.status_code == 404
+        assert resp.get_json()["error"]["code"] == "not_found"
+    assert fake.connections == 0
+
+
+def test_a_body_that_is_not_an_object_is_400_before_the_room(api):
+    app, fake = api()
+    for path in ("/api/rooms/r_000000009999/all-off", "/api/rooms/r1/all-off",
+                 "/api/all-off"):
+        resp = app.test_client().post(
+            path, data=b"[1]", headers={"Content-Type": "application/json"})
+        assert resp.status_code == 400
+        assert resp.get_json()["error"]["code"] == "bad_json"
+    assert fake.connections == 0
+
+
+def test_unknown_field_is_422_for_a_known_room_and_for_all(api):
+    app, fake = api()
+    for path in ("/api/rooms/r1/all-off", "/api/all-off"):
+        resp = post_json(app, path, {"x": 1})
+        assert resp.status_code == 422
+        assert resp.get_json()["error"]["field"] == "x"
+    assert fake.connections == 0
+
+
 def test_all_off_needs_json_content_type(api):
     app, fake = api()
     client = app.test_client()
