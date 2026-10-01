@@ -70,12 +70,10 @@ static size_t feed_bytes(struct proto_conn *pc, const char *bytes, size_t n,
 	return count;
 }
 
-static void check_switch(const struct proto_cmd *cmd, int legacy,
-			  uint32_t dev, uint32_t group, uint32_t socket,
-			  uint32_t data)
+static void check_switch(const struct proto_cmd *cmd, uint32_t dev,
+			  uint32_t group, uint32_t socket, uint32_t data)
 {
 	CHECK_EQ(cmd->kind, PROTO_SWITCH);
-	CHECK_EQ(cmd->legacy, legacy);
 	CHECK_EQ(cmd->dev, dev);
 	CHECK_EQ(cmd->group, group);
 	CHECK_EQ(cmd->socket, socket);
@@ -100,24 +98,32 @@ static void test_worked_examples(void)
 	size_t n;
 
 	proto_init(&pc);
-	n = feed(&pc, "0300", 4, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
-
-	proto_init(&pc);
 	{
-		static const char in[] = "0300\r\n";
+		static const char in[] = "0 3 0 0\n";
 
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
+	check_switch(&cmd[0], 0, 3, 0, 0);
 
 	proto_init(&pc);
-	n = feed(&pc, "03000301", 8, cmd, ARRAY_SIZE(cmd));
+	{
+		static const char in[] = "0 3 0 0\r\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 0, 3, 0, 0);
+
+	proto_init(&pc);
+	{
+		static const char in[] = "0 3 0 0\n0 3 0 1\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
 	CHECK_EQ(n, (size_t)2);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
-	check_switch(&cmd[1], 1, 0, 3, 0, 1);
+	check_switch(&cmd[0], 0, 3, 0, 0);
+	check_switch(&cmd[1], 0, 3, 0, 1);
 
 	proto_init(&pc);
 	{
@@ -126,16 +132,7 @@ static void test_worked_examples(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 1, 17, 23, 1);
-
-	proto_init(&pc);
-	{
-		static const char in[] = "0 3 0 0\n";
-
-		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
-	}
-	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 0, 3, 0, 0);
+	check_switch(&cmd[0], 1, 17, 23, 1);
 
 	proto_init(&pc);
 	{
@@ -150,7 +147,7 @@ static void test_worked_examples(void)
 	proto_init(&pc);
 	{
 		char big[200];
-		static const char tail[] = "\n0300";
+		static const char tail[] = "\n0 3 0 0\n";
 
 		memset(big, 'x', sizeof(big));
 		n = feed(&pc, big, sizeof(big), cmd, ARRAY_SIZE(cmd));
@@ -160,7 +157,7 @@ static void test_worked_examples(void)
 
 		n = feed(&pc, tail, sizeof(tail) - 1, cmd, ARRAY_SIZE(cmd));
 		CHECK_EQ(n, (size_t)1);
-		check_switch(&cmd[0], 1, 0, 3, 0, 0);
+		check_switch(&cmd[0], 0, 3, 0, 0);
 	}
 
 	proto_init(&pc);
@@ -180,9 +177,10 @@ static void test_fragmented(void)
 		const char *bytes;
 		size_t len;
 	} whole[] = {
-		{ "0300", 4 },
+		{ "0300\n", sizeof("0300\n") - 1 },
 		{ "0300\r\n", sizeof("0300\r\n") - 1 },
-		{ "03000301", 8 },
+		{ "03000301\n", sizeof("03000301\n") - 1 },
+		{ "0 3 0 0\r\n", sizeof("0 3 0 0\r\n") - 1 },
 		{ "1 17 23 1\n", sizeof("1 17 23 1\n") - 1 },
 		{ "0 3 0 0\n", sizeof("0 3 0 0\n") - 1 },
 		{ "1 017 23 1\n", sizeof("1 017 23 1\n") - 1 },
@@ -209,8 +207,6 @@ static void test_fragmented(void)
 		for (j = 0; j < n_whole && j < n_bytes; j++) {
 			CHECK_EQ(whole_cmd[j].kind, bytes_cmd[j].kind);
 			if (whole_cmd[j].kind == PROTO_SWITCH) {
-				CHECK_EQ(whole_cmd[j].legacy,
-					 bytes_cmd[j].legacy);
 				CHECK_EQ(whole_cmd[j].dev, bytes_cmd[j].dev);
 				CHECK_EQ(whole_cmd[j].group,
 					 bytes_cmd[j].group);
@@ -225,92 +221,83 @@ static void test_fragmented(void)
 		}
 	}
 
-	/* A legacy command directly followed, with no separator, by a
-	 * v2 line, an empty line and a malformed line, all in one
-	 * feed -- the adjacency case (D-01, PROTO-01 edge).
+	/* A v2 line directly followed by an empty line, a malformed line
+	 * and a 4-digit line, all in one feed (PROTO-01 edge).
 	 */
 	{
 		struct proto_conn pc;
 		struct proto_cmd cmd[4];
-		static const char in[] = "03001 17 23 1\n\nx\n";
+		static const char in[] = "1 17 23 1\n\nx\n0300\n";
 		size_t n;
 
 		proto_init(&pc);
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 		CHECK_EQ(n, (size_t)4);
-		check_switch(&cmd[0], 1, 0, 3, 0, 0);
-		check_switch(&cmd[1], 0, 1, 17, 23, 1);
-		check_empty(&cmd[2]);
+		check_switch(&cmd[0], 1, 17, 23, 1);
+		check_empty(&cmd[1]);
+		check_error(&cmd[2], PROTO_ERR_SYNTAX);
 		check_error(&cmd[3], PROTO_ERR_SYNTAX);
 	}
 }
 
-static void test_legacy_wait(void)
+/*
+ * A line of four digits is an ordinary one-field line: it waits for
+ * its line end like any other partial line, then it is a syntax error
+ * and sends nothing. The parser stays usable afterwards.
+ */
+static void test_four_digits_are_a_syntax_error(void)
 {
+	static const char *const lines[] = { "0300\n", "0300\r\n", "12345\n" };
 	struct proto_conn pc;
 	struct proto_cmd cmd[4];
 	size_t n;
+	size_t i;
 
-	/* 030 waits; completing it with a 4th digit emits the legacy
-	 * command.
-	 */
+	/* 0300 without a line end is not executed: it waits. */
 	proto_init(&pc);
 	n = feed(&pc, "030", 3, cmd, ARRAY_SIZE(cmd));
 	CHECK_EQ(n, (size_t)0);
 	n = feed(&pc, "0", 1, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
-
-	/* 03\n is too short to be legacy and has no v2 shape either. */
-	proto_init(&pc);
-	{
-		static const char in[] = "03\n";
-
-		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
-	}
-	CHECK_EQ(n, (size_t)1);
-	check_error(&cmd[0], PROTO_ERR_SYNTAX);
-
-	/* 0300\r then x\n: the lone \r is not a CRLF, so it starts the
-	 * next line together with x.
-	 */
-	proto_init(&pc);
-	n = feed(&pc, "0300\r", 5, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
-	{
-		static const char in[] = "x\n";
-
-		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
-	}
-	CHECK_EQ(n, (size_t)1);
-	check_error(&cmd[0], PROTO_ERR_SYNTAX);
-
-	/* 0300\r then \n: the CRLF is fully swallowed, no extra
-	 * result.
-	 */
-	proto_init(&pc);
-	n = feed(&pc, "0300\r", 5, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 1, 0, 3, 0, 0);
-	n = feed(&pc, "\n", 1, cmd, ARRAY_SIZE(cmd));
 	CHECK_EQ(n, (size_t)0);
+	n = feed(&pc, "\n", 1, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_SYNTAX);
+	CHECK_EQ(strcmp(cmd[0].text, "malformed command"), 0);
 
-	/* 12345\n: four legacy digits (dev 1, group 2, socket 3, data 4)
-	 * -- data 4 is out of POLLIN_2605's 0-1 range, so this is now a
-	 * range error, not a switch; then "5\n" is its own malformed
-	 * line.
+	n = feed(&pc, "0 3 0 0\n", 8, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 0, 3, 0, 0);
+
+	/* The same with a CRLF, and with a fifth digit. */
+	for (i = 0; i < ARRAY_SIZE(lines); i++) {
+		proto_init(&pc);
+		n = feed(&pc, lines[i], strlen(lines[i]), cmd,
+			 ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_error(&cmd[0], PROTO_ERR_SYNTAX);
+		CHECK_EQ(strcmp(cmd[0].text, "malformed command"), 0);
+
+		n = feed(&pc, "0 3 0 0\n", 8, cmd, ARRAY_SIZE(cmd));
+		CHECK_EQ(n, (size_t)1);
+		check_switch(&cmd[0], 0, 3, 0, 0);
+	}
+
+	/* Two 4-digit lines back to back: two errors, no command. */
+	proto_init(&pc);
+	n = feed(&pc, "0300\n0301\n", 10, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)2);
+	check_error(&cmd[0], PROTO_ERR_SYNTAX);
+	check_error(&cmd[1], PROTO_ERR_SYNTAX);
+
+	/* Four digits and a lone \r wait for a \n; the \r is part of
+	 * the line, so x\n after it is one more syntax error.
 	 */
 	proto_init(&pc);
-	{
-		static const char in[] = "12345\n";
-
-		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
-	}
-	CHECK_EQ(n, (size_t)2);
-	check_error(&cmd[0], PROTO_ERR_RANGE);
-	CHECK_EQ(strcmp(cmd[0].text, "data 4 not in 0-1"), 0);
-	check_error(&cmd[1], PROTO_ERR_SYNTAX);
+	n = feed(&pc, "0300\r", 5, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)0);
+	n = feed(&pc, "x\n", 2, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_SYNTAX);
 }
 
 static void test_v2_syntax(void)
@@ -356,7 +343,7 @@ static void test_v2_syntax(void)
 		proto_init(&pc);
 		n = feed(&pc, ok, sizeof(ok) - 1, cmd, ARRAY_SIZE(cmd));
 		CHECK_EQ(n, (size_t)1);
-		check_switch(&cmd[0], 0, 1, 0, 0, 0);
+		check_switch(&cmd[0], 1, 0, 0, 0);
 	}
 }
 
@@ -404,8 +391,8 @@ static void test_overflow(void)
 
 /*
  * Every field is checked against socket_addr_limits() (D-12, D-13),
- * in dev/group/socket/data order, for both legacy and v2, and the
- * range check never opens a board session.
+ * in dev/group/socket/data order, and the range check never opens a
+ * board session.
  */
 static void test_ranges(void)
 {
@@ -422,7 +409,7 @@ static void test_ranges(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 0, 3, 2, 1);
+	check_switch(&cmd[0], 0, 3, 2, 1);
 
 	proto_init(&pc);
 	{
@@ -471,7 +458,7 @@ static void test_ranges(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 1, 31, 31, 1);
+	check_switch(&cmd[0], 1, 31, 31, 1);
 
 	proto_init(&pc);
 	{
@@ -500,39 +487,33 @@ static void test_ranges(void)
 		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
 	}
 	CHECK_EQ(n, (size_t)1);
-	check_switch(&cmd[0], 0, 1, 10, 10, 1);
+	check_switch(&cmd[0], 1, 10, 10, 1);
 
-	/* Legacy: 9999 -> dev 9 unknown. */
+	/* dev 9 is unknown. */
 	proto_init(&pc);
-	n = feed(&pc, "9999", 4, cmd, ARRAY_SIZE(cmd));
+	{
+		static const char in[] = "9 9 9 9\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
 	CHECK_EQ(n, (size_t)1);
 	check_error(&cmd[0], PROTO_ERR_RANGE);
 	CHECK_EQ(strcmp(cmd[0].text, "dev 9 unknown"), 0);
 
-	/* Legacy: 0400 -> REV 008345, group 4 not in 0-3. */
-	proto_init(&pc);
-	n = feed(&pc, "0400", 4, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_error(&cmd[0], PROTO_ERR_RANGE);
-	CHECK_EQ(strcmp(cmd[0].text, "group 4 not in 0-3"), 0);
-
-	/* Legacy: 0030 -> REV 008345, socket 3 not in 0-2. */
-	proto_init(&pc);
-	n = feed(&pc, "0030", 4, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)1);
-	check_error(&cmd[0], PROTO_ERR_RANGE);
-	CHECK_EQ(strcmp(cmd[0].text, "socket 3 not in 0-2"), 0);
-
-	/* Legacy: 1999 -> POLLIN_2605, group 9 and socket 9 both valid,
-	 * data 9 not in 0-1.
+	/* POLLIN_2605, group 9 and socket 9 both valid, data 9 not in
+	 * 0-1.
 	 */
 	proto_init(&pc);
-	n = feed(&pc, "1999", 4, cmd, ARRAY_SIZE(cmd));
+	{
+		static const char in[] = "1 9 9 9\n";
+
+		n = feed(&pc, in, sizeof(in) - 1, cmd, ARRAY_SIZE(cmd));
+	}
 	CHECK_EQ(n, (size_t)1);
 	check_error(&cmd[0], PROTO_ERR_RANGE);
 	CHECK_EQ(strcmp(cmd[0].text, "data 9 not in 0-1"), 0);
 
-	/* v2: dev is checked before group, socket or data, even though
+	/* dev is checked before group, socket or data, even though
 	 * all three are also out of range.
 	 */
 	proto_init(&pc);
@@ -611,8 +592,7 @@ static void test_ranges_follow_library(void)
 					left = (size_t)len;
 					CHECK_EQ(proto_next(&pc, &p, &left,
 							     &cmd), 1);
-					check_switch(&cmd, 0, devs[d], g, s,
-						     v);
+					check_switch(&cmd, devs[d], g, s, v);
 				}
 			}
 		}
@@ -797,7 +777,6 @@ static void test_line_limit(void)
 	struct proto_cmd cmd[64];
 	char buf[260];
 	size_t n;
-	size_t i;
 
 	/* 128 x plus \n: a full-length line, judged by the grammar. */
 	proto_init(&pc);
@@ -834,15 +813,18 @@ static void test_line_limit(void)
 	CHECK_EQ(n, (size_t)1);
 	check_error(&cmd[0], PROTO_ERR_TOOLONG);
 
-	/* 200 bytes of the digit 1: 50 legacy commands, back to back
-	 * (D-04).
+	/* 200 bytes of the digit 1, no newline: one toolong error, not
+	 * a run of commands; the next line is then parsed normally.
 	 */
 	proto_init(&pc);
 	memset(buf, '1', 200);
 	n = feed(&pc, buf, 200, cmd, ARRAY_SIZE(cmd));
-	CHECK_EQ(n, (size_t)50);
-	for (i = 0; i < n; i++)
-		check_switch(&cmd[i], 1, 1, 1, 1, 1);
+	CHECK_EQ(n, (size_t)1);
+	check_error(&cmd[0], PROTO_ERR_TOOLONG);
+
+	n = feed(&pc, "\n1 1 1 1\n", 9, cmd, ARRAY_SIZE(cmd));
+	CHECK_EQ(n, (size_t)1);
+	check_switch(&cmd[0], 1, 1, 1, 1);
 }
 
 static void test_zero_input(void)
@@ -858,7 +840,6 @@ static void test_zero_input(void)
 	CHECK_EQ(rc, 0);
 	CHECK_EQ(pc.len, (size_t)0);
 	CHECK_EQ(pc.discarding, 0);
-	CHECK_EQ(pc.legacy_tail, 0);
 }
 
 static void test_independent_state(void)
@@ -866,7 +847,7 @@ static void test_independent_state(void)
 	struct proto_conn a, b, solo;
 	struct proto_cmd cmd_a[4], cmd_b[4];
 	struct proto_cmd solo_a[4], solo_b[4];
-	static const char msg_a[] = "0300";
+	static const char msg_a[] = "0 3 0 0\n";
 	static const char msg_b[] = "1 17 23 1\n";
 	size_t na = 0, nb = 0;
 	size_t max_len, i, nsolo;
@@ -968,7 +949,7 @@ int main(void)
 {
 	test_worked_examples();
 	test_fragmented();
-	test_legacy_wait();
+	test_four_digits_are_a_syntax_error();
 	test_v2_syntax();
 	test_overflow();
 	test_ranges();

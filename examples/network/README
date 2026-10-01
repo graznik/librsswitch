@@ -71,6 +71,11 @@ plain decimal digits and no leading zeros:
  socket 0-2               0-31
  data  1 = on, 0 = off (both devices)
 
+The 4-digit command format of earlier versions is no longer
+accepted, because it could not address Pollin groups or sockets
+above 9. Such a line is answered ERR syntax; a client sends "dev
+group socket data" lines instead.
+
 The raw command is `raw <tristate> <pulse_len>`: 1-12 characters
 of 0, 1 and F, followed by a pulse length in microseconds,
 50-2000. Both arguments are required.
@@ -109,29 +114,13 @@ A command that was never fully read when the connection ends
 gets no reply at all.
 
 
-Legacy format (deprecated, use protocol v2)
-=============================================
-Four digits at a command boundary -- dev, group, socket, data,
-one digit each -- are still accepted and still send the same
-codeword as before. The command is complete as soon as the 4th
-digit arrives; a \n or \r\n directly following it is swallowed,
-so `03000301` is two commands, not one. Only Pollin groups and
-sockets 0-9 are reachable this way -- protocol v2 is needed for
-group or socket 10 and above.
-
-The daemon now replies OK or ERR to a legacy command too, and
-keeps the connection open, so `echo -n 0300 | nc -N host 5000`
-prints OK. Without -N, OpenBSD nc keeps the connection open
-until the daemon's --timeout closes it.
-
-
 Examples
 ========
-printf '0300' | nc -N 127.0.0.1 5000
+printf '0 3 0 0\n' | nc -N 127.0.0.1 5000
 OK
-printf '0300\r\n' | nc -N 127.0.0.1 5000
+printf '0 3 0 0\r\n' | nc -N 127.0.0.1 5000
 OK
-printf '03000301' | nc -N 127.0.0.1 5000
+printf '0 3 0 0\n0 3 0 1\n' | nc -N 127.0.0.1 5000
 OK
 OK
 printf '1 17 23 1\n' | nc -N 127.0.0.1 5000
@@ -144,7 +133,8 @@ printf '1 40 0 1\n' | nc -N 127.0.0.1 5000
 ERR range group 40 not in 0-31
 
 On the x86_64 test build, `1 17 23 1` and the raw command above
-both print the codeword 0FFF0000F00F on the daemon's own stdout.
+both print the codeword 0FFF0000F00F on the daemon's own stdout,
+and `0 3 0 0` prints FFF11FF00001.
 
 
 Security and service

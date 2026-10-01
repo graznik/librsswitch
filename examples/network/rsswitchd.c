@@ -550,9 +550,9 @@ static int wait_readable(int fd, const struct timespec *deadline)
  * connection slot forever, exactly the stall DMN-05 exists to close.
  * A command still incomplete when the deadline passes, or when the
  * connection ends, is dropped without being sent or logged -- a
- * legacy client that never closes its side hits this in normal
- * operation (D-25). The caller closes connfd exactly once, after this
- * function returns.
+ * client that never closes its side hits this in normal operation
+ * (D-25). The caller closes connfd exactly once, after this function
+ * returns.
  *
  * stop_requested is checked after every wait and after every handled
  * command (D-24): a command already being read and handled always

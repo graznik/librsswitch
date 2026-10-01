@@ -27,28 +27,23 @@
  *     NUL-terminated. The only digits are the ASCII bytes '0'..'9',
  *     tested with an explicit range comparison -- never the
  *     locale-dependent isdigit().
- *   - A legacy command is exactly 4 buffered digits at a command
- *     boundary, complete as soon as the 4th digit arrives; no
- *     newline is needed. A \n, or \r immediately followed by \n,
- *     right after those 4 digits is swallowed silently. A lone \r
- *     waits for the next byte; anything other than a following \n
- *     starts the next command (with that \r as its first byte).
- *   - A line (anything else, up to the next \n) is bounded to
- *     PROTO_MAX_LINE bytes, not counting the \n itself but counting
- *     an embedded \r; exceeding it produces PROTO_ERR_TOOLONG at
- *     once and discards input through the next \n.
- *   - A non-legacy line is parsed as the strict protocol v2 grammar:
- *     exactly 4 fields, ASCII digits only, single-space separated,
- *     no leading zero unless the field is exactly "0". Syntax is
- *     checked for every field before any is converted; only once
- *     every field passes does conversion happen, in field order, so
- *     the first field whose value does not fit (more than 10 digits,
- *     or a value above UINT32_MAX) wins the PROTO_ERR_RANGE error.
+ *   - A command ends only at a \n, with an optional \r right before
+ *     it. A line is bounded to PROTO_MAX_LINE bytes, not counting the
+ *     \n itself but counting an embedded \r; exceeding it produces
+ *     PROTO_ERR_TOOLONG at once and discards input through the next
+ *     \n.
+ *   - A line is parsed as the strict protocol v2 grammar: exactly 4
+ *     fields, ASCII digits only, single-space separated, no leading
+ *     zero unless the field is exactly "0". Syntax is checked for
+ *     every field before any is converted; only once every field
+ *     passes does conversion happen, in field order, so the first
+ *     field whose value does not fit (more than 10 digits, or a
+ *     value above UINT32_MAX) wins the PROTO_ERR_RANGE error.
  *   - Once dev, group, socket and data are all syntactically valid
- *     numbers (legacy or v2), they are checked in that same order
- *     against librsswitch.h's socket_addr_limits() (D-12, D-13) --
- *     never against a table copied into this file. The first field
- *     out of range wins: an unknown dev gives "dev %u unknown"; an
+ *     numbers, they are checked in that same order against
+ *     librsswitch.h's socket_addr_limits() (D-12, D-13) -- never
+ *     against a table copied into this file. The first field out of
+ *     range wins: an unknown dev gives "dev %u unknown"; an
  *     out-of-range group, socket or data gives "<field> %u not in
  *     0-%u", naming the field's highest valid value. Only once every
  *     field passes this check does the result become PROTO_SWITCH.
@@ -65,6 +60,9 @@
  *     for anything else, or a pulse_len outside
  *     [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US]. Passing
  *     both produces PROTO_RAW.
+ *   - Any other line, including one of four digits without spaces, is
+ *     an ordinary one-field line and a syntax error. It is not a
+ *     command: the 4-digit format of earlier versions is gone.
  *   - An empty line (bare \n or \r\n at a command boundary) is
  *     PROTO_EMPTY: not a command, no reply.
  *   - Error text is always built from fixed words and already-parsed
@@ -104,7 +102,7 @@
 /*
  * The result of one command boundary. PROTO_EMPTY is an ignored
  * empty line (D-09): no reply, nothing sent. PROTO_SWITCH is a fully
- * parsed, well-formed legacy or v2 switch command. PROTO_RAW is a
+ * parsed, well-formed v2 switch command. PROTO_RAW is a
  * well-formed raw tri-state command (D-08). PROTO_ERROR is a
  * malformed, out-of-range or too-long line.
  */
@@ -132,11 +130,10 @@ enum proto_err {
 /*
  * One parsed command boundary, filled in by proto_next().
  *
- * kind == PROTO_SWITCH: legacy is 1 for a 4-digit legacy command, 0
- * for a v2 line; dev/group/socket/data hold the parsed fields (D-05
- * for legacy, D-07 for v2), already checked against UINT32_MAX and
- * against socket_addr_limits()'s per-device bounds (D-12, D-13).
- * err/text are unused.
+ * kind == PROTO_SWITCH: dev/group/socket/data hold the parsed fields
+ * (D-07), already checked against UINT32_MAX and against
+ * socket_addr_limits()'s per-device bounds (D-12, D-13). err/text are
+ * unused.
  *
  * kind == PROTO_RAW: tristate is a NUL-terminated string of '0', '1'
  * and uppercase 'F', 1 to SOCKET_CODEWORD_MAX_LEN bytes long, exactly
@@ -147,13 +144,12 @@ enum proto_err {
  * kind == PROTO_ERROR: err names the class and text holds a short,
  * human-readable explanation built only from fixed words and
  * already-parsed numbers (D-15) -- never from bytes in the input
- * line. legacy/dev/group/socket/data/tristate/pulse_len are unused.
+ * line. dev/group/socket/data/tristate/pulse_len are unused.
  *
  * kind == PROTO_EMPTY: no other field is meaningful.
  */
 struct proto_cmd {
 	enum proto_kind kind;
-	int legacy;
 	uint32_t dev;
 	uint32_t group;
 	uint32_t socket;
@@ -166,25 +162,21 @@ struct proto_cmd {
 
 /*
  * Per-connection parser state: the line accumulator (buf/len), plus
- * the two flags that carry across proto_next() calls -- discarding
- * (a too-long line is being skipped up to its next \n) and
- * legacy_tail (the last result was a legacy command whose
- * immediately following \n or \r\n must still be swallowed, D-02).
- * There is no state anywhere else: zero-initialize or call
- * proto_init() before first use, and any number of struct proto_conn
- * can be driven independently with no interaction between them.
+ * the flag that carries across proto_next() calls -- discarding (a
+ * too-long line is being skipped up to its next \n). There is no
+ * state anywhere else: zero-initialize or call proto_init() before
+ * first use, and any number of struct proto_conn can be driven
+ * independently with no interaction between them.
  */
 struct proto_conn {
 	char buf[PROTO_MAX_LINE + 1];
 	size_t len;
 	int discarding;
-	int legacy_tail;
 };
 
 /*
- * Initializes *pc to the empty, non-discarding, non-legacy-tail
- * state. Safe to call again on a *pc already in use, to reset a
- * connection.
+ * Initializes *pc to the empty, non-discarding state. Safe to call
+ * again on a *pc already in use, to reset a connection.
  */
 void proto_init(struct proto_conn *pc);
 

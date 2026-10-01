@@ -121,15 +121,13 @@ static int field_to_u32(const char *s, size_t len, uint32_t *out)
 /*
  * Checks dev, group, socket and data against librsswitch.h's
  * socket_addr_limits() (D-12, D-13), in that field order, and fills
- * *cmd accordingly: PROTO_SWITCH with legacy set as given when every
- * field is in range, or PROTO_ERROR/PROTO_ERR_RANGE naming the first
- * out-of-range field otherwise. Used by both the legacy and v2
- * command paths, so a range violation is reported identically by
- * either, and always before socket_send() is ever called -- which
- * still checks again on its own (D-12).
+ * *cmd accordingly: PROTO_SWITCH when every field is in range, or
+ * PROTO_ERROR/PROTO_ERR_RANGE naming the first out-of-range field
+ * otherwise. The check always happens before socket_send() is ever
+ * called -- which still checks again on its own (D-12).
  */
-static void check_range(struct proto_cmd *cmd, int legacy, uint32_t dev,
-			 uint32_t group, uint32_t socket, uint32_t data)
+static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
+			 uint32_t socket, uint32_t data)
 {
 	uint32_t ngroups, nsockets, ndata;
 
@@ -163,7 +161,6 @@ static void check_range(struct proto_cmd *cmd, int legacy, uint32_t dev,
 	}
 
 	cmd->kind = PROTO_SWITCH;
-	cmd->legacy = legacy;
 	cmd->dev = dev;
 	cmd->group = group;
 	cmd->socket = socket;
@@ -302,14 +299,13 @@ static void parse_line(const char *line, size_t len, struct proto_cmd *cmd)
 		}
 	}
 
-	check_range(cmd, 0, val[0], val[1], val[2], val[3]);
+	check_range(cmd, val[0], val[1], val[2], val[3]);
 }
 
 void proto_init(struct proto_conn *pc)
 {
 	pc->len = 0;
 	pc->discarding = 0;
-	pc->legacy_tail = 0;
 }
 
 int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
@@ -324,46 +320,6 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 			if (c == '\n')
 				pc->discarding = 0;
 			continue;
-		}
-
-		if (pc->legacy_tail) {
-			if (pc->len == 0) {
-				if (c == '\n') {
-					(*in)++;
-					(*inlen)--;
-					pc->legacy_tail = 0;
-					continue;
-				}
-				if (c == '\r') {
-					(*in)++;
-					(*inlen)--;
-					pc->buf[0] = '\r';
-					pc->len = 1;
-					continue;
-				}
-				/* Neither: starts the next command,
-				 * unconsumed -- fall through below.
-				 */
-				pc->legacy_tail = 0;
-			} else {
-				/* pc->len == 1, buf[0] == '\r': a lone
-				 * \r was pending the byte after it.
-				 */
-				if (c == '\n') {
-					(*in)++;
-					(*inlen)--;
-					pc->legacy_tail = 0;
-					pc->len = 0;
-					continue;
-				}
-				/* Not a CRLF: the buffered \r starts
-				 * the next command, together with this
-				 * byte -- fall through below, which
-				 * appends it to the already-buffered
-				 * \r.
-				 */
-				pc->legacy_tail = 0;
-			}
 		}
 
 		if (c == '\n') {
@@ -401,22 +357,6 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 		pc->buf[pc->len++] = (char)c;
 		(*in)++;
 		(*inlen)--;
-
-		if (pc->len == 4 &&
-		    is_ascii_digit(pc->buf[0]) &&
-		    is_ascii_digit(pc->buf[1]) &&
-		    is_ascii_digit(pc->buf[2]) &&
-		    is_ascii_digit(pc->buf[3])) {
-			uint32_t dev = (uint32_t)(pc->buf[0] - '0');
-			uint32_t group = (uint32_t)(pc->buf[1] - '0');
-			uint32_t sock = (uint32_t)(pc->buf[2] - '0');
-			uint32_t data = (uint32_t)(pc->buf[3] - '0');
-
-			pc->len = 0;
-			pc->legacy_tail = 1;
-			check_range(cmd, 1, dev, group, sock, data);
-			return 1;
-		}
 	}
 
 	return 0;
