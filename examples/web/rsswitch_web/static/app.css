@@ -150,7 +150,10 @@ h2 {
 	color: var(--off-text);
 }
 
-.all-off {
+.all-off,
+.edit-toggle,
+.add-socket,
+.dialog-buttons button {
 	min-height: 44px;
 	padding: 0 0.9rem;
 	border: 1px solid var(--line);
@@ -215,4 +218,83 @@ button:disabled {
 .banner-error {
 	color: var(--error);
 	border: 1px solid var(--error);
+}
+
+.header-tools {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.edit-toggle[aria-pressed="true"] {
+	background: var(--on);
+	border-color: var(--on);
+	color: var(--on-text);
+}
+
+.edit-controls {
+	display: flex;
+	gap: 0.5rem;
+}
+
+.add-socket {
+	width: 100%;
+	margin-top: 0.5rem;
+}
+
+input,
+select {
+	min-height: 44px;
+	padding: 0 0.6rem;
+	border: 1px solid var(--line);
+	border-radius: 0.5rem;
+	background: var(--card);
+	color: var(--text);
+	font: inherit;
+	font-size: 16px;
+}
+
+dialog {
+	width: min(32rem, 92vw);
+	max-height: 92vh;
+	padding: 1rem;
+	border: 1px solid var(--line);
+	border-radius: 0.75rem;
+	background: var(--card);
+	color: var(--text);
+}
+
+dialog::backdrop {
+	background: rgba(0, 0, 0, 0.5);
+}
+
+dialog h2 {
+	margin-bottom: 0.75rem;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	margin: 0 0 0.75rem;
+}
+
+.field label {
+	font-weight: 600;
+}
+
+.field-error,
+.dialog-error {
+	margin: 0;
+	color: var(--error);
+	font-size: 0.9rem;
+}
+
+.dialog-error {
+	margin-bottom: 0.75rem;
+}
+
+.dialog-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.5rem;
 }

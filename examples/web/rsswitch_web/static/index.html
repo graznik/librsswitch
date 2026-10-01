@@ -20,11 +20,50 @@
 <body>
 <header>
 <h1>Rooms</h1>
+<div class="header-tools">
+<button id="edit-toggle" class="edit-toggle" type="button" aria-pressed="false" disabled>Edit</button>
 <button id="all-off" class="all-off" type="button" disabled>All off</button>
+</div>
 </header>
 <p id="hint" class="hint">Last sent shows the last command sent, not the real state of a socket: the 433 MHz radio is one-way.</p>
 <div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
 <main id="rooms"></main>
+<dialog id="socket-dialog" aria-labelledby="socket-dialog-title">
+<form id="socket-form" method="dialog" novalidate>
+<h2 id="socket-dialog-title">Add socket</h2>
+<div class="field">
+<label for="socket-name">Name</label>
+<input id="socket-name" name="name" type="text" maxlength="64" autocomplete="off" required aria-describedby="socket-name-error">
+<p id="socket-name-error" class="field-error" hidden></p>
+</div>
+<div class="field">
+<label for="socket-type">Type</label>
+<select id="socket-type" name="type" aria-describedby="socket-type-error"></select>
+<p id="socket-type-error" class="field-error" hidden></p>
+</div>
+<div class="field">
+<label for="socket-group">Group</label>
+<input id="socket-group" name="group" type="number" inputmode="numeric" min="0" step="1" required aria-describedby="socket-group-error">
+<p id="socket-group-error" class="field-error" hidden></p>
+</div>
+<div class="field">
+<label for="socket-number">Number</label>
+<input id="socket-number" name="number" type="number" inputmode="numeric" min="0" step="1" required aria-describedby="socket-number-error">
+<p id="socket-number-error" class="field-error" hidden></p>
+</div>
+<div class="field">
+<label for="socket-room">Room</label>
+<select id="socket-room" name="room" aria-describedby="socket-room-error"></select>
+<p id="socket-room-error" class="field-error" hidden></p>
+</div>
+<p id="socket-address-note" class="hint" hidden></p>
+<p id="socket-dialog-error" class="dialog-error" role="alert" hidden></p>
+<div class="dialog-buttons">
+<button id="socket-cancel" type="button">Cancel</button>
+<button id="socket-save" type="submit">Save</button>
+</div>
+</form>
+</dialog>
 <noscript><p>This page needs JavaScript to show and switch the sockets.</p></noscript>
 </body>
 </html>

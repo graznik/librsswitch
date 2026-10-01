@@ -1,6 +1,7 @@
 /*
  * app.js - the script of rsswitch-web: shows the rooms and sockets of
- * the JSON API and switches a socket when On or Off is tapped.
+ * the JSON API, switches a socket when On or Off is tapped, and in edit
+ * mode adds, changes and removes them.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,6 +18,22 @@
 const HINT = "This is the last command sent, not the real state of the "
 	+ "socket.";
 
+/* What the socket type select shows. A type that is not here shows its
+ * id, so a type that the server learns needs no change of the page. */
+const TYPE_LABELS = {
+	"rev_008345": "REV 008345",
+	"pollin_2605": "Pollin 2605",
+};
+
+/* The element that shows the error of each field of the socket form. */
+const FIELD_ERRORS = {
+	name: "socket-name-error",
+	type: "socket-type-error",
+	group: "socket-group-error",
+	number: "socket-number-error",
+	room_id: "socket-room-error",
+};
+
 /*
  * What the page remembers besides the rooms. render() reads all of it,
  * so a rebuilt page keeps the rows that are in flight and the messages
@@ -27,6 +44,10 @@ const HINT = "This is the last command sent, not the real state of the "
  *   flash    ids of the rows that flash after a successful switch
  *   busyAllOff  room ids, and HOUSEHOLD, of the All-off requests in flight
  *   loadSeq  number of the newest request for the rooms
+ *   edit     true while the page is in edit mode
+ *   meta     the "socket_types" of GET /api/meta, or null before it loads
+ *   busy     true while a management request is in flight; every
+ *            management button is disabled meanwhile
  */
 const HOUSEHOLD = "*";
 
@@ -38,6 +59,10 @@ const ui = {
 	busyAllOff: new Set(),
 	loadSeq: 0,
 	loadFailed: false,
+	edit: false,
+	meta: null,
+	metaFailed: false,
+	busy: false,
 };
 
 /* Build an element. Text goes in as text, never as markup. */
@@ -220,8 +245,10 @@ function renderSocket(sock) {
 	const row = el("div", {
 		class: "socket" + (ui.flash.has(sock.id) ? " flash" : "")},
 		el("div", {class: "socket-info"},
-			el("span", {class: "socket-name", text: sock.name}), last),
-		el("div", {class: "switch"}, ...buttons));
+			el("span", {class: "socket-name", text: sock.name}), last));
+	if (!ui.edit) {
+		row.append(el("div", {class: "switch"}, ...buttons));
+	}
 	if (note) {
 		row.append(el("p", {
 			class: "note note-" + note.kind, text: note.text}));
@@ -234,18 +261,27 @@ function renderRoom(room) {
 	if (sockets.length === 0) {
 		sockets.push(el("p", {class: "hint", text: "No sockets yet."}));
 	}
-	const busy = ui.busyAllOff.has(room.id);
-	const allOffButton = el("button", {
-		class: "all-off" + (busy ? " sending" : ""),
-		type: "button",
-		disabled: busy || room.sockets.length === 0,
-		"aria-label": "Turn off every socket in " + room.name,
-		text: busy ? "Sending\u2026" : "All off"});
-	allOffButton.addEventListener("click", () => allOff(room.id));
-	return el("section", {class: "room"},
-		el("div", {class: "room-head"}, el("h2", {text: room.name}),
-			allOffButton),
-		...sockets);
+	const head = el("div", {class: "room-head"},
+		el("h2", {text: room.name}));
+	if (!ui.edit) {
+		const busy = ui.busyAllOff.has(room.id);
+		const allOffButton = el("button", {
+			class: "all-off" + (busy ? " sending" : ""),
+			type: "button",
+			disabled: busy || room.sockets.length === 0,
+			"aria-label": "Turn off every socket in " + room.name,
+			text: busy ? "Sending\u2026" : "All off"});
+		allOffButton.addEventListener("click", () => allOff(room.id));
+		head.append(allOffButton);
+	} else {
+		const add = el("button", {
+			class: "add-socket", type: "button", disabled: ui.busy,
+			"aria-label": "Add a socket to " + room.name,
+			text: "+ Socket"});
+		add.addEventListener("click", () => openSocketDialog(room.id));
+		sockets.push(add);
+	}
+	return el("section", {class: "room"}, head, ...sockets);
 }
 
 function countSockets() {
@@ -265,9 +301,18 @@ function renderHouseholdButton() {
 	button.classList.toggle("sending", busy);
 }
 
+/* The Edit button waits for the limits of the socket types. */
+function renderEditButton() {
+	const button = document.getElementById("edit-toggle");
+	button.disabled = ui.meta === null;
+	button.textContent = ui.edit ? "Done" : "Edit";
+	button.setAttribute("aria-pressed", ui.edit ? "true" : "false");
+}
+
 /* Rebuild the page from ui. */
 function render() {
 	const root = document.getElementById("rooms");
+	renderEditButton();
 	if (ui.tree === null) {
 		return;
 	}
@@ -393,10 +438,232 @@ async function allOff(roomId) {
 	render();
 }
 
+/*
+ * Load the limits of the socket types. The socket form takes its group
+ * and number limits from them, so the page keeps no copy of its own.
+ * Edit mode is off until they are here.
+ */
+async function loadMeta() {
+	const res = await api("GET", "/api/meta");
+	if (!res.ok || !res.data || typeof res.data.socket_types !== "object"
+			|| res.data.socket_types === null) {
+		const error = res.ok
+			? {code: "http_error", message: "unexpected answer"}
+			: res.error;
+		showBanner("Editing is not available: "
+			+ errorText(error, res.retryAfter), "error");
+		ui.metaFailed = true;
+		return;
+	}
+	ui.meta = res.data.socket_types;
+	if (ui.metaFailed) {
+		hideBanner();
+		ui.metaFailed = false;
+	}
+	render();
+}
+
+/* Whether this browser can show the native dialogs of the edit forms. */
+function dialogsSupported() {
+	return typeof HTMLDialogElement === "function"
+		&& typeof HTMLDialogElement.prototype.showModal === "function";
+}
+
+function toggleEdit() {
+	if (!ui.edit && !dialogsSupported()) {
+		showBanner("This browser cannot show the edit forms; switching "
+			+ "still works.", "error");
+		return;
+	}
+	ui.edit = !ui.edit;
+	render();
+}
+
+/*
+ * Run one management request and keep every management button disabled
+ * while it runs, so the page never has two of them in flight. request
+ * is a function that returns the answer of api(); it is also where a
+ * successful change reloads the rooms, so the buttons stay disabled
+ * until the page shows the result.
+ */
+async function manage(request) {
+	ui.busy = true;
+	document.getElementById("socket-save").disabled = true;
+	render();
+	try {
+		return await request();
+	} finally {
+		ui.busy = false;
+		document.getElementById("socket-save").disabled = false;
+		render();
+	}
+}
+
+/* Show text in a hidden error paragraph, or hide it for no text. */
+function setMessage(node, text) {
+	node.textContent = text || "";
+	node.hidden = !text;
+}
+
+/* Hide every field error and the dialog error of a dialog. */
+function clearErrors(dialog) {
+	for (const node of dialog.querySelectorAll(
+			".field-error, .dialog-error")) {
+		setMessage(node, "");
+	}
+}
+
+/* Show the error of one field of the socket form. It returns false for
+ * a field that the form does not have. */
+function fieldError(field, message) {
+	if (!Object.prototype.hasOwnProperty.call(FIELD_ERRORS, field)) {
+		return false;
+	}
+	setMessage(document.getElementById(FIELD_ERRORS[field]), message);
+	return true;
+}
+
+/* Show an error that belongs to no field, inside the dialog. */
+function dialogError(dialog, text) {
+	setMessage(dialog.querySelector(".dialog-error"), text);
+}
+
+/* Show why a save failed, next to the field when the server names one.
+ * The dialog stays open either way. */
+function saveFailed(dialog, res) {
+	const error = res.ok
+		? {code: "http_error", message: "unexpected answer"} : res.error;
+	if (res.status === 422 && error.field
+			&& fieldError(error.field, error.message)) {
+		return;
+	}
+	dialogError(dialog, errorText(error, res.retryAfter));
+}
+
+/* The socket and room names of the sockets that a warning lists. */
+function describeSockets(ids) {
+	const names = [];
+	for (const room of ui.tree.rooms) {
+		for (const sock of room.sockets) {
+			if (ids.includes(sock.id)) {
+				names.push(sock.name + " (" + room.name + ")");
+			}
+		}
+	}
+	return names;
+}
+
+/* Tell the owner about a save that went through with a warning. The
+ * tree is the reloaded one, so the names are current. */
+function showWarnings(warnings) {
+	for (const warning of warnings || []) {
+		if (warning.code === "duplicate_address") {
+			const names = describeSockets(warning.socket_ids || []);
+			showBanner("Same address as: " + names.join(", "), "info");
+		} else {
+			showBanner(warning.message || warning.code, "info");
+		}
+	}
+}
+
+/* Set the options of a select from [value, label] pairs. */
+function fillSelect(select, options, value) {
+	select.replaceChildren(...options.map(([val, label]) =>
+		el("option", {value: val, text: label})));
+	select.value = value;
+}
+
+/* Allow only the groups and numbers that the chosen type has. */
+function applyLimits() {
+	const limits = ui.meta[document.getElementById("socket-type").value];
+	const group = document.getElementById("socket-group");
+	const number = document.getElementById("socket-number");
+	if (!limits) {
+		group.removeAttribute("max");
+		number.removeAttribute("max");
+		return;
+	}
+	group.min = 0;
+	number.min = 0;
+	group.max = limits.groups - 1;
+	number.max = limits.sockets - 1;
+}
+
+/* Open the form that adds a socket to the room roomId. */
+function openSocketDialog(roomId) {
+	const dialog = document.getElementById("socket-dialog");
+	const types = Object.keys(ui.meta);
+	clearErrors(dialog);
+	document.getElementById("socket-dialog-title").textContent
+		= "Add socket";
+	document.getElementById("socket-name").value = "";
+	fillSelect(document.getElementById("socket-type"),
+		types.map((type) => [type, TYPE_LABELS[type] || type]),
+		types[0]);
+	document.getElementById("socket-group").value = "";
+	document.getElementById("socket-number").value = "";
+	fillSelect(document.getElementById("socket-room"),
+		ui.tree.rooms.map((room) => [room.id, room.name]), roomId);
+	applyLimits();
+	dialog.showModal();
+}
+
+async function saveSocket(event) {
+	event.preventDefault();
+	if (ui.busy) {
+		return;
+	}
+	const dialog = document.getElementById("socket-dialog");
+	clearErrors(dialog);
+	if (!document.getElementById("socket-form").reportValidity()) {
+		return;
+	}
+	const group = document.getElementById("socket-group").valueAsNumber;
+	const number = document.getElementById("socket-number").valueAsNumber;
+	if (!Number.isInteger(group)) {
+		fieldError("group", "Enter a whole number.");
+		return;
+	}
+	if (!Number.isInteger(number)) {
+		fieldError("number", "Enter a whole number.");
+		return;
+	}
+	const roomId = document.getElementById("socket-room").value;
+	const body = {
+		name: document.getElementById("socket-name").value,
+		type: document.getElementById("socket-type").value,
+		group: group,
+		number: number,
+	};
+	const res = await manage(async () => {
+		const answer = await api("POST", "/api/rooms/"
+			+ encodeURIComponent(roomId) + "/sockets", body);
+		if (answer.ok) {
+			await loadTree();
+		}
+		return answer;
+	});
+	if (!res.ok) {
+		saveFailed(dialog, res);
+		return;
+	}
+	dialog.close();
+	showWarnings(res.data && res.data.warnings);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	document.getElementById("all-off").addEventListener(
 		"click", () => allOff(null));
+	document.getElementById("edit-toggle").addEventListener(
+		"click", toggleEdit);
+	document.getElementById("socket-form").addEventListener(
+		"submit", saveSocket);
+	document.getElementById("socket-type").addEventListener(
+		"change", applyLimits);
+	document.getElementById("socket-cancel").addEventListener(
+		"click", () => document.getElementById("socket-dialog").close());
 	loadTree();
+	loadMeta();
 });
 
 /*
@@ -409,5 +676,8 @@ document.addEventListener("DOMContentLoaded", () => {
 document.addEventListener("visibilitychange", () => {
 	if (document.visibilityState === "visible") {
 		loadTree();
+		if (ui.meta === null) {
+			loadMeta();
+		}
 	}
 });

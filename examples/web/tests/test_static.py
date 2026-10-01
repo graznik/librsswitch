@@ -141,8 +141,12 @@ def test_ids_used_by_js_exist_in_html():
     js = source("app.js")
     used = re.findall(r"""getElementById\(\s*"([^"]+)"\s*\)""", js)
     assert used
-    # Every call names its id as a literal, so this check sees them all.
-    assert len(used) == js.count("getElementById(")
+    # Every call names its id as a literal, except the lookups of the
+    # error element of a field, which go through FIELD_ERRORS.
+    through_table = js.count("getElementById(FIELD_ERRORS[")
+    assert len(used) + through_table == js.count("getElementById(")
+    table = re.search(r"FIELD_ERRORS = \{(.*?)\};", js, re.S).group(1)
+    used += re.findall(r'\w+:\s*"([^"]+)"', table)
     ids = {a["id"] for _, a in parse() if "id" in a}
     assert set(used) <= ids
 
@@ -260,3 +264,47 @@ def test_page_has_all_off_buttons():
     # The household asks once, with the number of sockets.
     assert js.count("Switch off all ") == 1
     assert js.count("window.confirm(") == 1
+
+
+SOCKET_DIALOG_IDS = (
+    "edit-toggle", "socket-dialog", "socket-form", "socket-dialog-title",
+    "socket-name", "socket-type", "socket-group", "socket-number",
+    "socket-room", "socket-name-error", "socket-type-error",
+    "socket-group-error", "socket-number-error", "socket-room-error",
+    "socket-dialog-error", "socket-cancel", "socket-save",
+    "socket-address-note")
+
+
+def test_socket_dialog_has_its_elements():
+    by_id = {a["id"]: (t, a) for t, a in parse() if "id" in a}
+    for name in SOCKET_DIALOG_IDS:
+        assert name in by_id, name
+    assert by_id["socket-dialog"][0] == "dialog"
+    assert by_id["socket-form"][1]["method"] == "dialog"
+    assert by_id["edit-toggle"][1]["aria-pressed"] == "false"
+    assert "disabled" in by_id["edit-toggle"][1]
+    for name in ("group", "number"):
+        attrs = by_id["socket-" + name][1]
+        assert attrs["type"] == "number"
+        assert attrs["min"] == "0"
+        assert attrs["step"] == "1"
+        assert attrs["inputmode"] == "numeric"
+        assert "required" in attrs
+
+
+def test_socket_limits_come_from_the_server_not_the_html():
+    # The max of group and number is set by the script, from the limits
+    # that GET /api/meta serves, so the page has no copy of them.
+    for tag, attrs in parse():
+        if attrs.get("id") in ("socket-group", "socket-number"):
+            assert "max" not in attrs, attrs
+    js = source("app.js")
+    for text in ("/api/meta", "groups - 1", "sockets - 1",
+                 "reportValidity", "valueAsNumber", "Same address as: "):
+        assert text in js, text
+
+
+def test_inputs_do_not_make_a_phone_zoom():
+    css = source("app.css")
+    assert "font-size: 16px" in css
+    assert "min-height: 44px" in css

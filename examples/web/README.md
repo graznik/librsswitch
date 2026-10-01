@@ -210,6 +210,20 @@ from another phone appear without a manual reload. A message under a
 row and a row that is still sending stay as they are. The page does
 not poll.
 
+The Edit button at the top switches the page into edit mode, and
+Done switches it back. In edit mode the On and Off buttons and the
+All off buttons of the rooms are hidden, and every room card has a
+"+ Socket" button. It opens a form with the name, the type, the
+group, the number and the room of the new socket. The limits of group
+and number follow the chosen type, from `GET /api/meta`, and the form
+refuses a value outside them before it sends anything; the server
+checks it again. An error of the server appears next to the field it
+names, or at the bottom of the form, and the form stays open. A
+socket with the same address as another one is saved, and the page
+says "Same address as: " followed by the other sockets and their
+rooms. A browser without the dialog element shows a note instead of
+edit mode, and switching keeps working.
+
 The page is plain HTML, CSS and JavaScript from the package, with no
 build step and nothing loaded from another host. It needs a browser
 from 2022 or later, such as Safari on iOS 15.4 and later.
