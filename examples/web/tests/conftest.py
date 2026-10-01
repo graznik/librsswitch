@@ -405,24 +405,36 @@ class RealDaemon:
 def real_daemon():
     """The x86_64 build of rsswitchd, started on a port of its own.
 
-    The test is skipped when the binary is missing or cannot run here.
-    Only an x86_64 host runs it: the x86_64 build prints codewords
-    instead of driving a GPIO line, and a build for a board must never
-    be started by a test.
+    The binary is the one named in RSSWITCHD_BIN. The caller vouches
+    that it is a build for the x86_64 stub board, as tests/Makefile
+    makes one on any host. Without RSSWITCHD_BIN it is
+    examples/network/rsswitchd, which only an x86_64 host runs: a build
+    for a board must never be started by a test.
+
+    The test is skipped when the binary is missing or cannot run. With
+    RSSWITCH_REQUIRE_DAEMON=1 it fails instead, so that a test run that
+    is meant to cover the daemon cannot quietly leave it out.
     """
-    binary = Path(__file__).resolve().parents[2] / "network" / "rsswitchd"
-    hint = "build rsswitchd with make x86_64 in examples/network"
-    if platform.machine() != "x86_64":
-        pytest.skip(hint)
+    give_up = (pytest.fail if os.environ.get("RSSWITCH_REQUIRE_DAEMON") == "1"
+               else pytest.skip)
+    hint = ("rsswitchd not available: name an x86_64 build in "
+            "RSSWITCHD_BIN, or run make -C ../network x86_64")
+    named = os.environ.get("RSSWITCHD_BIN")
+    if named:
+        binary = Path(named)
+    else:
+        binary = Path(__file__).resolve().parents[2] / "network" / "rsswitchd"
+        if platform.machine() != "x86_64":
+            give_up(hint)
     if not (binary.is_file() and os.access(str(binary), os.X_OK)):
-        pytest.skip(hint)
+        give_up("%s: %s" % (binary, hint))
     try:
         proc = subprocess.Popen(
             [str(binary), "--bind", "127.0.0.1", "--port", "0"],
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True)
-    except OSError:
-        pytest.skip(hint)
+    except OSError as e:
+        give_up("%s cannot be started (%s): %s" % (binary, e, hint))
     daemon = RealDaemon(proc)
     try:
         daemon.wait_ready(5)
