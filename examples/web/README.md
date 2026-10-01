@@ -193,6 +193,12 @@ example "rsswitchd unreachable" or "rsswitchd timed out". The
 message of the daemon is shown as "rsswitchd: ", followed by its
 text.
 
+The page loads the rooms again whenever it is shown again, for
+example after switching back to the browser, so that changes made
+from another phone appear without a manual reload. A message under a
+row and a row that is still sending stay as they are. The page does
+not poll.
+
 The page is plain HTML, CSS and JavaScript from the package, with no
 build step and nothing loaded from another host. It needs a browser
 from 2022 or later, such as Safari on iOS 15.4 and later.

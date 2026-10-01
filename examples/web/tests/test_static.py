@@ -239,3 +239,13 @@ def test_assets_are_revalidated_and_answer_304(client):
     again = client.get("/static/app.js", headers={"If-None-Match": etag})
     assert again.status_code == 304
     has_security_headers(again)
+
+
+def test_page_reloads_when_shown_again_and_does_not_poll():
+    js = source("app.js")
+    assert "visibilitychange" in js
+    assert "setInterval" not in js
+    # No timer starts a reload. The one timer of the page only ends the
+    # flash of a row.
+    for timer in re.findall(r"setTimeout\((.*)", js):
+        assert "loadTree" not in timer

@@ -147,6 +147,27 @@ function hideBanner() {
 	banner.hidden = true;
 }
 
+/* Forget what is left of sockets that are no longer in the tree. A
+ * request in flight removes its own entry when it ends. */
+function dropGoneSockets() {
+	const ids = new Set();
+	for (const room of ui.tree.rooms) {
+		for (const sock of room.sockets) {
+			ids.add(sock.id);
+		}
+	}
+	for (const id of Array.from(ui.notes.keys())) {
+		if (!ids.has(id)) {
+			ui.notes.delete(id);
+		}
+	}
+	for (const id of Array.from(ui.flash)) {
+		if (!ids.has(id)) {
+			ui.flash.delete(id);
+		}
+	}
+}
+
 /* Fetch the rooms and show them. An answer older than the newest
  * request is dropped. */
 async function loadTree() {
@@ -168,6 +189,7 @@ async function loadTree() {
 		ui.loadFailed = false;
 	}
 	ui.tree = res.data;
+	dropGoneSockets();
 	render();
 }
 
@@ -268,3 +290,16 @@ async function switchSocket(id, wanted) {
 }
 
 document.addEventListener("DOMContentLoaded", loadTree);
+
+/*
+ * A page that stays open on one phone shows the rooms as they were when
+ * it was loaded. Load them again when the page is shown again, for
+ * example after switching back to the browser. There is no timer:
+ * render() reads ui.pending and ui.notes, so the rows in flight stay
+ * disabled and the messages under the rows stay.
+ */
+document.addEventListener("visibilitychange", () => {
+	if (document.visibilityState === "visible") {
+		loadTree();
+	}
+});
