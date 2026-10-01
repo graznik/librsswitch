@@ -20,7 +20,6 @@ from __future__ import annotations
 import difflib
 import hashlib
 import ipaddress
-import json
 import os
 import re
 import sys
@@ -28,6 +27,8 @@ import unicodedata
 from collections.abc import Mapping
 
 from werkzeug.security import check_password_hash
+
+from .jsonutil import strict_loads
 
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
@@ -50,10 +51,6 @@ DEFAULTS = {
 class ConfigError(Exception):
     """The configuration cannot be used. The message is one line for the
     operator and starts with "config: "."""
-
-
-def _reject_constant(name):
-    raise ValueError("invalid JSON constant %s" % name)
 
 
 def load_config(path=None) -> dict:
@@ -81,9 +78,8 @@ def load_config(path=None) -> dict:
     except OSError as e:
         raise ConfigError("config: cannot read %s: %s" % (path, e.strerror))
     try:
-        mapping = json.loads(raw.decode("utf-8"),
-                             parse_constant=_reject_constant)
-    except (ValueError, RecursionError) as e:
+        mapping = strict_loads(raw)
+    except ValueError as e:
         raise ConfigError("config: %s: not valid JSON: %s" % (path, e))
     if not isinstance(mapping, dict):
         raise ConfigError("config: %s: must be a JSON object" % path)

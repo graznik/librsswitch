@@ -26,6 +26,7 @@ from datetime import datetime
 
 from filelock import FileLock, Timeout
 
+from .jsonutil import strict_loads
 from .model import DocumentError, check_document, empty_document
 
 log = logging.getLogger(__name__)
@@ -59,10 +60,6 @@ class StoreError(Exception):
     The message may name the path. It is meant for the server log and
     must never be sent to a client.
     """
-
-
-def _reject_constant(name):
-    raise ValueError("invalid JSON constant %s" % name)
 
 
 class Store:
@@ -183,9 +180,8 @@ class Store:
         except OSError as e:
             raise self._fail("cannot be read: %s" % e)
         try:
-            data = json.loads(raw.decode("utf-8"),
-                              parse_constant=_reject_constant)
-        except (ValueError, RecursionError) as e:
+            data = strict_loads(raw)
+        except ValueError as e:
             raise self._fail("is not UTF-8 JSON: %s" % e)
         try:
             check_document(data)

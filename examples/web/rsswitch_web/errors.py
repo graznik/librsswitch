@@ -21,13 +21,12 @@ free text and may change, like the text of an rsswitchd ERR reply.
 
 from __future__ import annotations
 
-import json
-
 from flask import jsonify, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
 from .daemon import (DaemonError, DaemonProtocolError, DaemonReplyError,
                      DaemonTimeout, DaemonUnreachable)
+from .jsonutil import strict_loads
 from .store import StoreError
 
 # Request bodies are small JSON objects. Werkzeug answers 413 for more.
@@ -183,10 +182,6 @@ def content_type_gate():
                            "Content-Type must be application/json")
 
 
-def _reject_constant(name):
-    raise ValueError("invalid JSON constant %s" % name)
-
-
 def json_body(required=True) -> dict:
     """Return the request body as a dict.
 
@@ -201,9 +196,8 @@ def json_body(required=True) -> dict:
             raise ApiError(400, "bad_json", "request body is empty")
         return {}
     try:
-        body = json.loads(raw.decode("utf-8"),
-                          parse_constant=_reject_constant)
-    except (ValueError, RecursionError):
+        body = strict_loads(raw)
+    except ValueError:
         raise ApiError(400, "bad_json", "request body is not valid JSON")
     if not isinstance(body, dict):
         raise ApiError(400, "bad_json", "request body must be a JSON object")
