@@ -45,7 +45,7 @@ def error_of(resp, status, code):
 def test_unknown_route_is_json_404(probe_app):
     resp = probe_app.test_client().get("/api/nothing-here")
     error_of(resp, 404, "not_found")
-    resp = probe_app.test_client().get("/")
+    resp = probe_app.test_client().get("/nothing-here")
     error_of(resp, 404, "not_found")
 
 

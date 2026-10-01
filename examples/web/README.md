@@ -169,6 +169,35 @@ refused. Every diagnostic is one line on stderr that starts with
 `rsswitch-web: `.
 
 
+## The page
+
+Open `http://ADDRESS:PORT/` on a phone in the same network, with the
+listen_address and listen_port of the configuration. The page shows
+one card per room and one row per socket, in the order of the API.
+Each row has an On and an Off button, at least 48 px tall, and works
+in light and in dark mode, following the setting of the phone.
+
+Under the name of each socket is a label with the last command that
+was sent to it: "Never sent", or for example "Last sent: On · 07:12",
+with the date in front of the time when the command was not sent
+today. It is not the real state of the socket. The radio is one-way,
+so the app never learns whether a socket obeyed, and someone may
+also have pressed the button on the socket. The page says so in a
+line at its top and in a tooltip on every label.
+
+A tap sends the command at once. While it runs, the tapped button
+shows "Sending…" and only the two buttons of that row are disabled.
+On success the label changes and flashes. On failure a red message
+appears under the row and stays until the next tap on that row, for
+example "rsswitchd unreachable" or "rsswitchd timed out". The
+message of the daemon is shown as "rsswitchd: ", followed by its
+text.
+
+The page is plain HTML, CSS and JavaScript from the package, with no
+build step and nothing loaded from another host. It needs a browser
+from 2022 or later, such as Safari on iOS 15.4 and later.
+
+
 ## JSON API
 
 ### Conventions

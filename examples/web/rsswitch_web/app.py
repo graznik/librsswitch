@@ -28,6 +28,7 @@ from .auth import LoginLimiter, make_auth_hook
 from .config import resolve_config
 from .daemon import RsswitchdClient
 from .errors import MAX_BODY_BYTES, content_type_gate, register_error_handlers
+from .page import bp as page_bp
 from .store import Store
 from .switching import utc_now
 
@@ -76,4 +77,6 @@ def create_app(config=None) -> Flask:
         app.before_request(hook)
     app.before_request(content_type_gate)
     register_blueprints(app)
+    # The page comes after the hooks too, so it is behind the login.
+    app.register_blueprint(page_bp)
     return app

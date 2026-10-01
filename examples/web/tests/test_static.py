@@ -1,0 +1,186 @@
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+
+"""Static checks of the page and its assets.
+
+The project has no browser tests and no Node. These checks stand in for
+them: what the server sends, what the page loads, and the rules the
+script must keep, such as showing names as text only.
+"""
+
+from __future__ import annotations
+
+import base64
+import re
+from html.parser import HTMLParser
+from pathlib import Path
+
+import pytest
+from werkzeug.security import generate_password_hash
+
+import rsswitch_web
+from conftest import sample_doc
+
+STATIC = Path(rsswitch_web.__file__).parent / "static"
+
+# A quick hash, because the test that logs in pays for it.
+HASH = generate_password_hash("secret", "pbkdf2:sha256:1000")
+
+
+def basic(user, password):
+    raw = ("%s:%s" % (user, password)).encode("utf-8")
+    return {"Authorization": "Basic " + base64.b64encode(raw)
+            .decode("ascii")}
+
+
+def source(name):
+    return (STATIC / name).read_text(encoding="utf-8")
+
+
+class Elements(HTMLParser):
+    """Collect the start tags of a page as (tag, attributes) pairs."""
+
+    def __init__(self):
+        super().__init__()
+        self.tags = []
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
+
+
+def parse(name="index.html"):
+    parser = Elements()
+    parser.feed(source(name))
+    return parser.tags
+
+
+@pytest.fixture
+def client(make_app):
+    return make_app(sample_doc()).test_client()
+
+
+def test_index_is_served_as_html(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.mimetype == "text/html"
+    body = resp.get_data(as_text=True)
+    assert '<html lang="en">' in body
+    tags = parse()
+    metas = [a for t, a in tags if t == "meta"]
+    assert {"name": "viewport",
+            "content": "width=device-width, initial-scale=1"} in metas
+    scripts = [a for t, a in tags if t == "script"]
+    assert scripts == [{"src": "/static/app.js", "defer": None}]
+    links = [a for t, a in tags if t == "link"]
+    assert links == [{"rel": "stylesheet", "href": "/static/app.css"}]
+
+
+def test_assets_have_their_types(client):
+    js = client.get("/static/app.js")
+    assert js.status_code == 200
+    assert js.mimetype in ("text/javascript", "application/javascript")
+    css = client.get("/static/app.css")
+    assert css.status_code == 200
+    assert css.mimetype == "text/css"
+
+
+def test_assets_are_local_only():
+    for tag, attrs in parse():
+        for name in ("src", "href", "action", "poster", "srcset"):
+            if name in attrs:
+                assert attrs[name].startswith("/static/"), (tag, attrs)
+    for name in ("index.html", "app.js", "app.css"):
+        text = source(name)
+        assert "http:" not in text, name
+        assert "https:" not in text, name
+        # A URL that starts with // keeps the scheme of the page and
+        # names another host.
+        assert not re.search(r"""["'(=]\s*//""", text), name
+    css = source("app.css")
+    assert "@import" not in css
+    assert "url(" not in css
+
+
+# What parses a string as markup or as code.
+SINKS = ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write",
+         "createContextualFragment", "srcdoc", "eval(", "new Function",
+         "setTimeout(\"", "setTimeout('", "setInterval(\"",
+         "setInterval('")
+
+
+def test_no_html_parsing_sinks_in_js():
+    js = source("app.js")
+    for sink in SINKS:
+        assert sink not in js, sink
+
+
+def test_no_inline_code_in_html():
+    for tag, attrs in parse():
+        assert tag != "style", "style element"
+        if tag == "script":
+            assert "src" in attrs, "script element without src"
+        assert "style" not in attrs, (tag, attrs)
+        for name in attrs:
+            assert not name.startswith("on"), (tag, name)
+
+
+def test_ids_used_by_js_exist_in_html():
+    js = source("app.js")
+    used = re.findall(r"""getElementById\(\s*"([^"]+)"\s*\)""", js)
+    assert used
+    # Every call names its id as a literal, so this check sees them all.
+    assert len(used) == js.count("getElementById(")
+    ids = {a["id"] for _, a in parse() if "id" in a}
+    assert set(used) <= ids
+
+
+def test_one_request_helper():
+    js = source("app.js")
+    assert js.count("fetch(") == 1
+    assert "application/json" in js
+
+
+def test_switch_feedback_texts():
+    js = source("app.js")
+    for text in ("rsswitchd unreachable", "rsswitchd timed out",
+                 "rsswitchd: ", "web app unreachable", "Never sent",
+                 "Last sent: "):
+        assert text in js, text
+
+
+def test_page_says_last_sent_is_not_real_state():
+    hint = [a for _, a in parse() if a.get("id") == "hint"]
+    assert len(hint) == 1
+    assert "not the real state" in source("index.html")
+
+
+def test_css_has_dark_scheme_and_large_targets():
+    css = source("app.css")
+    assert "prefers-color-scheme: dark" in css
+    assert "min-height: 48px" in css
+
+
+def test_page_and_assets_need_login_when_a_password_is_set(make_app):
+    client = make_app(sample_doc(), password_hash=HASH).test_client()
+    for path in ("/", "/static/app.js", "/static/app.css"):
+        assert client.get(path).status_code == 401, path
+        resp = client.get(path, headers=basic("admin", "secret"))
+        assert resp.status_code == 200, path
+
+
+def test_missing_asset_is_json_404(client):
+    resp = client.get("/static/missing.js")
+    assert resp.status_code == 404
+    assert resp.get_json()["error"]["code"] == "not_found"

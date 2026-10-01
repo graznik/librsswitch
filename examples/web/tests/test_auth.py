@@ -205,7 +205,8 @@ def test_static_path_is_401(locked):
     is_401(client.get("/static/app.js"))
     is_401(client.get("/static/"))
     is_401(client.get("/"))
-    resp = client.get("/static/app.js", headers=basic("admin", "secret"))
+    resp = client.get("/static/missing.js",
+                      headers=basic("admin", "secret"))
     assert resp.status_code == 404
 
 

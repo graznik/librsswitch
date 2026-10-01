@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  index.html - the page of rsswitch-web: rooms, sockets and their
+  On and Off buttons. The script (app.js) fills in #rooms.
+
+  This library is free software; you can redistribute it and/or
+  modify it under the terms of the GNU Lesser General Public
+  License as published by the Free Software Foundation; either
+  version 2.1 of the License, or (at your option) any later version.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>rsswitch</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header>
+<h1>Rooms</h1>
+</header>
+<p id="hint" class="hint">Last sent shows the last command sent, not the real state of a socket: the 433 MHz radio is one-way.</p>
+<div id="banner" class="banner" role="status" aria-live="polite" hidden></div>
+<main id="rooms"></main>
+<noscript><p>This page needs JavaScript to show and switch the sockets.</p></noscript>
+</body>
+</html>
