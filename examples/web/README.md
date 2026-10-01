@@ -119,6 +119,29 @@ and with 2 when --method is not a method that the app accepts. It
 prints nothing on stdout in these cases.
 
 
+### Failed logins
+
+After 5 failed logins within 60 seconds from one address, every
+request from that address is answered with 429, the code
+`too_many_attempts` and a `Retry-After` header, for 60 seconds. The
+app checks no password for it in that time, not even the right one.
+Then the address can log in again.
+
+Only requests that carry a username and a password and fail count.
+A request without credentials, which is what a browser sends before
+it shows its login prompt, does not count. A successful login clears
+the count of its address.
+
+The counts are kept in memory only, at most 256 addresses, and a
+restart clears them. The address is the one of the TCP connection;
+headers such as `X-Forwarded-For` are ignored, because a client
+could set them to anything. So serve the app directly, and not
+behind a proxy that hides the addresses of the clients: all clients
+would share one count. Devices behind one NAT address share one
+count as well. A browser that holds a wrong saved password locks
+itself out the same way; wait a minute and enter the right one.
+
+
 ## Running
 
 ```bash
@@ -339,6 +362,7 @@ change, like the text of an rsswitchd reply.
 | `room_not_empty` | 409 | the room still holds sockets |
 | `name_conflict` | 409 | the name is taken; field is name |
 | `order_mismatch` | 409 | the list of ids is not the current set of ids |
+| `too_many_attempts` | 429 | too many failed logins from this address; see `Retry-After` |
 | `payload_too_large` | 413 | body above 16 KiB |
 | `unsupported_media_type` | 415 | `Content-Type` is not `application/json` |
 | `validation` | 422 | a field is missing, unknown or has a bad value; field names it |

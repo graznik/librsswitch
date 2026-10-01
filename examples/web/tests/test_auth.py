@@ -27,7 +27,8 @@ from werkzeug.security import generate_password_hash
 
 from conftest import sample_doc
 from rsswitch_web import auth
-from rsswitch_web.auth import CACHE_SIZE, REALM, make_auth_hook
+from rsswitch_web.auth import (CACHE_SIZE, REALM, LoginLimiter,
+                               make_auth_hook)
 
 # A quick hash, because every test that logs in pays for it.
 HASH = generate_password_hash("secret", "pbkdf2:sha256:1000")
@@ -370,6 +371,9 @@ class Probe:
 
 
 def test_only_one_hash_check_runs_at_a_time(locked, monkeypatch):
+    # Six failures from one address would lock it out.
+    locked.before_request_funcs[None][0].limiter = LoginLimiter(
+        max_failures=1000)
     probe = Probe(auth.check_password_hash)
     monkeypatch.setattr(auth, "check_password_hash", probe)
     statuses = []
@@ -452,3 +456,174 @@ def test_a_hash_that_cannot_be_checked_is_401_not_500(locked, monkeypatch,
     client = locked.test_client()
     is_401(client.get("/api/rooms", headers=basic("admin", "secret")))
     assert "cannot be checked" in caplog.text
+
+
+class FakeClock:
+    """A clock that only moves when a test says so."""
+
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+def addr_env(addr):
+    return {"REMOTE_ADDR": addr}
+
+
+def fail(client, n, addr="10.0.0.1", headers=None):
+    """Send n requests with a wrong password and return the statuses."""
+    return [client.get("/api/rooms",
+                       headers=headers or basic("admin", "wrong"),
+                       environ_base=addr_env(addr)).status_code
+            for _ in range(n)]
+
+
+def good(client, addr="10.0.0.1", headers=None):
+    return client.get("/api/rooms",
+                      headers=headers or basic("admin", "secret"),
+                      environ_base=addr_env(addr))
+
+
+def is_429(resp, wait="60"):
+    assert resp.status_code == 429
+    assert resp.mimetype == "application/json"
+    assert resp.headers["Retry-After"] == wait
+    assert "WWW-Authenticate" not in resp.headers
+    error = resp.get_json()["error"]
+    assert error["code"] == "too_many_attempts"
+    assert error["message"]
+
+
+def test_fifth_wrong_password_locks_out_with_429(locked, counter):
+    client = locked.test_client()
+    assert fail(client, 5) == [401] * 5
+    is_429(good(client))
+    assert counter.calls == 5
+
+
+def test_lockout_ends_after_the_cooldown(locked):
+    hook = locked.before_request_funcs[None][0]
+    clock = FakeClock()
+    hook.limiter.clock = clock
+    client = locked.test_client()
+    fail(client, 5)
+    is_429(good(client))
+    clock.advance(59)
+    is_429(good(client), wait="1")
+    clock.advance(1)
+    assert good(client).status_code == 200
+
+
+def test_requests_without_credentials_never_lock(locked):
+    hook = locked.before_request_funcs[None][0]
+    client = locked.test_client()
+    for _ in range(20):
+        is_401(client.get("/api/rooms", environ_base=addr_env("10.0.0.1")))
+    assert hook.limiter.retry_after("10.0.0.1") == 0
+    assert len(hook.limiter) == 0
+    assert good(client).status_code == 200
+
+
+def test_malformed_credentials_do_not_count(locked):
+    hook = locked.before_request_funcs[None][0]
+    client = locked.test_client()
+    for header in ("Basic !!!", "Bearer x", "Digest username=admin"):
+        for _ in range(6):
+            is_401(client.get("/api/rooms", headers={
+                "Authorization": header}))
+    assert len(hook.limiter) == 0
+
+
+def test_lockout_is_per_peer_address(locked):
+    client = locked.test_client()
+    fail(client, 5, "10.0.0.1")
+    is_429(good(client, "10.0.0.1"))
+    assert good(client, "10.0.0.2").status_code == 200
+
+
+def test_forwarded_for_is_ignored(locked):
+    client = locked.test_client()
+    fail(client, 5, "10.0.0.1")
+    headers = dict(basic("admin", "secret"))
+    headers["X-Forwarded-For"] = "10.0.0.9"
+    is_429(good(client, "10.0.0.1", headers))
+    headers["X-Forwarded-For"] = "10.0.0.1"
+    assert good(client, "10.0.0.2", headers).status_code == 200
+    # A spoofed header does not move the failures to another address.
+    wrong = dict(basic("admin", "wrong"))
+    wrong["X-Forwarded-For"] = "10.0.0.7"
+    assert fail(client, 6, "10.0.0.3", wrong) == [401] * 5 + [429]
+    assert good(client, "10.0.0.7").status_code == 200
+
+
+def test_success_resets_the_failures(locked):
+    client = locked.test_client()
+    assert fail(client, 4) == [401] * 4
+    assert good(client).status_code == 200
+    assert fail(client, 4) == [401] * 4
+
+
+def test_cached_success_resets_the_failures(locked):
+    client = locked.test_client()
+    assert good(client, "10.0.0.2").status_code == 200
+    assert fail(client, 4) == [401] * 4
+    # The header is in the cache now, and the hash is not checked.
+    assert good(client).status_code == 200
+    assert fail(client, 4) == [401] * 4
+
+
+def test_locked_address_gets_429_on_static_and_unknown_paths(locked):
+    client = locked.test_client()
+    fail(client, 5)
+    for path in ("/", "/static/app.js", "/no/such/url", "/api/rooms"):
+        is_429(client.get(path, environ_base=addr_env("10.0.0.1")))
+        is_429(client.get(path, headers=basic("admin", "secret"),
+                          environ_base=addr_env("10.0.0.1")))
+
+
+def test_locked_address_gets_429_even_without_credentials(locked, counter):
+    client = locked.test_client()
+    fail(client, 5)
+    is_429(client.get("/api/rooms", environ_base=addr_env("10.0.0.1")))
+    assert counter.calls == 5
+
+
+def test_a_hash_that_cannot_be_checked_counts_as_a_failure(locked,
+                                                           monkeypatch):
+    def broken(*args, **kwargs):
+        raise ValueError("memory limit exceeded")
+
+    monkeypatch.setattr(auth, "check_password_hash", broken)
+    client = locked.test_client()
+    assert fail(client, 6, headers=basic("admin", "secret")) == (
+        [401] * 5 + [429])
+
+
+def test_lockout_logs_no_credentials(locked, caplog):
+    client = locked.test_client()
+    password = "s3cr3t-pa55w0rd-marker"
+    header = basic("admin", password)["Authorization"]
+    with caplog.at_level(logging.DEBUG):
+        fail(client, 6, headers={"Authorization": header})
+    text = caplog.text
+    assert "10.0.0.1" in text
+    assert "locked out" in text
+    assert password not in text
+    assert header not in text
+    assert b64("admin:" + password) not in text
+    assert "admin" not in text
+    assert HASH not in text
+
+
+def test_the_app_has_a_limiter(locked):
+    hook = locked.before_request_funcs[None][0]
+    assert isinstance(hook.limiter, LoginLimiter)
+    assert hook.limiter.max_failures == 5
+    assert hook.limiter.window == 60.0
+    assert hook.limiter.lockout == 60.0
+    assert hook.limiter.max_tracked == 256
