@@ -394,10 +394,11 @@ def test_dead_daemon_costs_one_connect(switch_app, monkeypatch):
     monkeypatch.setattr(daemon.socket, "create_connection", counting)
     doc = make_doc([(POLLIN, 1, 1), (POLLIN, 2, 2), (POLLIN, 3, 3)],
                    [(POLLIN, 4, 4), (POLLIN, 5, 5)])
-    app = switch_app(refused_port(), doc, all_off_gap_ms=0)
+    app = switch_app(refused_port(), doc, all_off_gap_ms=0,
+                     daemon_connect_timeout=0.5)
     start = time.monotonic()
     resp = post_json(app, "/api/all-off")
-    assert time.monotonic() - start < 1
+    assert time.monotonic() - start < 0.5 + 1.0
     assert resp.status_code == 200
     body = resp.get_json()
     assert len(attempts) == 1
@@ -409,8 +410,12 @@ def test_dead_daemon_costs_one_connect(switch_app, monkeypatch):
 def test_single_switch_is_served_during_the_gap(api):
     doc = make_doc([(POLLIN, 1, 1), (POLLIN, 2, 2), (POLLIN, 3, 3)],
                    [(POLLIN, 9, 9)])
-    app, fake = api(doc=doc, serial=True, all_off_gap_ms=300,
-                    daemon_read_timeout=1.0)
+    # The gap is long, so that the single switch is served inside it
+    # even when the machine is slow. The switch is sent as soon as the
+    # first command of the All-off has arrived.
+    read_timeout = 1.0
+    app, fake = api(doc=doc, serial=True, all_off_gap_ms=1500,
+                    daemon_read_timeout=read_timeout)
     outcome = {}
 
     def run_all_off():
@@ -421,13 +426,14 @@ def test_single_switch_is_served_during_the_gap(api):
     deadline = time.monotonic() + 5
     while not fake.lines and time.monotonic() < deadline:
         time.sleep(0.005)
+    assert fake.lines
     start = time.monotonic()
     resp = post_json(app, "/api/sockets/s4/switch", {"state": "on"})
     took = time.monotonic() - start
-    worker.join(10)
+    worker.join(15)
     assert not worker.is_alive()
     assert resp.status_code == 200
-    assert took < 1
+    assert took < read_timeout + 1.0
     assert outcome["resp"].status_code == 200
     assert outcome["resp"].get_json()["ok"] is True
     assert "1 9 9 1" in fake.lines

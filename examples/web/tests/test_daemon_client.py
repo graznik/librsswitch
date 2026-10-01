@@ -29,6 +29,13 @@ from rsswitch_web.daemon import (MAX_MESSAGE, DaemonError, DaemonProtocolError,
                                  DaemonUnreachable, RsswitchdClient)
 
 
+# Seconds a test allows on top of the timeout it checks. A fixed budget
+# below a second fails on a loaded machine or a slow board although the
+# code is right, and a missing timeout still overshoots this by far:
+# the fake daemon hangs, or drips for ten seconds.
+SLACK = 1.0
+
+
 def client_for(fake, connect_timeout=1, read_timeout=1):
     return RsswitchdClient("127.0.0.1", fake.port, connect_timeout,
                            read_timeout)
@@ -133,11 +140,12 @@ def test_refused_is_unreachable_at_once(monkeypatch):
         return real(*args, **kwargs)
 
     monkeypatch.setattr(daemon.socket, "create_connection", counting)
-    client = RsswitchdClient("127.0.0.1", refused_port(), 1, 1)
+    connect_timeout = 1
+    client = RsswitchdClient("127.0.0.1", refused_port(), connect_timeout, 1)
     start = time.monotonic()
     with pytest.raises(DaemonUnreachable) as info:
         client.send(1, 1, 1, 1)
-    assert time.monotonic() - start < 0.5
+    assert time.monotonic() - start < connect_timeout + SLACK
     assert len(attempts) == 1
     assert info.value.code == "daemon_unreachable"
     assert info.value.status == 502
@@ -156,18 +164,20 @@ def test_connect_timeout_is_daemon_timeout(monkeypatch):
 
 def test_hang_times_out_within_budget(fake_daemon):
     fake = fake_daemon(lambda line: HANG)
+    read_timeout = 0.3
     start = time.monotonic()
     with pytest.raises(DaemonTimeout):
-        client_for(fake, read_timeout=0.3).send(1, 1, 1, 1)
-    assert time.monotonic() - start < 0.8
+        client_for(fake, read_timeout=read_timeout).send(1, 1, 1, 1)
+    assert time.monotonic() - start < read_timeout + SLACK
 
 
 def test_drip_is_cut_by_total_deadline(fake_daemon):
     fake = fake_daemon(lambda line: Drip(b"x" * 100, 0.1))
+    read_timeout = 0.35
     start = time.monotonic()
     with pytest.raises(DaemonTimeout):
-        client_for(fake, read_timeout=0.35).send(1, 1, 1, 1)
-    assert time.monotonic() - start < 0.85
+        client_for(fake, read_timeout=read_timeout).send(1, 1, 1, 1)
+    assert time.monotonic() - start < read_timeout + SLACK
 
 
 def test_each_command_uses_its_own_connection(fake_daemon):

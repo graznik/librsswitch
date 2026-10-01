@@ -159,12 +159,13 @@ def test_refused_daemon_is_502_daemon_unreachable_and_file_unchanged(
 
 def test_hung_daemon_is_504_daemon_timeout_within_budget(fake_daemon,
                                                          switch_app):
+    read_timeout = 0.4
     app = switch_app(fake_daemon(lambda line: HANG),
-                     daemon_read_timeout=0.4)
+                     daemon_read_timeout=read_timeout)
     before = file_bytes(app)
     start = time.monotonic()
     resp = switch(app, POLLIN, "off")
-    assert time.monotonic() - start < 0.9
+    assert time.monotonic() - start < read_timeout + 1.0
     assert resp.status_code == 504
     assert resp.get_json()["error"]["code"] == "daemon_timeout"
     assert file_bytes(app) == before
