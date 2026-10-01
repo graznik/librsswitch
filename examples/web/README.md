@@ -233,6 +233,14 @@ can be deleted: for a room that still holds sockets, the server's
 reason appears on its card until the next action on that card, and
 the room stays.
 
+In edit mode each socket row has a pencil button and a bin button.
+The pencil opens the form of the socket with its current values. Only
+the fields that changed are sent, and a form with no change just
+closes. The room field moves the socket to the end of another room.
+A change of type, group or number clears the "Last sent" label of the
+socket, because what was sent before was meant for another address;
+the form says so. The bin deletes the socket after asking, naming it.
+
 The page is plain HTML, CSS and JavaScript from the package, with no
 build step and nothing loaded from another host. It needs a browser
 from 2022 or later, such as Safari on iOS 15.4 and later.

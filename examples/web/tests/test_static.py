@@ -335,3 +335,14 @@ def test_room_delete_asks_first_and_explains_a_refusal():
     # The question comes before the request.
     body = js[js.index("async function deleteRoom"):]
     assert body.index("confirm(") < body.index('"DELETE"')
+
+
+def test_sockets_are_edited_moved_and_deleted_from_the_page():
+    js = source("app.js")
+    for text in ("PATCH", "room_id", 'Delete socket "', "/api/sockets/",
+                 "Changing type, group or number clears last sent.",
+                 "This socket was deleted on another device."):
+        assert text in js, text
+    # The owner is asked before the request goes out.
+    body = js[js.index("async function deleteSocket"):]
+    assert body.index("confirm(") < body.index('"DELETE"')

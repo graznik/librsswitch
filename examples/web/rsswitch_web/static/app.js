@@ -50,6 +50,7 @@ const FIELD_ERRORS = {
  *            management button is disabled meanwhile
  *   roomNotes   room id -> text of the refusal shown on that room card
  *   editedRoom  id of the room the room form renames, or null to add one
+ *   editedSocket  the socket the socket form edits, or null to add one
  */
 const HOUSEHOLD = "*";
 
@@ -67,6 +68,7 @@ const ui = {
 	busy: false,
 	roomNotes: new Map(),
 	editedRoom: null,
+	editedSocket: null,
 };
 
 /* Build an element. Text goes in as text, never as markup. */
@@ -259,6 +261,17 @@ function renderSocket(sock) {
 			el("span", {class: "socket-name", text: sock.name}), last));
 	if (!ui.edit) {
 		row.append(el("div", {class: "switch"}, ...buttons));
+	} else {
+		const edit = el("button", {
+			type: "button", disabled: ui.busy, text: "\u270E",
+			"aria-label": "Edit " + sock.name});
+		edit.addEventListener("click", () => openSocketDialog(
+			sock.room_id, sock));
+		const remove = el("button", {
+			type: "button", disabled: ui.busy, text: "\u{1F5D1}\uFE0E",
+			"aria-label": "Delete " + sock.name});
+		remove.addEventListener("click", () => deleteSocket(sock));
+		row.append(el("div", {class: "edit-controls"}, edit, remove));
 	}
 	if (note) {
 		row.append(el("p", {
@@ -624,25 +637,51 @@ function applyLimits() {
 	number.max = limits.sockets - 1;
 }
 
-/* Open the form that adds a socket to the room roomId. */
-function openSocketDialog(roomId) {
+/*
+ * Open the form that adds a socket to the room roomId, or, with sock,
+ * the form that edits that socket. The room field of an edit moves the
+ * socket, so it starts on the room the socket is in.
+ */
+function openSocketDialog(roomId, sock) {
 	const dialog = document.getElementById("socket-dialog");
 	const types = Object.keys(ui.meta);
+	if (sock && !types.includes(sock.type)) {
+		types.push(sock.type);
+	}
 	ui.roomNotes.delete(roomId);
+	if (sock) {
+		ui.notes.delete(sock.id);
+	}
 	render();
 	clearErrors(dialog);
+	ui.editedSocket = sock || null;
 	document.getElementById("socket-dialog-title").textContent
-		= "Add socket";
-	document.getElementById("socket-name").value = "";
+		= sock ? "Edit socket" : "Add socket";
+	document.getElementById("socket-name").value = sock ? sock.name : "";
 	fillSelect(document.getElementById("socket-type"),
 		types.map((type) => [type, TYPE_LABELS[type] || type]),
-		types[0]);
-	document.getElementById("socket-group").value = "";
-	document.getElementById("socket-number").value = "";
+		sock ? sock.type : types[0]);
+	document.getElementById("socket-group").value = sock ? sock.group : "";
+	document.getElementById("socket-number").value
+		= sock ? sock.number : "";
 	fillSelect(document.getElementById("socket-room"),
 		ui.tree.rooms.map((room) => [room.id, room.name]), roomId);
+	setMessage(document.getElementById("socket-address-note"), sock
+		? "Changing type, group or number clears last sent." : "");
 	applyLimits();
 	dialog.showModal();
+}
+
+/* The fields of the socket form that differ from the socket being
+ * edited, as the body of a PATCH. */
+function changedFields(sock, fields) {
+	const body = {};
+	for (const key of Object.keys(fields)) {
+		if (fields[key] !== sock[key]) {
+			body[key] = fields[key];
+		}
+	}
+	return body;
 }
 
 async function saveSocket(event) {
@@ -666,26 +705,75 @@ async function saveSocket(event) {
 		return;
 	}
 	const roomId = document.getElementById("socket-room").value;
-	const body = {
+	let body = {
 		name: document.getElementById("socket-name").value,
 		type: document.getElementById("socket-type").value,
 		group: group,
 		number: number,
 	};
+	const sock = ui.editedSocket;
+	let method = "POST";
+	let path = "/api/rooms/" + encodeURIComponent(roomId) + "/sockets";
+	if (sock) {
+		/* Only what changed goes to the server. A new room moves the
+		 * socket to the end of that room. */
+		method = "PATCH";
+		path = "/api/sockets/" + encodeURIComponent(sock.id);
+		body = changedFields(sock, Object.assign({room_id: roomId}, body));
+		if (Object.keys(body).length === 0) {
+			dialog.close();
+			return;
+		}
+	}
 	const res = await manage(async () => {
-		const answer = await api("POST", "/api/rooms/"
-			+ encodeURIComponent(roomId) + "/sockets", body);
-		if (answer.ok) {
+		const answer = await api(method, path, body);
+		/* A 404 says the socket is gone: show the rooms as they are. */
+		if (answer.ok || (sock && answer.status === 404)) {
 			await loadTree();
 		}
 		return answer;
 	});
 	if (!res.ok) {
-		saveFailed(dialog, res, fieldError);
+		if (sock && res.status === 404) {
+			dialogError(dialog, "This socket was deleted on another "
+				+ "device.");
+		} else {
+			saveFailed(dialog, res, fieldError);
+		}
 		return;
 	}
 	dialog.close();
 	showWarnings(res.data && res.data.warnings);
+}
+
+/*
+ * Delete a socket after the owner confirmed it by name. A refusal
+ * becomes the note of its row.
+ */
+async function deleteSocket(sock) {
+	if (ui.busy) {
+		return;
+	}
+	ui.notes.delete(sock.id);
+	if (!window.confirm('Delete socket "' + sock.name + '"?')) {
+		render();
+		return;
+	}
+	const res = await manage(async () => {
+		const answer = await api("DELETE", "/api/sockets/"
+			+ encodeURIComponent(sock.id));
+		if (answer.ok || answer.status === 404) {
+			await loadTree();
+		}
+		return answer;
+	});
+	if (res.status === 404) {
+		showBanner("This socket was deleted on another device.", "info");
+	} else if (!res.ok) {
+		ui.notes.set(sock.id, {
+			kind: "error", text: errorText(res.error, res.retryAfter)});
+		render();
+	}
 }
 
 /* Open the form that adds a room, or renames room. */
