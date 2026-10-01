@@ -32,6 +32,7 @@ from werkzeug.security import generate_password_hash
 
 import rsswitch_web
 from conftest import sample_doc
+from rsswitch_web.app import SECURITY_HEADERS
 
 STATIC = Path(rsswitch_web.__file__).parent / "static"
 
@@ -184,3 +185,57 @@ def test_missing_asset_is_json_404(client):
     resp = client.get("/static/missing.js")
     assert resp.status_code == 404
     assert resp.get_json()["error"]["code"] == "not_found"
+
+
+def has_security_headers(resp):
+    for name, value in SECURITY_HEADERS.items():
+        assert resp.headers.get(name) == value, name
+
+
+def test_security_headers_values():
+    assert SECURITY_HEADERS == {
+        "Content-Security-Policy": (
+            "default-src 'self'; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors 'none'; object-src 'none'"),
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "X-Frame-Options": "DENY",
+    }
+
+
+@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/app.css",
+                                  "/api/rooms", "/api/nothing-here",
+                                  "/static/missing.js"])
+def test_every_response_has_the_security_headers(client, path):
+    has_security_headers(client.get(path))
+
+
+def test_errors_have_the_security_headers(make_app):
+    locked = make_app(sample_doc(), password_hash=HASH).test_client()
+    resp = locked.get("/")
+    assert resp.status_code == 401
+    has_security_headers(resp)
+    resp = make_app(sample_doc()).test_client().post(
+        "/api/rooms", data="{}", content_type="text/plain")
+    assert resp.status_code == 415
+    has_security_headers(resp)
+
+
+def test_api_answers_are_never_cached(client):
+    ok = client.get("/api/rooms")
+    assert ok.status_code == 200
+    assert ok.headers["Cache-Control"] == "no-store"
+    missing = client.get("/api/nothing-here")
+    assert missing.status_code == 404
+    assert missing.headers["Cache-Control"] == "no-store"
+    bad = client.post("/api/rooms", data="{}", content_type="text/plain")
+    assert bad.headers["Cache-Control"] == "no-store"
+
+
+def test_assets_are_revalidated_and_answer_304(client):
+    first = client.get("/static/app.js")
+    assert first.headers["Cache-Control"] == "no-cache"
+    etag = first.headers["ETag"]
+    again = client.get("/static/app.js", headers={"If-None-Match": etag})
+    assert again.status_code == 304
+    has_security_headers(again)

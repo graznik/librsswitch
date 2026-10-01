@@ -448,6 +448,13 @@ reach it.
 Clients must display names and daemon messages as text, never as
 HTML.
 
+The page and the API send a Content-Security-Policy that allows only
+the scripts, styles and requests of the app itself and forbids
+framing the page in another site, together with nosniff, no-referrer
+and X-Frame-Options DENY. Every API answer has Cache-Control
+no-store, so a cache never keeps the rooms or the result of a
+switch.
+
 The app never needs root or GPIO access. Run it as an unprivileged
 user; it only needs to read its code, to write its data file and
 to connect to rsswitchd, which owns the GPIO lines.

@@ -21,7 +21,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from flask import Flask
+from flask import Flask, request
 
 from .api import register_blueprints
 from .auth import LoginLimiter, make_auth_hook
@@ -31,6 +31,33 @@ from .errors import MAX_BODY_BYTES, content_type_gate, register_error_handlers
 from .page import bp as page_bp
 from .store import Store
 from .switching import utc_now
+
+
+# Sent with every response. The policy lets the page load its own script
+# and style sheet and talk to its own server, and nothing else: no other
+# host, no inline code, no framing by another site.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; base-uri 'none'; form-action 'self'; "
+        "frame-ancestors 'none'; object-src 'none'"),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+}
+
+
+def set_security_headers(response):
+    """Add SECURITY_HEADERS to response, and make API answers no-store.
+
+    A header that the response has already is left as it is. Flask runs
+    this for the answers of the error handlers too, so a 401, 404, 415
+    or 429 carries the headers as well.
+    """
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @dataclass
@@ -79,4 +106,5 @@ def create_app(config=None) -> Flask:
     register_blueprints(app)
     # The page comes after the hooks too, so it is behind the login.
     app.register_blueprint(page_bp)
+    app.after_request(set_security_headers)
     return app
