@@ -52,6 +52,53 @@ def test_run_serves_api_from_config_file(tmp_path):
         child.stop()
 
 
+@pytest.mark.parametrize("command", ["run", "serve"])
+def test_open_app_beyond_this_host_warns(tmp_path, command):
+    child = Child("--config",
+                  write_config(tmp_path, listen_address="0.0.0.0"), command)
+    try:
+        child.wait_ready()
+        warnings = [line for line in child.lines if "warning" in line]
+        assert warnings == [
+            "rsswitch-web: warning: no password_hash is set and the app "
+            "listens on 0.0.0.0, so anybody who can reach it can switch "
+            "sockets"]
+        # It comes before the readiness line, like every diagnostic.
+        assert child.lines.index(warnings[0]) < child.lines.index(
+            LISTENING + "0.0.0.0:%d" % child.port)
+    finally:
+        child.stop()
+
+
+# A quick hash, because the app checks it at start-up.
+QUICK_HASH = generate_password_hash("s3cret", "pbkdf2:sha256:1000")
+
+
+def has_ipv6_loopback():
+    """Whether this host can bind ::1, which a host without IPv6 cannot."""
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+@pytest.mark.parametrize("overrides", [
+    {"listen_address": "0.0.0.0", "password_hash": QUICK_HASH},
+    {"listen_address": "127.0.0.1"},
+    pytest.param({"listen_address": "::1"}, marks=pytest.mark.skipif(
+        not has_ipv6_loopback(), reason="no IPv6 loopback on this host")),
+], ids=["password", "loopback", "loopback-ipv6"])
+def test_no_warning_with_a_password_or_on_loopback(tmp_path, overrides):
+    child = Child("--config", write_config(tmp_path, **overrides), "run")
+    try:
+        child.wait_ready()
+        assert not [line for line in child.lines if "warning" in line]
+    finally:
+        child.stop()
+
+
 def test_run_stops_on_sigint_with_status_0(tmp_path):
     child = Child("--config", write_config(tmp_path), "run")
     try:

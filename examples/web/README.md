@@ -727,7 +727,9 @@ never as HTML. Set textContent, not innerHTML.
 Without password_hash, anyone who can reach listen_address can
 switch every socket. The default of listen_address is 127.0.0.1, so
 that only this host can. Set a password before you let the app listen
-on an address that other hosts can reach.
+on an address that other hosts can reach: with no password_hash and
+such an address, the app prints a warning on stderr at start-up, and
+it is in the journal.
 
 Basic authentication sends the username and the password in
 cleartext with every request over plain HTTP. Use it only on a LAN

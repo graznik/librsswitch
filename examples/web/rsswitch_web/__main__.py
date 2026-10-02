@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import ipaddress
 import signal
 import socket
 import sys
@@ -110,6 +111,12 @@ def _prepare(args):
         _say("rsswitch-web: cannot listen on %s:%s: %s"
              % (cfg["listen_address"], cfg["listen_port"], e.strerror))
         return 1
+    if (cfg["password_hash"] is None
+            and not ipaddress.ip_address(cfg["listen_address"]).is_loopback):
+        # Said once at start-up, so that the journal tells the owner.
+        _say("rsswitch-web: warning: no password_hash is set and the app "
+             "listens on %s, so anybody who can reach it can switch "
+             "sockets" % cfg["listen_address"])
     return app, sock
 
 
