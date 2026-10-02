@@ -407,6 +407,15 @@ failed, 2 skipped". Each socket that failed gets the error under its
 row, and each socket that was skipped gets "skipped: " and the
 reason. The sockets that worked show their new label.
 
+The page does not wait for ever for an answer. For a switch it waits
+as long as the app can take for one command, which is the connect and
+the read timeout together, and for an All off as long as for one
+command and one pause for each socket, with 10 seconds more. It
+learns both from `GET /api/meta`, so a longer `daemon_read_timeout`
+needs no change in the page. When the time is over, the row says "no
+answer in time, it may have been sent": the command may still have
+reached rsswitchd, so look at the socket, not at the label.
+
 The page loads the rooms again whenever it is shown again, for
 example after switching back to the browser, so that changes made
 from another phone appear without a manual reload. A message under a
@@ -561,11 +570,16 @@ A socket:
 - `POST /api/all-off`:
   Switches off every socket of every room; see All-off.
 - `GET /api/meta`:
-  The limits of each socket type: `{"socket_types": {"rev_008345":
-  {"groups": 4, "sockets": 3}, ...}}`. For each type it gives the
-  number of groups and of sockets per group, so group runs from 0
-  to groups - 1 and number from 0 to sockets - 1. It is read-only,
-  and the page checks a form against it before sending it.
+  The limits of each socket type and the timing of a switch:
+  `{"socket_types": {"rev_008345": {"groups": 4, "sockets": 3}, ...},
+  "switch_timeout": 7, "all_off_gap_ms": 200}`. For each type it gives
+  the number of groups and of sockets per group, so group runs from 0
+  to groups - 1 and number from 0 to sockets - 1. switch_timeout is
+  the longest that one command can take before the app answers, in
+  seconds (daemon_connect_timeout plus daemon_read_timeout), and
+  all_off_gap_ms is the pause between two sends of an All-off. It is
+  read-only, and the page checks a form against the limits before
+  sending it and waits for a switch as long as the timing says.
 
 A reorder list that is not exactly the current set of ids, because
 another phone changed it in the meantime, is refused with

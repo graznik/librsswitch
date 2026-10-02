@@ -31,6 +31,7 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 import rsswitch_web
+from rsswitch_web import config
 from conftest import sample_doc
 from rsswitch_web.app import SECURITY_HEADERS
 
@@ -157,10 +158,54 @@ def test_one_request_helper():
     assert "application/json" in js
 
 
+def test_requests_end_after_a_timeout():
+    # A request that is never answered must end in the "network" error
+    # on its row instead of leaving it on "Sending..." for ever.
+    js = source("app.js")
+    assert "AbortController" in js
+    assert ".abort()" in js
+    assert "signal" in js
+    assert "clearTimeout" in js
+    # A request that is ended by the timer is not "unreachable": the
+    # app may have got it.
+    assert '"timeout"' in js
+    # A switch waits as long as the app can take for one command, and
+    # All-off for as many as it can send. A fixed time would end a slow
+    # but valid answer too early.
+    assert re.search(r'/switch", \{state: wanted\}, waitForSwitch\(\)\)', js)
+    assert re.search(r'api\("POST", path, \{\},\s+waitForAllOff\(', js)
+    assert "ALL_OFF_TIMEOUT_MS" not in js
+
+
+def test_page_timeouts_come_from_the_server():
+    # The page waits for what GET /api/meta says, and until it has
+    # that, for the most that the configuration accepts. The fallback
+    # equals the limits of config.py, or it could be too short.
+    js = source("app.js")
+    for text in ("switch_timeout", "all_off_gap_ms"):
+        assert text in js, text
+    seconds = re.search(r"MAX_DAEMON_TIMEOUT_S = (\d+);", js)
+    gap = re.search(r"MAX_GAP_MS = (\d+);", js)
+    assert int(seconds.group(1)) == config.MAX_DAEMON_TIMEOUT
+    assert int(gap.group(1)) == config.MAX_GAP_MS
+    # Both limits are what the checks of the configuration use.
+    assert config.resolve_config({
+        "daemon_connect_timeout": config.MAX_DAEMON_TIMEOUT,
+        "daemon_read_timeout": config.MAX_DAEMON_TIMEOUT,
+        "all_off_gap_ms": config.MAX_GAP_MS})
+    too_much = config.MAX_DAEMON_TIMEOUT + 1
+    for key, value in (("daemon_connect_timeout", too_much),
+                       ("daemon_read_timeout", too_much),
+                       ("all_off_gap_ms", config.MAX_GAP_MS + 1)):
+        with pytest.raises(config.ConfigError):
+            config.resolve_config({key: value})
+
+
 def test_switch_feedback_texts():
     js = source("app.js")
     for text in ("rsswitchd unreachable", "rsswitchd timed out",
-                 "rsswitchd: ", "web app unreachable", "Never sent",
+                 "rsswitchd: ", "web app unreachable",
+                 "no answer in time", "Never sent",
                  "Last sent: "):
         assert text in js, text
 

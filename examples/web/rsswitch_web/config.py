@@ -32,6 +32,12 @@ from .jsonutil import strict_loads
 
 DEFAULT_CONFIG_PATH = "/etc/rsswitch-web/config.json"
 
+# The largest values that the checks below accept. The page uses them
+# until it has the real ones from GET /api/meta, so it never ends a
+# request before the app can have answered it.
+MAX_DAEMON_TIMEOUT = 60  # seconds
+MAX_GAP_MS = 10000
+
 # Every configuration key with its default. Timeouts are in seconds,
 # all_off_gap_ms is the pause between two sends of an All-off, threads
 # is the number of worker threads of waitress under the serve command.
@@ -118,8 +124,10 @@ def _port_check(low):
 
 
 def _check_timeout(value):
-    if type(value) not in (int, float) or not 0 < value <= 60:
-        return "must be a number greater than 0 and at most 60 (seconds)"
+    if (type(value) not in (int, float)
+            or not 0 < value <= MAX_DAEMON_TIMEOUT):
+        return ("must be a number greater than 0 and at most %d (seconds)"
+                % MAX_DAEMON_TIMEOUT)
     return None
 
 
@@ -148,8 +156,9 @@ def _check_data_file(value):
 
 
 def _check_gap(value):
-    if not _is_int(value, 0, 10000):
-        return "must be an integer from 0 to 10000 (milliseconds)"
+    if not _is_int(value, 0, MAX_GAP_MS):
+        return ("must be an integer from 0 to %d (milliseconds)"
+                % MAX_GAP_MS)
     return None
 
 

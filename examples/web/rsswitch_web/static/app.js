@@ -46,6 +46,8 @@ const FIELD_ERRORS = {
  *   loadSeq  number of the newest request for the rooms
  *   edit     true while the page is in edit mode
  *   meta     the "socket_types" of GET /api/meta, or null before it loads
+ *   timing   {switchSeconds, gapMs} of GET /api/meta, or null before it
+ *            loads (see waitForSwitch())
  *   busy     true while a management request is in flight; every
  *            management button is disabled meanwhile
  *   roomNotes   room id -> text of the refusal shown on that room card
@@ -64,6 +66,7 @@ const ui = {
 	loadFailed: false,
 	edit: false,
 	meta: null,
+	timing: null,
 	metaFailed: false,
 	busy: false,
 	roomNotes: new Map(),
@@ -90,26 +93,97 @@ function el(tag, props, ...children) {
 }
 
 /*
+ * How long to wait for the app when it talks to rsswitchd. The app
+ * answers a switch after at most the connect and the read timeout of
+ * its configuration (switchSeconds), and an All-off after at most one
+ * such wait and one pause for each socket it sends to. GET /api/meta says
+ * the real values. Until it has answered, the largest values that the
+ * app accepts are used (MAX_DAEMON_TIMEOUT_S and MAX_GAP_MS must
+ * equal the limits of config.py; a test checks that), so a request
+ * never ends before the app can have answered it. The margin is for
+ * the app's own queue and for the network.
+ */
+const MAX_DAEMON_TIMEOUT_S = 60;
+const MAX_GAP_MS = 10000;
+const TIMEOUT_MARGIN_MS = 10000;
+
+/* The longest that the app takes to send one command, in ms. */
+function sendMs() {
+	const seconds = ui.timing ? ui.timing.switchSeconds
+		: 2 * MAX_DAEMON_TIMEOUT_S;
+	return 1000 * seconds;
+}
+
+function waitForSwitch() {
+	return sendMs() + TIMEOUT_MARGIN_MS;
+}
+
+/* sockets is the number of sockets that the All-off is for; it sends
+ * to at most that many addresses. The page may not know all of them,
+ * so there is room for one at least. setTimeout() takes no more than
+ * MAX_TIMER_MS. */
+const MAX_TIMER_MS = 2147483647;
+
+function waitForAllOff(sockets) {
+	const gap = ui.timing ? ui.timing.gapMs : MAX_GAP_MS;
+	return Math.min(MAX_TIMER_MS, Math.max(sockets, 1) * (sendMs() + gap)
+		+ TIMEOUT_MARGIN_MS);
+}
+
+/*
  * The only caller of the browser's request function. A POST always
  * says it is JSON, with an empty object when there is no body: the app
  * answers 415 to anything else.
  *
  * It returns {ok: true, status, data} or {ok: false, status, error,
  * retryAfter}. A request that does not get an answer is the error
- * "network".
+ * "network". One that is still unanswered after timeoutMs is the error
+ * "timeout": a phone that drops off the Wi-Fi in the middle of a
+ * request may otherwise wait for minutes, and the row would stay on
+ * "Sending..." without an error. The app may have got the request all
+ * the same, so "timeout" does not say that nothing happened.
+ *
+ * The default is for the requests that only read or change the data
+ * file, which take milliseconds. A request that makes the app talk to
+ * rsswitchd needs the longer time of waitForSwitch() or waitForAllOff().
  */
-async function api(method, path, body) {
+const REQUEST_TIMEOUT_MS = 30000;
+
+async function api(method, path, body, timeoutMs) {
 	const init = {method: method, cache: "no-store", headers: {}};
 	if (method === "POST" || method === "PUT" || method === "PATCH") {
 		init.headers["Content-Type"] = "application/json";
 		init.body = JSON.stringify(body || {});
 	}
+	const ctl = new AbortController();
+	init.signal = ctl.signal;
+	const timer = setTimeout(() => ctl.abort(),
+				 timeoutMs || REQUEST_TIMEOUT_MS);
+	try {
+		return await answer(init, path, ctl);
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
+/* The failure of a request that got no answer: ended by the timer of
+ * api(), or lost on the way. */
+function lost(ctl) {
+	if (ctl.signal.aborted) {
+		return {ok: false, status: 0, error: {
+			code: "timeout", message: "no answer in time"}};
+	}
+	return {ok: false, status: 0, error: {
+		code: "network", message: "web app unreachable"}};
+}
+
+/* The part of api() that the timer of api() covers. */
+async function answer(init, path, ctl) {
 	let resp;
 	try {
 		resp = await fetch(path, init);
 	} catch (e) {
-		return {ok: false, status: 0, error: {
-			code: "network", message: "web app unreachable"}};
+		return lost(ctl);
 	}
 	if (resp.status === 204) {
 		return {ok: true, status: 204, data: null};
@@ -118,6 +192,10 @@ async function api(method, path, body) {
 	try {
 		data = await resp.json();
 	} catch (e) {
+		/* The timer may have ended the read of the body. */
+		if (ctl.signal.aborted) {
+			return lost(ctl);
+		}
 		/* An answer that is not JSON, such as one from a proxy. */
 	}
 	if (resp.ok) {
@@ -140,6 +218,8 @@ function errorText(error, retryAfter) {
 		return "rsswitchd: " + (error.daemon_message || error.message);
 	case "network":
 		return "web app unreachable";
+	case "timeout":
+		return "no answer in time, it may have been sent";
 	case "too_many_attempts":
 		return "too many failed logins, try again "
 			+ (retryAfter ? "in " + retryAfter + " s" : "later");
@@ -337,6 +417,16 @@ function countSockets() {
 	return count;
 }
 
+/* The number of sockets of a room, or of the household when roomId is
+ * null. */
+function socketsOf(roomId) {
+	if (roomId === null) {
+		return countSockets();
+	}
+	const room = (ui.tree ? ui.tree.rooms : []).find(r => r.id === roomId);
+	return room ? room.sockets.length : 0;
+}
+
 /* The All-off button of the header lives in the HTML. */
 function renderHouseholdButton() {
 	const button = document.getElementById("all-off");
@@ -411,7 +501,7 @@ async function switchSocket(id, wanted) {
 	ui.pending.set(id, wanted);
 	render();
 	const res = await api("POST", "/api/sockets/" + encodeURIComponent(id)
-		+ "/switch", {state: wanted});
+		+ "/switch", {state: wanted}, waitForSwitch());
 	if (res.ok && res.data && res.data.ok === true) {
 		if (res.data.socket) {
 			replaceSocket(res.data.socket);
@@ -453,7 +543,8 @@ async function allOff(roomId) {
 	render();
 	const path = roomId === null ? "/api/all-off"
 		: "/api/rooms/" + encodeURIComponent(roomId) + "/all-off";
-	const res = await api("POST", path, {});
+	const res = await api("POST", path, {},
+			      waitForAllOff(socketsOf(roomId)));
 	const data = res.data;
 	if (res.ok && data && Array.isArray(data.results) && data.summary) {
 		for (const result of data.results) {
@@ -504,6 +595,13 @@ async function loadMeta() {
 		return;
 	}
 	ui.meta = res.data.socket_types;
+	ui.timing = null;
+	const seconds = res.data.switch_timeout;
+	const gap = res.data.all_off_gap_ms;
+	if (Number.isFinite(seconds) && seconds > 0
+			&& Number.isFinite(gap) && gap >= 0) {
+		ui.timing = {switchSeconds: seconds, gapMs: gap};
+	}
 	if (ui.metaFailed) {
 		hideBanner();
 		ui.metaFailed = false;
