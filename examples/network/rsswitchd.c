@@ -372,9 +372,21 @@ int main(int argc, char *argv[])
 
 		ready = wait_readable(listenfd, NULL);
 		if (ready < 0) {
+			struct timespec pause = { 0, 100000000L };
+
 			if (stop_requested)
 				break;
 			syslog(LOG_ERR, "[-] pselect: %s", strerror(errno));
+
+			/*
+			 * Same reasoning as for a failing accept() below:
+			 * a pselect() error such as EBADF or EINVAL does
+			 * not go away by itself, so pause instead of
+			 * spinning the CPU and flooding syslog. The pause
+			 * is a pselect() with no descriptors, so SIGTERM/
+			 * SIGINT still end it at once.
+			 */
+			pselect(0, NULL, NULL, NULL, &pause, &wait_mask);
 			continue;
 		}
 
