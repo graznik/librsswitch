@@ -38,10 +38,11 @@ anything. sudo make install in this directory then
 - installs the unit /etc/systemd/system/rsswitch-web.service, enables
   it and restarts it.
 
-The configuration that is installed listens on all addresses, port
-8080, and asks for no password. Anybody who can reach the host can
-switch every socket until you set a password, see the next section,
-or set listen_address to 127.0.0.1.
+The configuration that is installed listens on 127.0.0.1, port 8080,
+and asks for no password, so only the host itself can reach the app
+at first. To use it from a phone, set a password, see the next
+section, and then set listen_address to the address of the Pi, or to
+0.0.0.0 for all of its IPv4 addresses.
 
 The unit is hardened: besides the unprivileged user, it makes the
 file system read-only except the data directory, hides the home
@@ -62,7 +63,8 @@ configuration, so any user can run it:
 cd /opt/rsswitch-web && venv/bin/python -m rsswitch_web hash-password
 ```
 
-Put the username and the printed hash into the configuration, and
+Put the username and the printed hash into the configuration, set
+listen_address there when the phones are to reach the app, and
 restart the service, because the file is read once at start-up:
 
 ```bash
@@ -241,7 +243,7 @@ Every key is optional:
 | `daemon_port` | TCP port of rsswitchd (default 5000); an integer, 1-65535 |
 | `daemon_connect_timeout` | seconds to wait for the connection to rsswitchd (default 2); a number above 0 and at most 60 |
 | `daemon_read_timeout` | seconds to wait for its reply (default 5); a number above 0 and at most 60 |
-| `listen_address` | address the app listens on (default `"0.0.0.0"`, all IPv4 addresses); an IP address, not a host name |
+| `listen_address` | address the app listens on (default `"127.0.0.1"`, this host only; `"0.0.0.0"` is all IPv4 addresses and `"::"` all IPv6 ones, set a password first); an IP address, not a host name |
 | `listen_port` | port the app listens on (default 8080); an integer, 0-65535; 0 lets the kernel pick a free port |
 | `threads` | worker threads of `serve` (default 4); an integer, 1-16; `run` ignores it. It bounds how many requests, password checks and rsswitchd calls run at once, see below |
 | `data_file` | the file that holds the rooms and the sockets (default `"/var/lib/rsswitch-web/data.json"`); an absolute path |
@@ -723,8 +725,9 @@ never as HTML. Set textContent, not innerHTML.
 ## Security
 
 Without password_hash, anyone who can reach listen_address can
-switch every socket. Set listen_address to 127.0.0.1 when a web
-server on the same host is the only client, or set a password.
+switch every socket. The default of listen_address is 127.0.0.1, so
+that only this host can. Set a password before you let the app listen
+on an address that other hosts can reach.
 
 Basic authentication sends the username and the password in
 cleartext with every request over plain HTTP. Use it only on a LAN

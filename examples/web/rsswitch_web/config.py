@@ -48,7 +48,7 @@ DEFAULTS = {
     "daemon_port": 5000,
     "daemon_connect_timeout": 2,
     "daemon_read_timeout": 5,
-    "listen_address": "0.0.0.0",
+    "listen_address": "127.0.0.1",
     "listen_port": 8080,
     "threads": 4,
     "data_file": "/var/lib/rsswitch-web/data.json",

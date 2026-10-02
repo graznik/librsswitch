@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
 import signal
 import socket
@@ -204,6 +205,13 @@ def test_config_example_matches_defaults():
     assert resolve_config(example) == DEFAULTS
     assert text == json.dumps(example, indent=2) + "\n"
     assert DEFAULT_CONFIG_PATH == "/etc/rsswitch-web/config.json"
+
+
+def test_default_does_not_listen_beyond_this_host():
+    # The default has no password, so it must not be reachable by
+    # other hosts; make install copies the example as the real config.
+    assert DEFAULTS["password_hash"] is None
+    assert ipaddress.ip_address(DEFAULTS["listen_address"]).is_loopback
 
 
 def type_passwords(monkeypatch, *answers):
