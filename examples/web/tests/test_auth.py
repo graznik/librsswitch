@@ -569,13 +569,18 @@ def test_success_resets_the_failures(locked):
     assert fail(client, 4) == [401] * 4
 
 
-def test_cached_success_resets_the_failures(locked):
+def test_cached_success_keeps_the_failures(locked, counter):
     client = locked.test_client()
     assert good(client, "10.0.0.2").status_code == 200
     assert fail(client, 4) == [401] * 4
-    # The header is in the cache now, and the hash is not checked.
+    calls = counter.calls
+    # The header is in the cache now, and the hash is not checked. That
+    # is no login, so it must not clear the failures: somebody who
+    # shares the address of the owner (a proxy, a NAT) would otherwise
+    # get a fresh count from every request of the owner.
     assert good(client).status_code == 200
-    assert fail(client, 4) == [401] * 4
+    assert counter.calls == calls
+    assert fail(client, 2) == [401, 429]
 
 
 def test_locked_address_gets_429_on_static_and_unknown_paths(locked):

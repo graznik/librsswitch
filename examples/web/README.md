@@ -324,16 +324,22 @@ Then the address can log in again.
 Only requests that carry a username and a password and fail count.
 A request without credentials, which is what a browser sends before
 it shows its login prompt, does not count. A successful login clears
-the count of its address.
+the count of its address. A request whose credentials the app has
+accepted before, and remembers, is no login: it does not clear the
+count.
 
 The counts are kept in memory only, at most 256 addresses, and a
 restart clears them. The address is the one of the TCP connection;
 headers such as `X-Forwarded-For` are ignored, because a client
-could set them to anything. So serve the app directly, and not
-behind a proxy that hides the addresses of the clients: all clients
-would share one count. Devices behind one NAT address share one
-count as well. A browser that holds a wrong saved password locks
-itself out the same way; wait a minute and enter the right one.
+could set them to anything. So behind a proxy that hides the
+addresses of the clients, such as one that provides TLS (see
+[Security](#security)), all clients share the count of the proxy:
+whoever can reach the proxy can lock everybody out, the owner
+included, with 5 wrong logins, again every 60 seconds. Devices
+behind one NAT address share one count as well. Serve the app
+directly on a LAN that you trust, or let only trusted clients reach
+the proxy. A browser that holds a wrong saved password locks itself
+out the same way; wait a minute and enter the right one.
 
 
 ## Running
@@ -720,7 +726,9 @@ server on the same host is the only client, or set a password.
 Basic authentication sends the username and the password in
 cleartext with every request over plain HTTP. Use it only on a LAN
 that you trust, or put the app behind something that provides
-TLS.
+TLS. Such a proxy must be reachable by trusted clients only: the app
+sees only its address, so the limit on failed logins (see
+[Failed logins](#failed-logins)) counts all of its clients together.
 
 Keep rsswitchd bound to 127.0.0.1 behind the web app (see
 [rsswitchd](../network/README.md)), so that the app is the only way to

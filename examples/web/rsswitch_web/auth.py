@@ -151,7 +151,9 @@ def make_auth_hook(username, password_hash, limiter=None):
     LoginLimiter made here if none is given. A locked address gets 429
     with Retry-After, before any password is checked. The address is
     the one of the TCP connection and never a header of the request,
-    which a client could set to anything.
+    which a client could set to anything. Only a login whose password
+    was checked clears the failures of its address, not a header that
+    was accepted before and found in the cache.
 
     The hook object has an attribute cache, the list of the digests of
     the accepted headers, and an attribute limiter that the tests may
@@ -204,7 +206,10 @@ def make_auth_hook(username, password_hash, limiter=None):
             digest = hashlib.sha256(header.encode("utf-8")).digest()
             with lock:
                 if any(hmac.compare_digest(digest, d) for d in cache):
-                    hook.limiter.succeeded(addr)
+                    # No succeeded() here: the hash was not checked
+                    # now, and a client that shares the address with
+                    # the owner could otherwise have its failures
+                    # cleared by every request of the owner.
                     return None
             # Both checks always run, so that the time does not tell
             # which of the two was wrong.
@@ -213,7 +218,6 @@ def make_auth_hook(username, password_hash, limiter=None):
             with verify_lock:
                 with lock:
                     if any(hmac.compare_digest(digest, d) for d in cache):
-                        hook.limiter.succeeded(addr)
                         return None
                 # Requests that waited here may belong to an address
                 # that was locked while they waited.
