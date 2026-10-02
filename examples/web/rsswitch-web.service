@@ -45,6 +45,32 @@ LockPersonality=yes
 # TCP to rsswitchd and from the phones. AF_UNIX is for the name
 # service when daemon_host is a name.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# The app needs no capability at all. Port 1024 and above need none.
+CapabilityBoundingSet=
+# The app creates no namespace.
+RestrictNamespaces=yes
+# The app creates no setuid or setgid file.
+RestrictSUIDSGID=yes
+# The app needs no real-time scheduling.
+RestrictRealtime=yes
+# The app does not set the system clock.
+ProtectClock=yes
+# The app does not read the kernel log.
+ProtectKernelLogs=yes
+# The app does not change the host name.
+ProtectHostname=yes
+# The app sees the processes of its own user only, and none of them
+# other than its own.
+ProtectProc=invisible
+# The app reads nothing in /proc except the process entries.
+ProcSubset=pid
+# No system call of a foreign ABI, such as 32-bit code on aarch64.
+SystemCallArchitectures=native
+# The calls of a normal service ...
+SystemCallFilter=@system-service
+# ... without the privileged ones and the ones that change resource
+# limits, which a Python web app never uses.
+SystemCallFilter=~@privileged @resources
 # Restart after a crash.
 Restart=on-failure
 # A failing start does not spin, e.g. when the port is in use.

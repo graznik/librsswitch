@@ -43,6 +43,16 @@ SANDBOX = {
     "LockPersonality": "yes",
     "RestrictAddressFamilies": "AF_INET AF_INET6 AF_UNIX",
     "UMask": "0077",
+    "CapabilityBoundingSet": "",
+    "RestrictNamespaces": "yes",
+    "RestrictSUIDSGID": "yes",
+    "RestrictRealtime": "yes",
+    "ProtectClock": "yes",
+    "ProtectKernelLogs": "yes",
+    "ProtectHostname": "yes",
+    "ProtectProc": "invisible",
+    "ProcSubset": "pid",
+    "SystemCallArchitectures": "native",
 }
 
 
@@ -97,6 +107,11 @@ def test_unit_is_sandboxed(key, value):
     assert one("Service", key) == value
 
 
+def test_unit_filters_system_calls():
+    assert values("Service", "SystemCallFilter") == [
+        "@system-service", "~@privileged @resources"]
+
+
 def test_unit_follows_rsswitchd():
     assert one("Unit", "After").split() == ["network.target",
                                             "rsswitchd.service"]
@@ -109,7 +124,7 @@ def test_unit_follows_rsswitchd():
 def test_unit_grants_nothing_extra():
     keys = [k for k, _, _ in parse()["Service"]]
     for key in ("Nice", "SupplementaryGroups", "Group", "AmbientCapabilities",
-                "CapabilityBoundingSet", "DynamicUser"):
+                "DynamicUser"):
         assert key not in keys
     assert values("Service", "User") == ["rsswitch-web"]
 

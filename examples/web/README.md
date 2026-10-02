@@ -46,7 +46,10 @@ or set listen_address to 127.0.0.1.
 The unit is hardened: besides the unprivileged user, it makes the
 file system read-only except the data directory, hides the home
 directories and the devices, and allows no address family but IP and
-local sockets. See the comments in rsswitch-web.service.
+local sockets. It also drops all capabilities, forbids namespaces and
+real-time scheduling, and filters the system calls to those of a
+normal service without the privileged ones. See the comments in
+rsswitch-web.service.
 
 
 ## Setting a password for the service
