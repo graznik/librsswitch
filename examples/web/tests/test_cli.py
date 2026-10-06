@@ -143,6 +143,16 @@ def test_run_with_typo_key_exits_2_with_suggestion(tmp_path):
                    "(did you mean 'password_hash'?)\n")
 
 
+@pytest.mark.parametrize("command", ["run", "serve"])
+def test_a_daemon_host_name_exits_2_and_names_the_fix(tmp_path, command):
+    config = write_config(tmp_path, daemon_host="localhost")
+    status, err = run_cli("--config", config, command)
+    assert status == 2
+    assert err.startswith("rsswitch-web: config: key 'daemon_host': ")
+    assert "127.0.0.1" in err
+    assert LISTENING not in err
+
+
 def test_run_corrupt_data_file_exits_1(tmp_path):
     data = tmp_path / "data.json"
     data.write_text("{")

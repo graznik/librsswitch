@@ -42,8 +42,8 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 # The app does not switch the execution domain.
 LockPersonality=yes
-# TCP to rsswitchd and from the phones. AF_UNIX is for the name
-# service when daemon_host is a name.
+# TCP to rsswitchd and from the phones. AF_UNIX stays allowed for local
+# sockets, such as the system logger.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 # The app needs no capability at all. Port 1024 and above need none.
 CapabilityBoundingSet=

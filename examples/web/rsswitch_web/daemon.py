@@ -24,7 +24,9 @@ its read timeout while a batch is in progress.
 Nothing here waits without a limit. The connect has a timeout of its
 own and the whole wait for the reply has one deadline, which is not
 started again by each byte that arrives. There is no retry: a daemon
-that is not there is reported at once.
+that is not there is reported at once. The host is an IP address, which
+the configuration checks: a name would be looked up before the connect
+without a limit, and each address it has would get a timeout of its own.
 
 The module does not import Flask.
 """

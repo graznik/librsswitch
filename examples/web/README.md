@@ -239,7 +239,7 @@ Every key is optional:
 
 | Key | Meaning |
 |-----|---------|
-| `daemon_host` | where rsswitchd listens (default `"127.0.0.1"`); a string without whitespace |
+| `daemon_host` | where rsswitchd listens (default `"127.0.0.1"`); an IP address, not a host name: write `"127.0.0.1"` where you used `"localhost"`, and the app refuses to start with a message that says so |
 | `daemon_port` | TCP port of rsswitchd (default 5000); an integer, 1-65535 |
 | `daemon_connect_timeout` | seconds to wait for the connection to rsswitchd (default 2); a number above 0 and at most 60 |
 | `daemon_read_timeout` | seconds to wait for its reply (default 5); a number above 0 and at most 60 |
@@ -587,7 +587,8 @@ A socket:
   the number of groups and of sockets per group, so group runs from 0
   to groups - 1 and number from 0 to sockets - 1. switch_timeout is
   the longest that one command can take before the app answers, in
-  seconds (daemon_connect_timeout plus daemon_read_timeout), and
+  seconds (daemon_connect_timeout plus daemon_read_timeout; exact
+  because daemon_host is an IP address, so no name lookup adds to it), and
   all_off_gap_ms is the pause between two sends of an All-off. It is
   read-only, and the page checks a form against the limits before
   sending it and waits for a switch as long as the timing says.

@@ -32,7 +32,7 @@ from rsswitch_web.config import (DEFAULT_CONFIG_PATH, DEFAULTS, ConfigError,
 HASH = generate_password_hash("pw", "pbkdf2:sha256:1000")
 
 ACCEPTED = {
-    "daemon_host": ["127.0.0.1", "localhost"],
+    "daemon_host": ["127.0.0.1", "192.168.1.5", "::1"],
     "daemon_port": [1, 65535],
     "daemon_connect_timeout": [0.05, 2, 60],
     "daemon_read_timeout": [0.05, 2, 60],
@@ -45,7 +45,8 @@ ACCEPTED = {
 }
 
 REFUSED = {
-    "daemon_host": ["", " x", "a b", "a\tb", 5, None, True],
+    "daemon_host": ["", " x", "a b", "a\tb", 5, None, True, "localhost",
+                    "example.org", "999.1.1.1", "127.0.0.1 "],
     "daemon_port": [0, 65536, -1, "5000", True, 5000.0, None],
     "daemon_connect_timeout": [0, -1, 60.001, "2", True, None,
                                float("nan"), float("inf")],
@@ -96,6 +97,16 @@ def test_error_message_format(key, value):
     with pytest.raises(ConfigError) as exc:
         resolve_config(with_hash(key, value))
     assert re.fullmatch(r"config: key '[a-z_]+': [^\n]+", str(exc.value))
+
+
+def test_a_host_name_for_the_daemon_is_refused_with_the_fix():
+    # A name is looked up on every command, and the lookup has no time
+    # limit, so switch_timeout would not bound one command.
+    with pytest.raises(ConfigError) as exc:
+        resolve_config({"daemon_host": "localhost"})
+    assert str(exc.value) == (
+        "config: key 'daemon_host': must be an IP address such as "
+        "127.0.0.1 or ::1, not a host name (write 127.0.0.1 for localhost)")
 
 
 def test_boundaries_between_accepted_and_refused():

@@ -108,10 +108,15 @@ def _is_int(value, low, high):
 
 
 def _check_host(value):
-    if type(value) is not str or not value:
-        return "must be a non-empty string"
-    if any(c.isspace() for c in value):
-        return "must not contain whitespace"
+    # A name would be looked up again for every command, and the lookup
+    # has no time limit, so the timeouts below would not bound a command.
+    what = "must be an IP address such as 127.0.0.1 or ::1"
+    if type(value) is not str:
+        return what
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return what + ", not a host name (write 127.0.0.1 for localhost)"
     return None
 
 

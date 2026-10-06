@@ -42,8 +42,9 @@ def meta():
     socket_types has the number of groups and of sockets per group of
     each type. switch_timeout is the longest that one command can take
     before the app answers, in seconds: the connect and the read
-    timeout of rsswitchd together. all_off_gap_ms is the pause between
-    two sends of an All-off.
+    timeout of rsswitchd together. That is exact because daemon_host is
+    an IP address, so no name lookup adds to the connect. all_off_gap_ms
+    is the pause between two sends of an All-off.
     """
     config = state().config
     return jsonify({
