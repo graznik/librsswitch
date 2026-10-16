@@ -43,12 +43,15 @@ endif
 # run shows both results. They are never skipped: without the venv, its
 # pytest or the daemon (test_rsswitchd_bin, a prerequisite, which they
 # start through RSSWITCHD_BIN) the target fails instead.
+# test_rsswitchd_service.sh checks how rsswitchd is run as a service
+# from examples/network, and needs no root and no system manager.
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
 		./$$t > /dev/null || status=1; \
 	done; \
 	sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
+	sh ./test_rsswitchd_service.sh ../examples/network > /dev/null || status=1; \
 	py="$(abspath $(WEB_PYTHON))"; \
 	if [ ! -x "$$py" ]; then \
 		echo "web tests: $$py not found; create the venv as described in examples/web/README.md, or run make test WEB_PYTHON=/path/to/venv/bin/python" >&2; \

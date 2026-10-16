@@ -210,6 +210,14 @@ leaves out PrivateDevices, DevicePolicy and ProtectKernelTunables,
 which would hide /dev/gpiochip* or make /sys read-only and break
 GPIO access on one board or the other.
 
+When the daemon cannot start, for example because another program
+holds port 5000, systemd tries again after 2 seconds, at most 5
+times within 60 seconds (`StartLimitIntervalSec`,
+`StartLimitBurst`). Then it gives up and the unit is failed, with
+the reason in `journalctl -u rsswitchd`. Until 60 seconds after the
+first of these starts, systemd refuses a start by hand as well, and
+`sudo systemctl reset-failed rsswitchd` clears that.
+
 
 ## Logging
 
