@@ -31,6 +31,10 @@ UNIT = WEB_DIR / "rsswitch-web.service"
 EXEC_START = ("/opt/rsswitch-web/venv/bin/python -m rsswitch_web "
               "--config /etc/rsswitch-web/config.json serve")
 
+# Seconds that a failing start of the app may take on a slow board
+# (importing Flask, checking a password hash) before it exits.
+SLOW_FAILED_START = 8
+
 SANDBOX = {
     "NoNewPrivileges": "yes",
     "ProtectSystem": "strict",
@@ -119,6 +123,25 @@ def test_unit_follows_rsswitchd():
     assert one("Service", "Restart") == "on-failure"
     assert one("Service", "RestartSec") == "2"
     assert one("Install", "WantedBy") == "multi-user.target"
+
+
+def test_unit_gives_up_after_repeated_failed_starts():
+    """A start that always fails ends in the failed state.
+
+    systemd refuses a start once StartLimitBurst starts happened within
+    StartLimitIntervalSec. Its own default of 5 starts within 10 s is
+    never reached when every restart waits RestartSec=2, so a start
+    that always fails would be retried forever. The limit has to stay
+    reachable: all the starts must fit into the interval.
+    """
+    interval = one("Unit", "StartLimitIntervalSec")
+    burst = one("Unit", "StartLimitBurst")
+    assert interval == "60"
+    assert burst == "5"
+    assert not [k for k, _, _ in parse()["Service"]
+                if k.startswith("StartLimit")]
+    restart_sec = int(one("Service", "RestartSec"))
+    assert int(burst) * (restart_sec + SLOW_FAILED_START) <= int(interval)
 
 
 def test_unit_grants_nothing_extra():
