@@ -16,9 +16,13 @@ sudo make install
 ```
 
 sudo make install creates the gpio group and the rsswitchd system
-user when either is missing, installs the binary and the unit,
-then enables and starts the service -- one step end to end. A
-second sudo make install changes nothing.
+user when either is missing, installs the binary and the unit, then
+enables the service and restarts it, so that it runs the binary that
+was just installed -- one step end to end.
+
+Running sudo make install again after a new build is the upgrade: the
+group and the user are kept, the binary and the unit are replaced, and
+the daemon is restarted.
 
 For a staged install (packaging, or checking the result without
 root), use `make install DESTDIR=<dir>`: the binary and unit file

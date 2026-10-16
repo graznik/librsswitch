@@ -77,11 +77,17 @@ x86_64:
 
 # The daemon runs as the unprivileged system user rsswitchd, in the
 # gpio group for GPIO access. Both the group and the user are
-# created only when missing, so a second install changes nothing.
+# created only when missing, so a second install keeps them.
 # Staged installs (DESTDIR set) skip this together with the
 # systemctl steps below, same as before. A static account is used
 # instead of systemd's DynamicUser= because the account must persist
 # across restarts and stay a member of the gpio group.
+# Without DESTDIR the service is restarted at the end, not only
+# started: an upgrade replaces the binary, and a daemon that is
+# already running keeps running the old one until it is restarted.
+# A restart also starts a stopped service. daemon-reload comes first,
+# as in examples/web/Makefile, so that the restart uses the unit file
+# that make install has just written.
 install:
 	@if [ ! -x rsswitchd ]; then \
 		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
@@ -92,8 +98,9 @@ install:
 	@if [ -z "$(DESTDIR)" ]; then \
 		getent group gpio > /dev/null || groupadd --system gpio || exit 1; \
 		getent passwd rsswitchd > /dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd || exit 1; \
+		systemctl daemon-reload; \
 		systemctl enable rsswitchd; \
-		systemctl start rsswitchd; \
+		systemctl restart rsswitchd; \
 	fi
 
 clean:

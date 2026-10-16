@@ -123,7 +123,9 @@ sudo make install
 The code is replaced, so a module that the new version no longer has
 is gone, and requirements.txt is installed into the venv again. The
 configuration and the data file are not touched, and the service is
-restarted to run the new code.
+restarted to run the new code. Installing rsswitchd again with
+`sudo make -C ../network install` restarts rsswitchd as well, so the
+new daemon runs at once.
 
 
 ## Staged install

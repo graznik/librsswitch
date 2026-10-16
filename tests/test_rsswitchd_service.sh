@@ -17,7 +17,10 @@
 # Checks how rsswitchd is run as a service from examples/network,
 # starting with the start limit of rsswitchd.service: a start that
 # always fails must end in the failed state instead of being retried
-# for ever. Takes the examples/network directory as $1, needs no root
+# for ever. It also checks make install with stand-ins for systemctl
+# and the account tools, and with an install wrapper that keeps every
+# write in a temporary directory, so it is safe for any user, root
+# included. Takes the examples/network directory as $1, needs no root
 # and no system manager; run by `make test`.
 
 if [ -z "$1" ] || [ ! -f "$1/rsswitchd.service" ]; then
@@ -135,6 +138,166 @@ check "start limit is reachable with RestartSec" \
 	start_limit_reachable
 check "every StartLimit line has a comment above it" \
 	no_bare_start_limit
+
+# The install checks. Every tool that could reach the host is a stand-in
+# in $S/bin, first in PATH: systemctl, getent, groupadd and useradd only
+# log their call to $S/calls.log, and install refuses any absolute path
+# outside $S before anything is written, whatever the user and the
+# permissions. So make install runs below $S only, for root as well.
+S=$(mktemp -d) || exit 1
+trap 'rm -rf "$S"' EXIT
+mkdir "$S/bin" "$S/build"
+REAL_INSTALL=$(command -v install)
+: > "$S/calls.log"
+
+for tool in getent groupadd useradd systemctl; do
+cat > "$S/bin/$tool" <<EOF
+#!/bin/sh
+echo "$tool \$*" >> "$S/calls.log"
+exit 0
+EOF
+chmod +x "$S/bin/$tool"
+done
+
+cat > "$S/bin/install" <<EOF
+#!/bin/sh
+for arg in "\$@"; do
+	case \$arg in
+	"$S"/*)
+		;;
+	/*)
+		echo "install REFUSED \$arg" >> "$S/calls.log"
+		exit 1
+		;;
+	esac
+done
+exec "$REAL_INSTALL" "\$@"
+EOF
+chmod +x "$S/bin/install"
+
+printf '#!/bin/sh\necho v1\n' > "$S/build/rsswitchd"
+chmod +x "$S/build/rsswitchd"
+cp "$NET/rsswitchd.service" "$S/build/rsswitchd.service"
+
+# shims_ok is set by shims_first. No make runs unless it is 1.
+shims_ok=0
+
+# shims_first: the five tools resolve into $S/bin.
+shims_first()
+{
+	if [ -z "$REAL_INSTALL" ]; then
+		echo "  install: no install program found" >&2
+		return 1
+	fi
+	for tool in systemctl getent groupadd useradd install; do
+		found=$(PATH="$S/bin:$PATH" command -v "$tool")
+		if [ "$found" != "$S/bin/$tool" ]; then
+			echo "  $tool resolves to ${found:-nothing}, not $S/bin/$tool" >&2
+			return 1
+		fi
+	done
+	shims_ok=1
+}
+
+# install_run ARGS...: make install of the daemon, with the stand-ins
+# first in PATH. Returns the status of make, or 1 without running make
+# when the stand-ins are not in place.
+install_run()
+{
+	[ "$shims_ok" -eq 1 ] || return 1
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL DESTDIR
+		PATH="$S/bin:$PATH"
+		make -s -f "$NET/Makefile" -C "$S/build" install "$@"
+	) > "$S/make.log" 2>&1
+}
+
+# systemctl_calls: the systemctl calls made so far, one per line.
+systemctl_calls()
+{
+	grep '^systemctl ' "$S/calls.log" 2>/dev/null
+}
+
+EXPECTED_CALLS="systemctl daemon-reload
+systemctl enable rsswitchd
+systemctl restart rsswitchd"
+
+# restarts_service: the calls are daemon-reload, enable and restart, in
+# this order, so that a running daemon is replaced and a stopped one is
+# started. Prints the actual calls when they differ.
+restarts_service()
+{
+	if [ "$(systemctl_calls)" != "$EXPECTED_CALLS" ]; then
+		echo "  systemctl calls were:" >&2
+		systemctl_calls | sed 's/^/    /' >&2
+		return 1
+	fi
+}
+
+# same_file SRC DEST: DEST is a file equal to SRC.
+same_file()
+{
+	[ -f "$2" ] && cmp -s "$1" "$2"
+}
+
+# binary_equals SRC DEST: DEST is executable and equal to SRC.
+binary_equals()
+{
+	[ -x "$2" ] && same_file "$1" "$2"
+}
+
+# staged_files_placed: the staged install put the binary and the unit
+# under DESTDIR, at the default PREFIX and SYSTEMD_UNIT_DIR.
+staged_files_placed()
+{
+	binary_equals "$S/build/rsswitchd" \
+		"$S/stage/usr/local/bin/rsswitchd" &&
+	same_file "$NET/rsswitchd.service" \
+		"$S/stage/etc/systemd/system/rsswitchd.service"
+}
+
+# staged_calls_none: the staged install ran, and called none of the
+# stand-ins for the account and service tools.
+staged_calls_none()
+{
+	[ "$staged_rc" -eq 0 ] && [ ! -s "$S/calls.log" ]
+}
+
+unstaged_rc=1
+upgrade_rc=1
+staged_rc=1
+
+check "the five tools resolve into the stand-in directory" shims_first
+
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
+unstaged_rc=$?
+check "install exits 0" test "$unstaged_rc" -eq 0
+check "install puts the binary in place" \
+	binary_equals "$S/build/rsswitchd" "$S/prefix/bin/rsswitchd"
+check "install puts the unit in place" \
+	same_file "$NET/rsswitchd.service" "$S/units/rsswitchd.service"
+check "install runs daemon-reload, enable, restart" restarts_service
+
+# An upgrade: a new build replaces the old binary and restarts the
+# daemon, which is already installed and running.
+printf '#!/bin/sh\necho v2\n' > "$S/build/rsswitchd"
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
+upgrade_rc=$?
+check "upgrade exits 0" test "$upgrade_rc" -eq 0
+check "upgrade installs the new binary" \
+	binary_equals "$S/build/rsswitchd" "$S/prefix/bin/rsswitchd"
+check "upgrade runs daemon-reload, enable, restart" restarts_service
+
+# A staged install touches no account and no service.
+: > "$S/calls.log"
+install_run DESTDIR="$S/stage"
+staged_rc=$?
+check "staged install exits 0" test "$staged_rc" -eq 0
+check "staged install places the binary and the unit under DESTDIR" \
+	staged_files_placed
+check "staged install calls none of the stand-ins" \
+	staged_calls_none
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
