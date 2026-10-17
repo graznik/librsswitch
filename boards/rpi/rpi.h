@@ -3,7 +3,8 @@
 
 #include "../board.h"
 
-void delayMicrosecondsHard(unsigned int howLong);
-void delayMicroseconds(unsigned int howLong);
+/* GPIO17, pin 11 of the 40-pin header; config "chip:line" */
+#define RPI_DEFAULT_CHIPNAME "gpiochip0"
+#define RPI_DEFAULT_LINE_OFFSET 17
 
 #endif /* RPI_H */

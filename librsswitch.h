@@ -50,9 +50,10 @@
  * Sets the GPIO config string passed to board_init() on every
  * subsequent socket_send() call. NULL (the default, if never called)
  * means "use this board's compiled-in default". Format is board-
- * specific -- see boards/<platform>/<platform>.c's board_init() doc
- * comment. config is not copied; the pointer must stay valid for as
- * long as socket_send() may still be called.
+ * specific -- see the README section "GPIO configuration"; the
+ * libgpiod boards parse it in boards/gpiod/gpiod_board.c. config is not
+ * copied; the pointer must stay valid for as long as socket_send() may
+ * still be called.
  */
 void socket_gpio_config(const char *config);
 

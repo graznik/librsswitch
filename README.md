@@ -45,7 +45,7 @@ not bcm2835 -- install the dev package on the Pi:
 sudo apt install libgpiod-dev
 ```
 
-rpi and rpi3 build the exact same board source (boards/rpi/rpi.c) and
+rpi and rpi3 build the exact same board source (boards/gpiod/gpiod_board.c) and
 differ only in the cross toolchain (32-bit arm-linux-gnueabihf- vs.
 aarch64-linux-gnu- when cross compiling; both use the native gcc on a
 Pi). libgpiod 1.x and 2.x are both supported: the board picks its API

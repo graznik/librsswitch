@@ -15,25 +15,25 @@
  */
 
 /*
- * Drives boards/rpi/rpi.c's error paths and config parser on any Linux
- * host, without a Raspberry Pi or a real GPIO chip. syslog is captured
- * the same way tests/test_logging.c and tests/test_bbb.c capture it --
- * #undef/#define syslog before including the source -- so error
- * messages can be asserted on directly. Included, not linked, so this
- * file can also reach parse_config(), board_init(), board_exit() and
- * their static state.
+ * Drives boards/gpiod/gpiod_board.c's error paths and config parser on
+ * any Linux host, without a Raspberry Pi or a real GPIO chip. syslog is
+ * captured the same way tests/test_logging.c and tests/test_bbb.c
+ * capture it -- #undef/#define syslog before including the source --
+ * so error messages can be asserted on directly. Included, not linked,
+ * so this file can also reach parse_config(), board_init(),
+ * board_exit() and their static state.
  *
  * test_missing_chip_logs_to_syslog(), test_exit_without_open_chip()
  * and test_parse_config() only ever name a GPIO chip that cannot
  * exist on any host, so they can never open a real line. The
  * transmit()/board_exit() tests below run only against dummy chip and
  * line/request handles pointing at test-local storage (never a real
- * chip): every libgpiod call rpi.c makes on a line -- set-value,
- * release/request-release, and chip-close -- is intercepted at link
- * time (-Wl,--wrap in tests/Makefile) and, for a dummy handle, only
- * records the requested level instead of touching real hardware. A
- * non-dummy handle is forwarded to the real libgpiod function, so this
- * suite still never opens a real chip or drives a real line, and
+ * chip): every libgpiod call gpiod_board.c makes on a line --
+ * set-value, release/request-release, and chip-close -- is intercepted
+ * at link time (-Wl,--wrap in tests/Makefile) and, for a dummy handle,
+ * only records the requested level instead of touching real hardware.
+ * A non-dummy handle is forwarded to the real libgpiod function, so
+ * this suite still never opens a real chip or drives a real line, and
  * cannot key a real transmitter.
  */
 #include <errno.h>
@@ -51,7 +51,7 @@ static void capture_syslog(int priority, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 
 #include "minitest.h"
-#include "../boards/rpi/rpi.c"
+#include "../boards/gpiod/gpiod_board.c"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -109,10 +109,10 @@ static int captured_find(const char *needle)
  * Mock state for the G-01-5 transmit()/board_exit() tests below.
  * dummy_chip_obj and dummy_line_obj/dummy_request_obj are ordinary
  * file-scope objects whose addresses stand in for opaque libgpiod
- * handles: rpi.c and its wrapped libgpiod calls only ever compare
- * these pointers or pass them back to another wrapped call, never
- * dereference their contents. mock_session_open() points chip and
- * line/request at them, exactly as a real board_init() would leave
+ * handles: gpiod_board.c and its wrapped libgpiod calls only ever
+ * compare these pointers or pass them back to another wrapped call,
+ * never dereference their contents. mock_session_open() points chip
+ * and line/request at them, exactly as a real board_init() would leave
  * them after a successful session.
  */
 static int dummy_chip_obj;

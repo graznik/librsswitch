@@ -8,7 +8,13 @@
 #include <syslog.h>
 #include <time.h>
 
-#include "rpi.h"
+#include "gpiod_board.h"
+
+/*
+ * Board code for every board that drives its line through libgpiod.
+ * Each such board supplies only its default chip and line, in
+ * boards/<board>/<board>.h; gpiod_board.h picks them by board macro.
+ */
 
 /*
  * libgpiod dropped the line-handle API (gpiod_line_*) for a
@@ -31,14 +37,13 @@
 #error "LIBRSSWITCH_GPIOD_VERSION must be 1 or 2"
 #endif
 
-#define DEFAULT_CHIPNAME "gpiochip0"
-#define DEFAULT_LINE_OFFSET 17
 #define MAX_CHIPNAME_LEN 64
 
 /*
  * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL, or a
- * config whose chip or line part cannot be parsed, falls back to
- * gpiochip0:17 (this board's previous hardcoded behaviour). The line
+ * config whose chip or line part cannot be parsed, falls back to the
+ * board's DEFAULT_CHIPNAME and DEFAULT_LINE_OFFSET from
+ * gpiod_board.h (gpiochip0:17 on every board today). The line
  * part is accepted only as a non-empty string of the digits 0-9, with
  * no sign, no surrounding whitespace and no trailing garbage --
  * anything strtoul() would otherwise parse leniently (Pitfall 4) is

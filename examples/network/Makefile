@@ -44,11 +44,12 @@ else ifeq ($(MAKECMDGOALS), bbb)
 CFLAGS += -DBEAGLEBONE_BLACK
 endif
 
-# Forces boards/rpi/rpi.c's libgpiod API choice when its header probe
-# picks the wrong one (e.g. cross-compiling against a sysroot whose
-# gpiod.h can't be told apart from the probe alone). 1 = libgpiod 1.x
-# (gpiod_line_*), 2 = libgpiod 2.x (gpiod_line_request_*). Unset (the
-# default) leaves the probe in charge.
+# Forces boards/gpiod/gpiod_board.c's libgpiod API choice when its
+# header probe picks the wrong one (e.g. cross-compiling against a
+# sysroot whose gpiod.h can't be told apart from the probe alone).
+# 1 = libgpiod 1.x (gpiod_line_*), 2 = libgpiod 2.x
+# (gpiod_line_request_*). Unset (the default) leaves the probe in
+# charge.
 ifneq ($(LIBGPIOD_VERSION),)
 ifeq ($(filter $(LIBGPIOD_VERSION),1 2),)
 $(error LIBGPIOD_VERSION must be 1 or 2)
@@ -63,10 +64,10 @@ LIBS = -L/usr/local/lib
 
 
 rpi:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
 
 rpi3:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/rpi/rpi.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
 
 bbb:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
