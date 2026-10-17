@@ -31,8 +31,13 @@ At the moment librsswitch supports the following devices:
 
 ## Hardware setup
 
-See the [librsswitch Wiki](https://github.com/graznik/librsswitch/wiki)
-for a detailed description of how to set up the entire hardware.
+Detailed hardware and build-environment setup is available at
+[graznik.de](https://graznik.de).
+
+The data input of the 433 MHz sender is driven by the default line,
+GPIO17 (header pin 11) on a Raspberry Pi and P9_23 on a BeagleBone
+Black. Another line is chosen with a "chip:line" config, see "GPIO
+configuration" below.
 
 
 ## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
@@ -303,5 +308,5 @@ socket actually switched, only that a codeword was sent.
 
 - [rcswitch-pi](https://github.com/r10r/rcswitch-pi)
 - [rc-switch](http://code.google.com/p/rc-switch/)
-- [librsswitch Wiki](https://github.com/graznik/librsswitch/wiki)
+- [graznik.de](https://graznik.de): hardware and build-environment setup
 - [libgpiod](https://git.kernel.org/pub/scm/libs/libgpiod/libgpiod.git/)

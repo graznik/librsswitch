@@ -259,4 +259,4 @@ journalctl -t rsswitchd
 ## References
 
 - [librsswitch](https://github.com/graznik/librsswitch)
-- [librsswitch Wiki, Usage](https://github.com/graznik/librsswitch/wiki#usage)
+- [graznik.de](https://graznik.de): hardware and build-environment setup
