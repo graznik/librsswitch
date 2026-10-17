@@ -17,11 +17,14 @@
 /*
  * Drives boards/gpiod/gpiod_board.c's error paths and config parser on
  * any Linux host, without a Raspberry Pi or a real GPIO chip. syslog is
- * captured the same way tests/test_logging.c and tests/test_bbb.c
- * capture it -- #undef/#define syslog before including the source --
- * so error messages can be asserted on directly. Included, not linked,
- * so this file can also reach parse_config(), board_init(),
- * board_exit() and their static state.
+ * captured the same way tests/test_logging.c captures it --
+ * #undef/#define syslog before including the source -- so error
+ * messages can be asserted on directly. Included, not linked, so this
+ * file can also reach parse_config(), board_init(), board_exit() and
+ * their static state.
+ *
+ * The file is built once per libgpiod board, as test_gpiod_rpi and
+ * test_gpiod_bbb, so each build also checks that board's defaults.
  *
  * test_missing_chip_logs_to_syslog(), test_exit_without_open_chip()
  * and test_parse_config() only ever name a GPIO chip that cannot
@@ -365,6 +368,12 @@ static void test_parse_config(void)
 		"gpiochip3:17x", "gpiochip3:", "gpiochip3:-1",
 		"gpiochip3:+5", "gpiochip3: 5", "gpiochip3:4294967296",
 		"gpiochip3:99999999999999999999", "nocolon", ":17",
+		/*
+		 * A bare number was the BeagleBone Black's old GPIO
+		 * config and is malformed now, like any other string
+		 * without a chip name.
+		 */
+		"17", "49", "gpiochip0", "gpiochip0:17:5",
 	};
 	size_t i;
 
@@ -389,6 +398,38 @@ static void test_parse_config(void)
 	/* Every malformed form falls back to gpiochip0:17, logged. */
 	for (i = 0; i < ARRAY_SIZE(malformed); i++)
 		check_parse_config_default(malformed[i]);
+}
+
+/*
+ * Both libgpiod boards default to gpiochip0 line 17: the Raspberry Pi
+ * to GPIO17 on the 40-pin header, the BeagleBone Black to P9_23 on
+ * kernel 6.x. Each build must take its own board's values, and must
+ * not see the other board's macros.
+ */
+static void test_board_defaults(void)
+{
+	CHECK(strcmp(DEFAULT_CHIPNAME, "gpiochip0") == 0);
+	CHECK_EQ(DEFAULT_LINE_OFFSET, 17);
+
+#if defined(RASPBERRY_PI)
+	CHECK(strcmp(DEFAULT_CHIPNAME, RPI_DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(DEFAULT_LINE_OFFSET, RPI_DEFAULT_LINE_OFFSET);
+#ifdef BBB_DEFAULT_CHIPNAME
+	CHECK(0);
+#endif
+#ifdef BBB_DEFAULT_LINE_OFFSET
+	CHECK(0);
+#endif
+#elif defined(BEAGLEBONE_BLACK)
+	CHECK(strcmp(DEFAULT_CHIPNAME, BBB_DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(DEFAULT_LINE_OFFSET, BBB_DEFAULT_LINE_OFFSET);
+#ifdef RPI_DEFAULT_CHIPNAME
+	CHECK(0);
+#endif
+#ifdef RPI_DEFAULT_LINE_OFFSET
+	CHECK(0);
+#endif
+#endif
 }
 
 /*
@@ -486,6 +527,7 @@ int main(void)
 	test_missing_chip_logs_to_syslog();
 	test_exit_without_open_chip();
 	test_parse_config();
+	test_board_defaults();
 	test_failed_low_write_driven_low_at_release();
 	test_clean_session_adds_no_write();
 	test_failed_drive_low_still_releases();

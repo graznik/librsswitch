@@ -2,7 +2,7 @@ CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
 TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
-	test_logging test_bbb test_rsswitchd test_proto
+	test_logging test_rsswitchd test_proto
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
@@ -17,23 +17,24 @@ TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 WEB_DIR := $(abspath ../examples/web)
 WEB_PYTHON ?= $(WEB_DIR)/venv/bin/python
 
-# test_gpiod_rpi links against libgpiod, whose headers are not
-# guaranteed to be installed on every host that runs `make test`.
-# GPIOD_CFLAGS/GPIOD_LIBS let a caller point at a different libgpiod
-# (see the D-15 verification in 01-05-SUMMARY.md); by default they use
-# the installed system headers/library. Probed once, at parse time, by
-# asking the compiler whether it can preprocess a one-line <gpiod.h>
-# include; if it can't, test_gpiod_rpi is left out of TESTS and a SKIP
-# line is printed, instead of failing the whole `make test` run.
+# test_gpiod_rpi and test_gpiod_bbb link against libgpiod, whose
+# headers are not guaranteed to be installed on every host that runs
+# `make test`. GPIOD_CFLAGS/GPIOD_LIBS let a caller point at a
+# different libgpiod (see the D-15 verification in 01-05-SUMMARY.md);
+# by default they use the installed system headers/library. Probed
+# once, at parse time, by asking the compiler whether it can
+# preprocess a one-line <gpiod.h> include; if it can't, both are left
+# out of TESTS and one SKIP line is printed, instead of failing the
+# whole `make test` run.
 GPIOD_CFLAGS ?=
 GPIOD_LIBS ?= -lgpiod
 GPIOD_AVAILABLE := $(shell printf '\#include <gpiod.h>\n' | \
 	$(CC) $(GPIOD_CFLAGS) -E - >/dev/null 2>&1 && echo yes)
 
 ifeq ($(GPIOD_AVAILABLE),yes)
-TESTS += test_gpiod_rpi
+TESTS += test_gpiod_rpi test_gpiod_bbb
 else
-$(warning SKIP test_gpiod_rpi: gpiod.h not found)
+$(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h not found)
 endif
 
 .PHONY: test clean tsan
@@ -134,14 +135,6 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 test_logging: test_logging.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c
 
-# Includes ../boards/bbb/bbb.c directly (like test_logging includes
-# ../librsswitch.c), so it can drive board_init()/transmit()/
-# board_exit() and their static state against a fake sysfs tree
-# (the override is defined in test_bbb.c). Links no other source.
-test_bbb: test_bbb.c minitest.h ../boards/bbb/bbb.c ../boards/bbb/bbb.h \
-	  ../boards/board.h
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_bbb test_bbb.c
-
 # Intercepts, at link time, the five libgpiod calls
 # boards/gpiod/gpiod_board.c makes on a line (both API variants -- the
 # options for the version not in use have no references in the link
@@ -159,12 +152,14 @@ GPIOD_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
 
 GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 		  ../boards/gpiod/gpiod_board.h ../boards/rpi/rpi.h \
-		  ../boards/board.h
+		  ../boards/bbb/bbb.h ../boards/board.h
 
-# Includes ../boards/gpiod/gpiod_board.c directly (like test_logging
-# includes ../librsswitch.c), so it can drive board_init()/
-# board_exit(), transmit() and parse_config() and their static state.
-# It needs a board macro, because gpiod_board.h picks the default chip
+# test_gpiod_rpi and test_gpiod_bbb are built from the one test file
+# test_gpiod.c, once per board macro. The test includes
+# ../boards/gpiod/gpiod_board.c directly (like test_logging includes
+# ../librsswitch.c), so it can drive board_init()/board_exit(),
+# transmit() and parse_config() and their static state. It needs a
+# board macro, because gpiod_board.h picks the default chip
 # and line by it. The -DX86_64 from CFLAGS does no harm, because the
 # test includes no librsswitch.c. Only ever names a chip that cannot
 # exist for board_init(), and only ever touches dummy handles under
@@ -174,6 +169,9 @@ GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 # library it builds and links against.
 test_gpiod_rpi: $(GPIOD_TEST_DEPS)
 	$(CC) $(CFLAGS) -DRASPBERRY_PI $(GPIOD_CFLAGS) $(INCLUDES) -o test_gpiod_rpi test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
+
+test_gpiod_bbb: $(GPIOD_TEST_DEPS)
+	$(CC) $(CFLAGS) -DBEAGLEBONE_BLACK $(GPIOD_CFLAGS) $(INCLUDES) -o test_gpiod_bbb test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
 
 # Optional ThreadSanitizer target (D-10). `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into
@@ -197,4 +195,3 @@ test_concurrency_tsan: test_concurrency.c $(TEST_DEPS)
 clean:
 	-@rm -f $(TESTS) test_rsssend_bin test_rsswitchd_bin \
 		test_rsswitchd_failbin test_concurrency_tsan 2>/dev/null || true
-	-@rm -rf test_bbb_sysfs /tmp/librsswitch-test-bbb-sysfs 2>/dev/null || true

@@ -40,6 +40,7 @@ CFLAGS += -DRASPBERRY_PI
 LFLAGS = -l rt -l gpiod
 else ifeq ($(MAKECMDGOALS), bbb)
 CFLAGS += -DBEAGLEBONE_BLACK
+LFLAGS = -l rt -l gpiod
 endif
 
 # Forces boards/gpiod/gpiod_board.c's libgpiod API choice when its
@@ -67,7 +68,7 @@ rpi3:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
 
 bbb:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/bbb/bbb.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
 
 x86_64:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)

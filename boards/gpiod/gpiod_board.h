@@ -28,8 +28,12 @@
 #include "../rpi/rpi.h"
 #define DEFAULT_CHIPNAME RPI_DEFAULT_CHIPNAME
 #define DEFAULT_LINE_OFFSET RPI_DEFAULT_LINE_OFFSET
+#elif defined(BEAGLEBONE_BLACK)
+#include "../bbb/bbb.h"
+#define DEFAULT_CHIPNAME BBB_DEFAULT_CHIPNAME
+#define DEFAULT_LINE_OFFSET BBB_DEFAULT_LINE_OFFSET
 #else
-#error "boards/gpiod/gpiod_board.c needs a libgpiod board macro (-DRASPBERRY_PI)"
+#error "boards/gpiod/gpiod_board.c needs -DRASPBERRY_PI or -DBEAGLEBONE_BLACK"
 #endif
 
 void delayMicrosecondsHard(unsigned int howLong);
