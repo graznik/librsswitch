@@ -204,16 +204,37 @@ serve other hosts. The program's own default, used when --bind
 is not given, stays 0.0.0.0.
 
 The unit runs the daemon as the unprivileged rsswitchd user, in
-the gpio group (SupplementaryGroups=gpio): Raspberry Pi OS gives
-that group access to `/dev/gpiochip*`, and on a BeagleBone Black
-the image's udev rules must give it write access to
-/sys/class/gpio.
+the gpio group (SupplementaryGroups=gpio). libgpiod opens
+`/dev/gpiochip*` on both boards, so that group needs read and write
+access to it.
+
+Raspberry Pi OS and the BeagleBoard.org Debian images grant this
+with a udev rule. On another image, put the rule into a file under
+`/etc/udev/rules.d/`, e.g. 85-gpio.rules:
+
+```
+KERNEL=="gpiochip*", SUBSYSTEM=="gpio", MODE="0660", GROUP="gpio"
+```
+
+Then reload the rules and trigger the gpio subsystem, or reboot:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=gpio
+```
+
+`ls -l /dev/gpiochip0` must then show group gpio and mode
+`crw-rw----`.
 
 The unit also sets NoNewPrivileges, ProtectSystem=strict,
 ProtectHome, PrivateTmp and Restart=on-failure. It deliberately
-leaves out PrivateDevices, DevicePolicy and ProtectKernelTunables,
-which would hide /dev/gpiochip* or make /sys read-only and break
-GPIO access on one board or the other.
+leaves out PrivateDevices and DevicePolicy, which would hide
+`/dev/gpiochip*` and break GPIO access.
+
+With an edited ExecStart line, the GPIO line is chosen with
+`--gpio chip:line`, e.g. `--gpio gpiochip0:17`. A bare GPIO number
+is not accepted: it is logged and the daemon falls back to the
+default line of the board.
 
 When the daemon cannot start, for example because another program
 holds port 5000, systemd tries again after 2 seconds, at most 5

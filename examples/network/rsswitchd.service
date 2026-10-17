@@ -18,13 +18,16 @@ StartLimitBurst=5
 # needs local connections. To serve other hosts, remove
 # --bind 127.0.0.1 below or give another address -- the program's
 # own default, when no --bind is given, is 0.0.0.0.
+# --gpio chip:line selects another GPIO line, e.g. --gpio gpiochip0:17;
+# without it the daemon uses the default line of its board.
 ExecStart=/usr/local/bin/rsswitchd --bind 127.0.0.1
 Type=simple
 # Runs as the unprivileged system user make install creates.
 User=rsswitchd
-# Raspberry Pi OS gives this group access to /dev/gpiochip*; on a
-# BeagleBone Black, the image's udev rules must give it write
-# access to /sys/class/gpio instead.
+# libgpiod opens /dev/gpiochip* on both boards, so this group needs
+# read and write access to it. Raspberry Pi OS and the BeagleBoard.org
+# Debian images grant that with a udev rule. On another image, add the
+# rule shown in examples/network/README.md.
 SupplementaryGroups=gpio
 # The daemon can never gain privileges, e.g. via setuid binaries.
 NoNewPrivileges=yes
@@ -39,10 +42,8 @@ PrivateTmp=yes
 Restart=on-failure
 # A failing start does not spin, e.g. when the port is in use.
 RestartSec=2
-# PrivateDevices=, DevicePolicy= and ProtectKernelTunables= are left
-# out on purpose: the first two would hide /dev/gpiochip*, which
-# libgpiod needs on the Raspberry Pi, and the last would make /sys
-# read-only, which breaks sysfs GPIO on the BeagleBone.
+# PrivateDevices= and DevicePolicy= are left out on purpose: both
+# would hide /dev/gpiochip*, which libgpiod needs on both boards.
 
 [Install]
 WantedBy=multi-user.target
