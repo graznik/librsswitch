@@ -17,7 +17,7 @@ librsswitch is written in C and heavily inspired by
 
 - Raspberry Pi (32-bit), through libgpiod
 - Raspberry Pi 3 (aarch64), through libgpiod
-- BeagleBone Black, through sysfs GPIO
+- BeagleBone Black, through libgpiod
 - x86_64 host, a stub build for tests that needs no hardware
 
 
@@ -35,24 +35,30 @@ See the [librsswitch Wiki](https://github.com/graznik/librsswitch/wiki)
 for a detailed description of how to set up the entire hardware.
 
 
-## Software setup (Raspberry Pi / Raspberry Pi 3)
+## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
 
 GPIO access goes through
 [libgpiod](https://git.kernel.org/pub/scm/libs/libgpiod/libgpiod.git/),
-not bcm2835 -- install the dev package on the Pi:
+not bcm2835 -- install the dev package on the board:
 
 ```bash
 sudo apt install libgpiod-dev
 ```
 
-rpi and rpi3 build the exact same board source (boards/gpiod/gpiod_board.c) and
-differ only in the cross toolchain (32-bit arm-linux-gnueabihf- vs.
-aarch64-linux-gnu- when cross compiling; both use the native gcc on a
-Pi). libgpiod 1.x and 2.x are both supported: the board picks its API
-from the installed gpiod.h at compile time (gpiod.h from 1.x defines
+Raspberry Pi OS and Debian 13 on the BeagleBone Black ship libgpiod
+2.x, older images 1.x, and both work.
+
+rpi, rpi3 and bbb build the exact same board source,
+boards/gpiod/gpiod_board.c. rpi and rpi3 differ only in the cross
+toolchain (32-bit arm-linux-gnueabihf- vs. aarch64-linux-gnu- when
+cross compiling; both use the native gcc on a Pi), and bbb differs
+from rpi only in its default line, which boards/bbb/bbb.h sets.
+libgpiod 1.x and 2.x are both supported: the board picks its API from
+the installed gpiod.h at compile time (gpiod.h from 1.x defines
 GPIOD_LINE_BULK_MAX_LINES, the 2.x header does not), so a plain build
 just works with whichever libgpiod-dev is installed. If the probe ever
-picks the wrong one, force it with LIBGPIOD_VERSION:
+picks the wrong one, force it with LIBGPIOD_VERSION, for bbb as for
+rpi:
 
 ```bash
 make LIBGPIOD_VERSION=1 rpi   # force the libgpiod 1.x (gpiod_line_*) API
@@ -63,14 +69,14 @@ The "chip:line" config format (see "GPIO configuration" below) is the
 same for both versions.
 
 Build with the matching Makefile target from examples/basic/ or
-examples/network/; on the Pi itself, both rpi and rpi3 use the
+examples/network/; on the board itself, every target uses the
 native gcc (only the cross-compiling host below needs a cross
 toolchain):
 
 ```bash
 make rpi     # Raspberry Pi (32-bit ARM)
 make rpi3    # Raspberry Pi 3 (aarch64)
-make bbb     # BeagleBone Black (sysfs GPIO, no libgpiod needed)
+make bbb     # BeagleBone Black (32-bit ARM)
 make x86_64  # host build, GPIO calls are stubbed out
 ```
 
@@ -94,6 +100,7 @@ picks up libgpiod headers from /usr/include and /usr/local/include:
 cd examples/basic   # or examples/network
 make rpi     # arm-linux-gnueabihf-gcc
 make rpi3    # aarch64-linux-gnu-gcc
+make bbb     # arm-linux-gnueabihf-gcc
 ```
 
 setenv.sh and setenv64.sh are only needed when your cross toolchain
@@ -103,8 +110,9 @@ distro's packages needs neither script, since the Makefile already
 picks the right compiler for the target.
 
 libgpiod itself (headers + library) needs to be available for the
-target architecture in your cross sysroot -- either cross-build it
-from source or install your distro's cross-dev variant if one exists.
+target architecture of rpi, rpi3 and bbb in your cross sysroot --
+either cross-build it from source or install your distro's cross-dev
+variant if one exists.
 A libgpiod installed under its own prefix is picked up through the
 usual CPPFLAGS and LDFLAGS, which take precedence over the default
 /usr/include, /usr/local/include and /usr/local/lib paths:
@@ -224,11 +232,14 @@ inside a send is not supported; doing so may leave the lock held.
 The config string passed to socket_gpio_config() (or "--gpio" on the
 example programs) is board-specific:
 
-- Raspberry Pi / Raspberry Pi 3: "chip:line", e.g. "gpiochip0:17". NULL
-  or a malformed string is logged and the board falls back to the
-  default, gpiochip0:17.
-- BeagleBone Black: a numeric GPIO number, e.g. "49". NULL falls back
-  to the default, 49.
+- Raspberry Pi / Raspberry Pi 3 / BeagleBone Black: "chip:line", e.g.
+  "gpiochip0:17". NULL, or a malformed string, is logged and the board
+  falls back to its default, gpiochip0:17. A bare GPIO number such as
+  "49", the BeagleBone Black's former format, is malformed too. The
+  default is GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on a
+  BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
+  chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
+  package and pass it as "chip:line".
 - x86_64: ignored -- the stub board never touches real GPIO.
 
 
@@ -280,9 +291,9 @@ with SIGKILL or crashes, though, and such a hard kill while the
 line is high leaves the 433 MHz transmitter keyed, blocking the
 band for other devices, until the next send starts, since
 board_init() always drives the line low first. A Raspberry Pi
-kernel keeps a released output at its last level, and a
-BeagleBone Black pin exported beforehand stays an output, so
-neither release nor close bounds this window.
+kernel keeps a released output at its last level, and a BeagleBone
+Black may do the same, so releasing the line does not bound this
+window either.
 
 The 433 MHz link is one-way: the library has no way to confirm that a
 socket actually switched, only that a codeword was sent.

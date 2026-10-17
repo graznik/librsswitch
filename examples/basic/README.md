@@ -1,10 +1,11 @@
 # rsssend
 
-## Usage (Raspberry Pi)
+## Usage (Raspberry Pi, BeagleBone Black)
 
 ```bash
 cd librsswitch/examples/basic
 make rpi     # or: make rpi3 on a 64-bit Raspberry Pi OS
+             # or: make bbb on a BeagleBone Black
 ./rsssend 0 0 0 1
 ```
 

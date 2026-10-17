@@ -7,11 +7,12 @@ serves a line-based TCP protocol that switches REV 008345 and
 Pollin 2605 sockets on or off.
 
 
-## Installation (Raspberry Pi)
+## Installation (Raspberry Pi, BeagleBone Black)
 
 ```bash
 cd librsswitch/examples/network/
 make rpi     # or: make rpi3 on a 64-bit Raspberry Pi OS
+             # or: make bbb on a BeagleBone Black
 sudo make install
 ```
 
