@@ -39,7 +39,12 @@ GPIOD_LIBS ?= -lgpiod
 # stops make instead of skipping them. This is meant for runs against a
 # libgpiod of one's own; README.md "Against libgpiod 2.x" shows one.
 GPIOD_EXPECT_VERSION ?=
-GPIOD_AVAILABLE := $(shell printf '\#include <gpiod.h>\n' | \
+# A "#" inside a function call must come from a variable: GNU make 4.3
+# and later keep the backslash of an escaped "\#" there, while older
+# versions need it. Outside a function call the escape works in every
+# version.
+HASH := \#
+GPIOD_AVAILABLE := $(shell printf '$(HASH)include <gpiod.h>\n' | \
 	$(CC) $(GPIOD_CFLAGS) -E - >/dev/null 2>&1 && echo yes)
 
 ifeq ($(GPIOD_AVAILABLE),yes)
