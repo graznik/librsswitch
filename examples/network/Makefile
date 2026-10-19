@@ -74,7 +74,7 @@ bbb:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 x86_64:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/x86_64/x86_64.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 
 # The daemon runs as the unprivileged system user rsswitchd, in the

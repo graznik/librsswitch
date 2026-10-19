@@ -60,6 +60,18 @@ static int parse_config(const char *config, char *chipname_out,
 }
 
 /*
+ * Answers the board contract's question whether board_init() could use
+ * config. It applies the same rules as board_init() and opens nothing.
+ */
+int32_t board_config_check(const char *config)
+{
+	char chipname[MAX_CHIPNAME_LEN];
+	unsigned int line_offset;
+
+	return parse_config(config, chipname, sizeof(chipname), &line_offset);
+}
+
+/*
  * Set to 1 only between a successful high write and the following
  * successful low write -- the window in which the line may actually
  * be high. A failed high write leaves it 0, since the failed write

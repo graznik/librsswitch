@@ -3,9 +3,11 @@ INCLUDES = -I..
 
 TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
 	test_logging test_rsswitchd test_proto
-LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c
+LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c \
+	   ../boards/gpiod/gpiod_config.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
-	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h
+	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h \
+	    ../boards/gpiod/gpiod_config.c ../boards/gpiod/gpiod_config.h
 
 # The web app's tests run from `make test` too. WEB_DIR is the app,
 # WEB_PYTHON the Python of the virtual environment that has pytest and
@@ -112,7 +114,7 @@ test_concurrency: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_concurrency test_concurrency.c $(LIB_SRCS)
 
 test_codeword_api: test_codeword_api.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c ../boards/gpiod/gpiod_config.c
 
 # Builds ../examples/basic/rsssend.c against the x86_64 board, so
 # test_rsssend.sh can drive the real CLI (argument parsing, exit
@@ -168,7 +170,7 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 # Includes ../librsswitch.c directly (like test_codeword_api), so it
 # links only the x86_64 board, not librsswitch.c a second time.
 test_logging: test_logging.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c
+	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c ../boards/gpiod/gpiod_config.c
 
 # Intercepts, at link time, the libgpiod calls boards/gpiod/gpiod_board.c
 # makes to open the chip, to get and request the line, to build the 2.x

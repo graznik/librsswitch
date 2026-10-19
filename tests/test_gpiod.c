@@ -617,6 +617,24 @@ static void test_exit_without_open_chip(void)
 	CHECK_EQ(board_exit(), 0);
 }
 
+/* Every form of GPIO config the parser must refuse. */
+static const char * const malformed[] = {
+	"gpiochip3:17x", "gpiochip3:", "gpiochip3:-1",
+	"gpiochip3:+5", "gpiochip3: 5", "gpiochip3:4294967296",
+	"gpiochip3:99999999999999999999", "nocolon", ":17",
+	/*
+	 * A bare number was the BeagleBone Black's old GPIO
+	 * config and is malformed now, like any other string
+	 * without a chip name.
+	 */
+	"17", "49", "gpiochip0", "gpiochip0:17:5",
+	/*
+	 * A chip name is a bare device name, and a slash would
+	 * let it point outside /dev.
+	 */
+	"gpiochip0/../x:3", "/dev/gpiochip0:17", "../tmp/x:3",
+};
+
 /*
  * A malformed config is refused: parse_config() returns -1 and logs
  * one "[-] Malformed GPIO config" message.
@@ -638,22 +656,6 @@ static void test_parse_config(void)
 {
 	char chipname[MAX_CHIPNAME_LEN];
 	unsigned int line_offset;
-	static const char * const malformed[] = {
-		"gpiochip3:17x", "gpiochip3:", "gpiochip3:-1",
-		"gpiochip3:+5", "gpiochip3: 5", "gpiochip3:4294967296",
-		"gpiochip3:99999999999999999999", "nocolon", ":17",
-		/*
-		 * A bare number was the BeagleBone Black's old GPIO
-		 * config and is malformed now, like any other string
-		 * without a chip name.
-		 */
-		"17", "49", "gpiochip0", "gpiochip0:17:5",
-		/*
-		 * A chip name is a bare device name, and a slash would
-		 * let it point outside /dev.
-		 */
-		"gpiochip0/../x:3", "/dev/gpiochip0:17", "../tmp/x:3",
-	};
 	size_t i;
 
 	/* NULL config: default, no log. */
@@ -682,6 +684,35 @@ static void test_parse_config(void)
 	/* Every malformed form is refused and logged once. */
 	for (i = 0; i < ARRAY_SIZE(malformed); i++)
 		check_parse_config_malformed(malformed[i]);
+}
+
+/*
+ * board_config_check() answers like parse_config() without opening a
+ * chip: 0 and silence for NULL and for a well-formed config, -1 and
+ * one "[-] Malformed GPIO config" message for each malformed one.
+ */
+static void test_board_config_check(void)
+{
+	size_t i;
+
+	mock_reset();
+
+	captured_reset();
+	CHECK_EQ(board_config_check(NULL), 0);
+	CHECK_EQ(captured_count(), (size_t)0);
+
+	captured_reset();
+	CHECK_EQ(board_config_check("gpiochip3:5"), 0);
+	CHECK_EQ(captured_count(), (size_t)0);
+
+	for (i = 0; i < ARRAY_SIZE(malformed); i++) {
+		captured_reset();
+		CHECK_EQ(board_config_check(malformed[i]), -1);
+		CHECK_EQ(captured_count(), (size_t)1);
+		CHECK(captured_find("[-] Malformed GPIO config"));
+	}
+
+	CHECK_EQ(mock_open_calls, 0);
 }
 
 /*
@@ -1053,6 +1084,7 @@ int main(void)
 	test_missing_chip_logs_to_syslog();
 	test_exit_without_open_chip();
 	test_parse_config();
+	test_board_config_check();
 	test_board_defaults();
 	test_failed_low_write_driven_low_at_release();
 	test_clean_session_adds_no_write();

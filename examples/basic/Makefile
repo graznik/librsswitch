@@ -71,7 +71,7 @@ bbb:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 x86_64:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 clean:
 	-@rm -rf *.o *~ rsssend 2>/dev/null || true

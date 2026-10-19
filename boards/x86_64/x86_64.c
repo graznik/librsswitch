@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "x86_64.h"
+#include "../gpiod/gpiod_config.h"
 
 static struct x86_64_pulse recorder[X86_64_RECORDER_MAX_PULSES];
 static size_t recorder_count;
@@ -37,6 +38,23 @@ int32_t board_init(const char *config)
 	init_count++;
 	sched_yield();
 	return 0;
+}
+
+/*
+ * The host build has no GPIO, but it applies the libgpiod boards'
+ * rules, so the example programs refuse the same configs on every
+ * build. It counts nothing and touches no recorder state.
+ */
+int32_t board_config_check(const char *config)
+{
+	char chipname[MAX_CHIPNAME_LEN];
+	unsigned int line_offset;
+
+	if (!config)
+		return 0;
+
+	return gpiod_config_parse(config, chipname, sizeof(chipname),
+				  &line_offset);
 }
 
 int32_t board_exit(void)

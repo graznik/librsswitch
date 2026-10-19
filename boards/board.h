@@ -20,7 +20,7 @@
  * same signatures, instead of each board header re-declaring them by
  * convention (a mismatch here was previously only caught by chance).
  *
- * Adding a new platform: implement these three functions in a new
+ * Adding a new platform: implement these four functions in a new
  * boards/<platform>/<platform>.c + .h, add a Makefile target. Nothing
  * outside boards/<platform>/ needs to change. A board that drives its
  * line through libgpiod implements none of these functions itself: it
@@ -36,10 +36,11 @@
  * config: board-specific, opaque to the library's callers. NULL means
  * "use this board's compiled-in default". Each board documents and
  * parses its own format. The libgpiod boards share the "chip:line"
- * format documented in boards/gpiod/gpiod_config.h
- * and the x86_64 stub ignores the string. A non-NULL string that a
- * board cannot parse makes board_init() return -1 without opening the
- * GPIO; it never selects the default instead.
+ * format documented in boards/gpiod/gpiod_config.h. On those boards a
+ * non-NULL string that cannot be parsed makes board_init() return -1
+ * without opening the GPIO; it never selects the default instead. The
+ * x86_64 stub applies the same format in board_config_check(), but its
+ * board_init() drives nothing and accepts any string.
  *
  * board_init() opens a send session with the line driven low, even if
  * an earlier process left it high -- so a stuck-high line is
@@ -48,6 +49,16 @@
  * drive; its board_init()/board_exit()/transmit() are no-ops.
  */
 int32_t board_init(const char *config);
+
+/*
+ * Reports whether board_init() could use config, without opening,
+ * storing or changing anything. Returns 0 for NULL and for a
+ * well-formed config, -1 for a malformed one, after the cause has been
+ * logged via syslog. It checks the format only, so a well-formed
+ * config may still name a chip that is missing; the first
+ * board_init() reports that. Callable at any time from any thread.
+ */
+int32_t board_config_check(const char *config);
 
 /*
  * Ends the send session opened by board_init(), closing or releasing

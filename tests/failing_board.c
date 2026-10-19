@@ -21,7 +21,7 @@
  * daemon's own checks already passed (D-12, D-14): a well-formed,
  * in-range command still reaches the library, and the library's
  * board_init() call is what fails, exactly as a real GPIO failure
- * would.
+ * would. Its config passes the check, so only board_init() fails.
  */
 #include "../boards/board.h"
 
@@ -29,6 +29,12 @@ int32_t board_init(const char *config)
 {
 	(void)config;
 	return -1;
+}
+
+int32_t board_config_check(const char *config)
+{
+	(void)config;
+	return 0;
 }
 
 int32_t board_exit(void)

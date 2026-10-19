@@ -23,6 +23,7 @@
  */
 #include "minitest.h"
 #include "../librsswitch.h"
+#include "../boards/board.h"
 #include "../boards/x86_64/x86_64.h"
 #include "pulse_decode.h"
 
@@ -235,6 +236,35 @@ static void test_addr_limits(void)
 	}
 }
 
+/* GPIO configs the host build must refuse, like the libgpiod boards. */
+static const char * const malformed_gpio[] = {
+	"49", "17", "gpiochip0", "nocolon", ":17", "gpiochip3:",
+	"gpiochip3:17x", "gpiochip3:-1", "gpiochip3:+5", "gpiochip3: 5",
+	"gpiochip3:4294967296", "gpiochip0:17:5", "gpiochip0/../x:3",
+	"/dev/gpiochip0:17", "../tmp/x:3", "",
+};
+
+/*
+ * The stub applies the libgpiod boards' "chip:line" rules in
+ * board_config_check() and opens no session.
+ */
+static void test_board_config_check_x86_64(void)
+{
+	size_t i;
+
+	x86_64_recorder_reset();
+
+	CHECK_EQ(board_config_check(NULL), 0);
+	CHECK_EQ(board_config_check("gpiochip0:17"), 0);
+	CHECK_EQ(board_config_check("gpiochip3:5"), 0);
+	CHECK_EQ(board_config_check("gpiochip3:007"), 0);
+
+	for (i = 0; i < ARRAY_SIZE(malformed_gpio); i++)
+		CHECK_EQ(board_config_check(malformed_gpio[i]), -1);
+
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+}
+
 int main(void)
 {
 	test_rev_008345_valid();
@@ -247,6 +277,7 @@ int main(void)
 	test_rejected_sends_transmit_nothing();
 	test_transmit_failure_aborts_codeword();
 	test_addr_limits();
+	test_board_config_check_x86_64();
 
 	return MT_REPORT();
 }
