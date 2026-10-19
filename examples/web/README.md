@@ -108,14 +108,14 @@ the app, such as a data file that cannot be used. waitress logs no
 requests. The journal of rsswitchd shows each codeword that was sent.
 
 When the app stops at start-up with an error, for example a
-configuration that it refuses, systemd starts it again after 2
-seconds, at most 5 times within 60 seconds. Then it gives up and
-leaves the unit failed, which `systemctl status rsswitch-web` shows,
-with the reason in `journalctl -u rsswitch-web`. Fix the cause and
-start the service again. Until 60 seconds after the first of those
-starts, systemd refuses a start by hand as well, and the journal says
-"Start request repeated too quickly". `systemctl reset-failed` clears
-that.
+configuration that it refuses, systemd starts it at most 5 times
+within 60 seconds, 2 seconds apart, the first start included. Then it
+gives up and leaves the unit failed, which `systemctl status
+rsswitch-web` shows, with the reason in `journalctl -u rsswitch-web`.
+Fix the cause and start the service again. Until 60 seconds after the
+first of those starts, systemd refuses a start by hand as well, and
+the journal says "Start request repeated too quickly".
+`systemctl reset-failed` clears that.
 
 ```bash
 sudo systemctl reset-failed rsswitch-web

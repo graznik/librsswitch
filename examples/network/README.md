@@ -256,14 +256,14 @@ answered with `ERR send transmission failed` until the ExecStart line
 is fixed.
 
 When the daemon cannot start, for example because another program
-holds port 5000, systemd tries again after 2 seconds, at most 5
-times within 60 seconds (`StartLimitIntervalSec`,
-`StartLimitBurst`). Then it gives up and the unit is failed, with
-the reason in `journalctl -u rsswitchd`. Until 60 seconds after the
-first of these starts, systemd refuses a start by hand as well, and
-`sudo systemctl reset-failed rsswitchd` clears that. `sudo make
-install` clears the start limit itself before it restarts the service,
-so a fixed build can be installed at once.
+holds port 5000, systemd starts it at most 5 times within 60
+seconds, 2 seconds apart (`StartLimitIntervalSec`,
+`StartLimitBurst`), the first start included. Then it gives up and
+the unit is failed, with the reason in `journalctl -u rsswitchd`.
+Until 60 seconds after the first of these starts, systemd refuses a
+start by hand as well, and `sudo systemctl reset-failed rsswitchd`
+clears that. `sudo make install` clears the start limit itself before
+it restarts the service, so a fixed build can be installed at once.
 
 
 ## Logging
