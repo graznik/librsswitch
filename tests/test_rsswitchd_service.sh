@@ -148,6 +148,23 @@ check "[Unit] is ordered after network-online.target" \
 check "[Unit] wants network-online.target" \
 	is_value Unit Wants network-online.target
 
+# The daemon runs as the unprivileged user rsswitchd, in the group gpio
+# that owns /dev/gpiochip*, and without the raised priority that the old
+# unit asked for with Nice=.
+
+# no_nice: [Service] has no Nice= directive.
+no_nice()
+{
+	[ -z "$(unit_values Service Nice)" ]
+}
+
+check "[Service] runs as User=rsswitchd" \
+	is_value Service User rsswitchd
+check "[Service] has SupplementaryGroups=gpio" \
+	is_value Service SupplementaryGroups gpio
+check "[Service] has no Nice=" \
+	no_nice
+
 # The install checks. The tools of the recipe that manage accounts and
 # the service are stand-ins in $S/bin, first in PATH: systemctl, getent,
 # groupadd and useradd only log their call to $S/calls.log. install is
