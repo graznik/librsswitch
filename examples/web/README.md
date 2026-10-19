@@ -182,19 +182,18 @@ command that runs everything.
 ## Tests
 
 One command runs every test of the repository, the C tests first and
-the tests of this app second. From examples/web, with the venv made
-as above (the first two commands make it, once):
+the tests of this app second. From examples/web, the venv target makes
+examples/web/venv from requirements-dev.txt, once:
 
 ```bash
-python3 -m venv venv
-venv/bin/pip install -r requirements-dev.txt
-make -C ../../tests test
+make -C ../../tests venv test
 ```
 
-That is `make -C tests test` from the repository root. It needs the
-venv in examples/web/venv with requirements-dev.txt installed. A venv
-at another place is named with WEB_PYTHON, which must be the python of
-that venv, as an absolute path:
+That is `make -C tests venv test` from the repository root.
+`make -C tests test` alone fails when the venv is missing, or has no
+pytest, and never makes it. A venv at another place is named with
+WEB_PYTHON, which must be the python of that venv, as an absolute
+path:
 
 ```bash
 make -C ../../tests test WEB_PYTHON=$PWD/venv/bin/python

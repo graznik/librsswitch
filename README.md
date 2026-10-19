@@ -253,22 +253,26 @@ example programs) is board-specific:
 From the repository root:
 
 ```bash
-python3 -m venv examples/web/venv
-examples/web/venv/bin/pip install -r examples/web/requirements-dev.txt
-make -C tests test
+make -C tests venv test
 ```
 
-The first two commands make the virtual environment of the web app,
-once. `make -C tests test` then runs every C test, then the tests of
+The venv target makes the web app's virtual environment in
+examples/web/venv from examples/web/requirements-dev.txt. The first run
+downloads the packages, and later runs only check that the venv is
+there. `make -C tests test` then runs every C test, then the tests of
 the web app, including the end-to-end test against the x86_64
 rsswitchd that it builds. It exits non-zero when any of them fails.
 It fails, and never skips, when the venv, pytest or the daemon is
-missing. A venv at another place is named with WEB_PYTHON, as the
-absolute path of the python in its bin directory:
+missing; it never makes the venv itself. A venv at another place is
+named with WEB_PYTHON, as the absolute path of the python in its bin
+directory:
 
 ```bash
 make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
 ```
+
+WEB_VENV=/path makes and uses a venv at that place instead, with
+`make -C tests venv test WEB_VENV=/path`.
 
 ### ThreadSanitizer run
 
