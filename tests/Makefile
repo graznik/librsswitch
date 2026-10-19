@@ -135,11 +135,13 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 test_logging: test_logging.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c
 
-# Intercepts, at link time, the five libgpiod calls
-# boards/gpiod/gpiod_board.c makes on a line (both API variants -- the
-# options for the version not in use have no references in the link
-# and are silently ignored), so test_gpiod.c's __wrap_* functions can
-# drive transmit() and board_exit() against dummy chip/line handles
+# Intercepts, at link time, the libgpiod calls boards/gpiod/gpiod_board.c
+# makes to open the chip, to get and request the line, to build the 2.x
+# request and to drive the line (both API variants -- the options for
+# the version not in use have no references in the link and are
+# silently ignored), so test_gpiod.c's __wrap_* functions can drive
+# board_init(), transmit() and board_exit() against dummy chip and
+# line or request handles
 # without ever opening a real chip (G-01-5). Belongs only to this test
 # rule: it must never appear in examples/basic/Makefile or
 # examples/network/Makefile, which link the real libgpiod for shipped
@@ -148,7 +150,18 @@ GPIOD_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
 		   -Wl,--wrap=gpiod_line_release \
 		   -Wl,--wrap=gpiod_line_request_set_value \
 		   -Wl,--wrap=gpiod_line_request_release \
-		   -Wl,--wrap=gpiod_chip_close
+		   -Wl,--wrap=gpiod_chip_close \
+		   -Wl,--wrap=gpiod_chip_open_by_name \
+		   -Wl,--wrap=gpiod_chip_get_line \
+		   -Wl,--wrap=gpiod_line_request_output \
+		   -Wl,--wrap=gpiod_chip_open \
+		   -Wl,--wrap=gpiod_line_settings_new \
+		   -Wl,--wrap=gpiod_line_settings_free \
+		   -Wl,--wrap=gpiod_line_config_new \
+		   -Wl,--wrap=gpiod_line_config_free \
+		   -Wl,--wrap=gpiod_request_config_new \
+		   -Wl,--wrap=gpiod_request_config_free \
+		   -Wl,--wrap=gpiod_chip_request_lines
 
 GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 		  ../boards/gpiod/gpiod_board.h ../boards/rpi/rpi.h \

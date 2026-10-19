@@ -37,7 +37,9 @@
  * only records the requested level instead of touching real hardware.
  * A non-dummy handle is forwarded to the real libgpiod function, so
  * this suite still never opens a real chip or drives a real line, and
- * cannot key a real transmitter.
+ * cannot key a real transmitter. The board_init() tests open only the
+ * dummy chip through the open wraps, so they never open a real chip
+ * either.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -135,7 +137,96 @@ static int mock_close_count;
 static unsigned int mock_last_offset;
 #endif
 
+/*
+ * Mock state for the board_init() tests. board_init() runs against the
+ * same dummy handles: the chip-open wraps below return the dummy chip
+ * only while mock_fake_chip_open is set and forward to the real libgpiod
+ * otherwise, so the tests that need a real failed open still get one.
+ * Every later call on the dummy chip is answered by a mock. On libgpiod
+ * 2.x the config objects board_init() builds stay real; their
+ * allocations and frees are counted, so a test can see that none is
+ * left behind.
+ */
+static int mock_fake_chip_open;
+static int mock_open_calls;
+static char mock_open_arg[80];
+static int mock_consumer_ok;
 #if LIBRSSWITCH_GPIOD_VERSION == 1
+static int mock_fail_get_line;
+static int mock_fail_request_output;
+static unsigned int mock_get_line_offset;
+static int mock_request_default;
+#else
+static int mock_fail_settings_new;
+static int mock_fail_line_cfg_new;
+static int mock_fail_req_cfg_new;
+static int mock_fail_request_lines;
+static int mock_settings_live;
+static int mock_line_cfg_live;
+static int mock_req_cfg_live;
+static unsigned int mock_request_offset;
+static size_t mock_request_num_offsets;
+#endif
+
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+
+extern struct gpiod_chip *__real_gpiod_chip_open_by_name(const char *name);
+struct gpiod_chip *__wrap_gpiod_chip_open_by_name(const char *name);
+struct gpiod_chip *__wrap_gpiod_chip_open_by_name(const char *name)
+{
+	mock_open_calls++;
+	snprintf(mock_open_arg, sizeof(mock_open_arg), "%s", name);
+
+	if (!mock_fake_chip_open)
+		return __real_gpiod_chip_open_by_name(name);
+
+	return (struct gpiod_chip *)&dummy_chip_obj;
+}
+
+extern struct gpiod_line *__real_gpiod_chip_get_line(struct gpiod_chip *chip,
+						      unsigned int offset);
+struct gpiod_line *__wrap_gpiod_chip_get_line(struct gpiod_chip *chip,
+					       unsigned int offset);
+struct gpiod_line *__wrap_gpiod_chip_get_line(struct gpiod_chip *chip,
+					       unsigned int offset)
+{
+	if (chip != (struct gpiod_chip *)&dummy_chip_obj)
+		return __real_gpiod_chip_get_line(chip, offset);
+
+	mock_get_line_offset = offset;
+
+	if (mock_fail_get_line) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	return (struct gpiod_line *)&dummy_line_obj;
+}
+
+extern int __real_gpiod_line_request_output(struct gpiod_line *line,
+					     const char *consumer,
+					     int default_val);
+int __wrap_gpiod_line_request_output(struct gpiod_line *line,
+				      const char *consumer, int default_val);
+int __wrap_gpiod_line_request_output(struct gpiod_line *line,
+				      const char *consumer, int default_val)
+{
+	if (line != (struct gpiod_line *)&dummy_line_obj)
+		return __real_gpiod_line_request_output(line, consumer,
+							 default_val);
+
+	mock_request_default = default_val;
+	if (consumer != NULL && strcmp(consumer, "librsswitch") == 0)
+		mock_consumer_ok = 1;
+
+	if (mock_fail_request_output) {
+		errno = EBUSY;
+		return -1;
+	}
+
+	mock_level = default_val;
+	return 0;
+}
 
 extern int __real_gpiod_line_set_value(struct gpiod_line *line, int value);
 int __wrap_gpiod_line_set_value(struct gpiod_line *line, int value);
@@ -169,6 +260,140 @@ void __wrap_gpiod_line_release(struct gpiod_line *line)
 }
 
 #else /* LIBRSSWITCH_GPIOD_VERSION == 2 */
+
+extern struct gpiod_chip *__real_gpiod_chip_open(const char *path);
+struct gpiod_chip *__wrap_gpiod_chip_open(const char *path);
+struct gpiod_chip *__wrap_gpiod_chip_open(const char *path)
+{
+	mock_open_calls++;
+	snprintf(mock_open_arg, sizeof(mock_open_arg), "%s", path);
+
+	if (!mock_fake_chip_open)
+		return __real_gpiod_chip_open(path);
+
+	return (struct gpiod_chip *)&dummy_chip_obj;
+}
+
+extern struct gpiod_line_settings *__real_gpiod_line_settings_new(void);
+struct gpiod_line_settings *__wrap_gpiod_line_settings_new(void);
+struct gpiod_line_settings *__wrap_gpiod_line_settings_new(void)
+{
+	struct gpiod_line_settings *settings;
+
+	if (mock_fail_settings_new) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	settings = __real_gpiod_line_settings_new();
+	if (settings != NULL)
+		mock_settings_live++;
+
+	return settings;
+}
+
+extern void __real_gpiod_line_settings_free(struct gpiod_line_settings *settings);
+void __wrap_gpiod_line_settings_free(struct gpiod_line_settings *settings);
+void __wrap_gpiod_line_settings_free(struct gpiod_line_settings *settings)
+{
+	if (settings != NULL)
+		mock_settings_live--;
+
+	__real_gpiod_line_settings_free(settings);
+}
+
+extern struct gpiod_line_config *__real_gpiod_line_config_new(void);
+struct gpiod_line_config *__wrap_gpiod_line_config_new(void);
+struct gpiod_line_config *__wrap_gpiod_line_config_new(void)
+{
+	struct gpiod_line_config *config;
+
+	if (mock_fail_line_cfg_new) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	config = __real_gpiod_line_config_new();
+	if (config != NULL)
+		mock_line_cfg_live++;
+
+	return config;
+}
+
+extern void __real_gpiod_line_config_free(struct gpiod_line_config *config);
+void __wrap_gpiod_line_config_free(struct gpiod_line_config *config);
+void __wrap_gpiod_line_config_free(struct gpiod_line_config *config)
+{
+	if (config != NULL)
+		mock_line_cfg_live--;
+
+	__real_gpiod_line_config_free(config);
+}
+
+extern struct gpiod_request_config *__real_gpiod_request_config_new(void);
+struct gpiod_request_config *__wrap_gpiod_request_config_new(void);
+struct gpiod_request_config *__wrap_gpiod_request_config_new(void)
+{
+	struct gpiod_request_config *config;
+
+	if (mock_fail_req_cfg_new) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	config = __real_gpiod_request_config_new();
+	if (config != NULL)
+		mock_req_cfg_live++;
+
+	return config;
+}
+
+extern void __real_gpiod_request_config_free(struct gpiod_request_config *config);
+void __wrap_gpiod_request_config_free(struct gpiod_request_config *config);
+void __wrap_gpiod_request_config_free(struct gpiod_request_config *config)
+{
+	if (config != NULL)
+		mock_req_cfg_live--;
+
+	__real_gpiod_request_config_free(config);
+}
+
+extern struct gpiod_line_request *__real_gpiod_chip_request_lines(
+	struct gpiod_chip *chip, struct gpiod_request_config *req_cfg,
+	struct gpiod_line_config *line_cfg);
+struct gpiod_line_request *__wrap_gpiod_chip_request_lines(
+	struct gpiod_chip *chip, struct gpiod_request_config *req_cfg,
+	struct gpiod_line_config *line_cfg);
+struct gpiod_line_request *__wrap_gpiod_chip_request_lines(
+	struct gpiod_chip *chip, struct gpiod_request_config *req_cfg,
+	struct gpiod_line_config *line_cfg)
+{
+	unsigned int offsets[1];
+	const char *consumer;
+
+	if (chip != (struct gpiod_chip *)&dummy_chip_obj)
+		return __real_gpiod_chip_request_lines(chip, req_cfg, line_cfg);
+
+	mock_request_num_offsets =
+		gpiod_line_config_get_num_configured_offsets(line_cfg);
+	if (mock_request_num_offsets == 1) {
+		gpiod_line_config_get_configured_offsets(line_cfg, offsets,
+							  ARRAY_SIZE(offsets));
+		mock_request_offset = offsets[0];
+	}
+
+	consumer = gpiod_request_config_get_consumer(req_cfg);
+	if (consumer != NULL && strcmp(consumer, "librsswitch") == 0)
+		mock_consumer_ok = 1;
+
+	if (mock_fail_request_lines) {
+		errno = EBUSY;
+		return NULL;
+	}
+
+	mock_level = 0;
+	return (struct gpiod_line_request *)&dummy_request_obj;
+}
 
 extern int __real_gpiod_line_request_set_value(struct gpiod_line_request *request,
 						unsigned int offset,
@@ -234,6 +459,26 @@ static void mock_reset(void)
 	mock_close_count = 0;
 #if LIBRSSWITCH_GPIOD_VERSION == 2
 	mock_last_offset = 0;
+#endif
+	mock_fake_chip_open = 0;
+	mock_open_calls = 0;
+	mock_open_arg[0] = '\0';
+	mock_consumer_ok = 0;
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	mock_fail_get_line = 0;
+	mock_fail_request_output = 0;
+	mock_get_line_offset = 0;
+	mock_request_default = 0;
+#else
+	mock_fail_settings_new = 0;
+	mock_fail_line_cfg_new = 0;
+	mock_fail_req_cfg_new = 0;
+	mock_fail_request_lines = 0;
+	mock_settings_live = 0;
+	mock_line_cfg_live = 0;
+	mock_req_cfg_live = 0;
+	mock_request_offset = 0;
+	mock_request_num_offsets = 0;
 #endif
 }
 
@@ -522,6 +767,170 @@ static void test_failed_drive_low_still_releases(void)
 	CHECK_EQ(board_exit(), 0);
 }
 
+/*
+ * A successful board_init() opens the configured chip once, requests
+ * the configured line once as a low output for consumer "librsswitch",
+ * logs nothing and leaves line_high at 0 even if it was 1 before.
+ * board_exit() then releases the line and closes the chip once each,
+ * and clears chip (and line/request).
+ */
+static void test_board_init_success(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	line_high = 1;
+
+	CHECK_EQ(board_init("gpiochip9:3"), 0);
+
+	CHECK_EQ(mock_open_calls, 1);
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	CHECK(strcmp(mock_open_arg, "gpiochip9") == 0);
+	CHECK(line == (struct gpiod_line *)&dummy_line_obj);
+	CHECK_EQ(mock_get_line_offset, 3U);
+	CHECK_EQ(mock_request_default, 0);
+#else
+	CHECK(strcmp(mock_open_arg, "/dev/gpiochip9") == 0);
+	CHECK(request == (struct gpiod_line_request *)&dummy_request_obj);
+	CHECK_EQ(line_offset, 3U);
+	CHECK_EQ(mock_request_num_offsets, (size_t)1);
+	CHECK_EQ(mock_request_offset, 3U);
+	CHECK_EQ(mock_settings_live, 0);
+	CHECK_EQ(mock_line_cfg_live, 0);
+	CHECK_EQ(mock_req_cfg_live, 0);
+#endif
+	CHECK(chip == (struct gpiod_chip *)&dummy_chip_obj);
+	CHECK(mock_consumer_ok);
+	CHECK_EQ(mock_level, 0);
+	CHECK_EQ(line_high, 0);
+	CHECK_EQ(captured_count(), (size_t)0);
+	CHECK_EQ(mock_close_count, 0);
+
+	CHECK_EQ(board_exit(), 0);
+	CHECK_EQ(mock_set_calls, 0);
+	CHECK_EQ(mock_release_count, 1);
+	CHECK_EQ(mock_close_count, 1);
+	CHECK(chip == NULL);
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	CHECK(line == NULL);
+#else
+	CHECK(request == NULL);
+#endif
+
+	mock_reset();
+}
+
+/*
+ * After a failed board_init() the chip is closed exactly once and
+ * cleared, so a following board_exit() succeeds and closes nothing
+ * again.
+ */
+static void check_board_init_failed_cleanly(void)
+{
+	CHECK_EQ(mock_close_count, 1);
+	CHECK(chip == NULL);
+#if LIBRSSWITCH_GPIOD_VERSION == 2
+	CHECK_EQ(mock_settings_live, 0);
+	CHECK_EQ(mock_line_cfg_live, 0);
+	CHECK_EQ(mock_req_cfg_live, 0);
+#endif
+
+	CHECK_EQ(board_exit(), 0);
+	CHECK_EQ(mock_close_count, 1);
+	CHECK_EQ(mock_release_count, 0);
+}
+
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+
+/* gpiod_chip_get_line() fails: the chip is closed and the error logged. */
+static void test_board_init_get_line_fails(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_get_line = 1;
+
+	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK(captured_find("[-] Failed to get GPIO line 3"));
+	check_board_init_failed_cleanly();
+
+	mock_reset();
+}
+
+/*
+ * gpiod_line_request_output() fails: the chip is closed, chip and line
+ * are cleared and the error is logged.
+ */
+static void test_board_init_request_output_fails(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_request_output = 1;
+
+	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
+	CHECK(line == NULL);
+	check_board_init_failed_cleanly();
+
+	mock_reset();
+}
+
+#else /* LIBRSSWITCH_GPIOD_VERSION == 2 */
+
+/*
+ * Each of the three config objects fails to allocate in turn: board_init()
+ * returns -1, closes the chip once, frees whatever it had allocated up to
+ * that point and logs which allocation failed.
+ */
+static void test_board_init_alloc_fails(void)
+{
+	int * const flags[] = {
+		&mock_fail_settings_new, &mock_fail_line_cfg_new,
+		&mock_fail_req_cfg_new,
+	};
+	static const char * const messages[] = {
+		"[-] Failed to allocate GPIO line settings",
+		"[-] Failed to allocate GPIO line config",
+		"[-] Failed to allocate GPIO request config",
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(flags); i++) {
+		mock_reset();
+		captured_reset();
+		mock_fake_chip_open = 1;
+		*flags[i] = 1;
+
+		CHECK_EQ(board_init("gpiochip9:3"), -1);
+		CHECK(captured_find(messages[i]));
+		check_board_init_failed_cleanly();
+
+		mock_reset();
+	}
+}
+
+/*
+ * gpiod_chip_request_lines() fails: the chip is closed, all three
+ * config objects are freed, request is cleared and the error is logged.
+ */
+static void test_board_init_request_lines_fails(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_request_lines = 1;
+
+	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
+	CHECK(request == NULL);
+	check_board_init_failed_cleanly();
+
+	mock_reset();
+}
+
+#endif /* LIBRSSWITCH_GPIOD_VERSION */
+
 int main(void)
 {
 	test_missing_chip_logs_to_syslog();
@@ -531,6 +940,14 @@ int main(void)
 	test_failed_low_write_driven_low_at_release();
 	test_clean_session_adds_no_write();
 	test_failed_drive_low_still_releases();
+	test_board_init_success();
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	test_board_init_get_line_fails();
+	test_board_init_request_output_fails();
+#else
+	test_board_init_alloc_fails();
+	test_board_init_request_lines_fails();
+#endif
 
 	return MT_REPORT();
 }
