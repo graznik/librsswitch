@@ -18,10 +18,13 @@
 # starting with the start limit of rsswitchd.service: a start that
 # always fails must end in the failed state instead of being retried
 # for ever. It also checks make install with stand-ins for systemctl
-# and the account tools, and with an install wrapper that keeps every
-# write in a temporary directory, so it is safe for any user, root
-# included. Takes the examples/network directory as $1, needs no root
-# and no system manager; run by `make test`.
+# and the account tools, and with an install wrapper that refuses
+# absolute destination arguments outside a temporary directory,
+# target-directory options and paths with "..". Other tools are not
+# wrapped, so a recipe line that wrote with mkdir, cp, ln or chown
+# would not be caught; the recipe uses only install today. Takes the
+# examples/network directory as $1, needs no root and no system
+# manager; run by `make test`.
 
 if [ -z "$1" ] || [ ! -f "$1/rsswitchd.service" ]; then
 	echo "usage: $0 <examples/network directory>" >&2
@@ -143,11 +146,14 @@ check "[Unit] is ordered after network-online.target" \
 check "[Unit] wants network-online.target" \
 	is_value Unit Wants network-online.target
 
-# The install checks. Every tool that could reach the host is a stand-in
-# in $S/bin, first in PATH: systemctl, getent, groupadd and useradd only
-# log their call to $S/calls.log, and install refuses any absolute path
-# outside $S before anything is written, whatever the user and the
-# permissions. So make install runs below $S only, for root as well.
+# The install checks. The tools of the recipe that manage accounts and
+# the service are stand-ins in $S/bin, first in PATH: systemctl, getent,
+# groupadd and useradd only log their call to $S/calls.log. install is
+# a wrapper that refuses an absolute argument outside $S, a
+# target-directory option (-t, --target-directory) and a path with
+# "..", and logs "install REFUSED"; otherwise it runs the real install.
+# Only install is wrapped. A recipe line that wrote with mkdir, cp, ln
+# or chown would reach the host, and the recipe uses install only.
 S=$(mktemp -d) || exit 1
 trap 'rm -rf "$S"' EXIT
 mkdir "$S/bin" "$S/build"
@@ -179,6 +185,10 @@ cat > "$S/bin/install" <<EOF
 #!/bin/sh
 for arg in "\$@"; do
 	case \$arg in
+	*/../*|*/..|-t*|--target-directory*)
+		echo "install REFUSED \$arg" >> "$S/calls.log"
+		exit 1
+		;;
 	"$S"/*)
 		;;
 	/*)
@@ -362,6 +372,24 @@ check "staged install places the binary and the unit under DESTDIR" \
 	staged_files_placed
 check "staged install calls none of the stand-ins" \
 	staged_calls_none
+
+# wrapper_refuses ARG: the install wrapper, run by its full path with
+# ARG and a source that does not exist, exits non-zero and logs
+# "install REFUSED ARG". Even a wrapper that let ARG through could not
+# write anything, because the source is missing.
+wrapper_refuses()
+{
+	: > "$S/calls.log"
+	"$S/bin/install" "$1" "$S/no-such-source" 2> /dev/null && return 1
+	grep -Fxq "install REFUSED $1" "$S/calls.log"
+}
+
+check "install wrapper refuses -t/DIR" \
+	wrapper_refuses -t/nonexistent-rss-dir
+check "install wrapper refuses --target-directory=DIR" \
+	wrapper_refuses --target-directory=/nonexistent-rss-dir
+check "install wrapper refuses a path with .." \
+	wrapper_refuses "$S/../escape"
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
