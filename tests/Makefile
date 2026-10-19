@@ -151,11 +151,11 @@ test_rsswitchd_bin: ../examples/network/rsswitchd.c \
 		../examples/network/rsswitchd.c \
 		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
 
-# PROTO-07: unit-tests the protocol parser with no socket or GPIO
-# dependency of its own. It links $(LIB_SRCS) anyway: from plan 02-03
-# on, the parser calls socket_addr_limits() for its per-device range
-# check, and this rule never opens a board (see test_proto.c's
-# test_err_names, which asserts x86_64_board_init_count() stays 0).
+# Unit-tests the protocol parser with no socket or GPIO dependency of
+# its own. It links $(LIB_SRCS) anyway: the parser calls
+# socket_addr_limits() for its per-device range check, and this rule
+# never opens a board (see test_proto.c's test_err_names, which
+# asserts x86_64_board_init_count() stays 0).
 test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
 	    ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_proto test_proto.c \
@@ -164,9 +164,9 @@ test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
 # Built like test_rsswitchd_bin, but against ../librsswitch.c and
 # failing_board.c instead of $(LIB_SRCS)'s x86_64 board, so
 # test_rsswitchd's test_err_send can reach the daemon's ERR send
-# reply path (D-12/D-14): a well-formed command still passes the
-# daemon's own checks and reaches the library, and it is the
-# library's board_init() call that then fails.
+# reply path: a well-formed command still passes the daemon's own
+# checks and reaches the library, and it is the library's
+# board_init() call that then fails.
 test_rsswitchd_failbin: ../examples/network/rsswitchd.c \
 			 ../examples/network/rsswitchd_proto.c \
 			 ../examples/network/rsswitchd_proto.h \
@@ -181,7 +181,7 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd test_rsswitchd.c
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
-# ..., data: ..." line in socket_send() is exercised (LIB-02).
+# ..., data: ..." line in socket_send() is exercised.
 # Includes ../librsswitch.c directly (like test_codeword_api), so it
 # links only the x86_64 board, not librsswitch.c a second time.
 test_logging: test_logging.c $(TEST_DEPS)
@@ -241,7 +241,7 @@ test_gpiod_rpi: $(GPIOD_TEST_DEPS)
 test_gpiod_bbb: $(GPIOD_TEST_DEPS)
 	$(CC) $(CFLAGS) -DBEAGLEBONE_BLACK $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod_bbb test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
 
-# Optional ThreadSanitizer target (D-10). `make tsan` builds
+# Optional ThreadSanitizer target. `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into
 # test_concurrency_tsan (the name matches the tests/test_* ignore
 # pattern) and runs it. It is opt-in and never a prerequisite of
