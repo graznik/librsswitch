@@ -58,6 +58,12 @@ static void capture_syslog(int priority, const char *fmt, ...)
 #include "minitest.h"
 #include "../boards/gpiod/gpiod_board.c"
 
+/* tests/Makefile sets EXPECT_GPIOD_VERSION from GPIOD_EXPECT_VERSION. */
+#if defined(EXPECT_GPIOD_VERSION) && \
+	EXPECT_GPIOD_VERSION != LIBRSSWITCH_GPIOD_VERSION
+#error "built against a libgpiod major version other than GPIOD_EXPECT_VERSION"
+#endif
+
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 #define CAPTURE_MAX_MESSAGES 64

@@ -34,13 +34,22 @@ WEB_PYTHON ?= $(WEB_VENV)/bin/python
 # whole `make test` run.
 GPIOD_CFLAGS ?=
 GPIOD_LIBS ?= -lgpiod
+# When set to 1 or 2, the libgpiod tests refuse to compile against any
+# other libgpiod major version, and a probe that does not find libgpiod
+# stops make instead of skipping them. This is meant for runs against a
+# libgpiod of one's own; README.md "Against libgpiod 2.x" shows one.
+GPIOD_EXPECT_VERSION ?=
 GPIOD_AVAILABLE := $(shell printf '\#include <gpiod.h>\n' | \
 	$(CC) $(GPIOD_CFLAGS) -E - >/dev/null 2>&1 && echo yes)
 
 ifeq ($(GPIOD_AVAILABLE),yes)
 TESTS += test_gpiod_rpi test_gpiod_bbb
 else
+ifneq ($(GPIOD_EXPECT_VERSION),)
+$(error GPIOD_EXPECT_VERSION=$(GPIOD_EXPECT_VERSION) is set, but gpiod.h was not found with GPIOD_CFLAGS)
+else
 $(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h not found)
+endif
 endif
 
 .PHONY: test venv clean tsan
@@ -199,10 +208,10 @@ GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 # GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod headers and
 # library it builds and links against.
 test_gpiod_rpi: $(GPIOD_TEST_DEPS)
-	$(CC) $(CFLAGS) -DRASPBERRY_PI $(GPIOD_CFLAGS) $(INCLUDES) -o test_gpiod_rpi test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
+	$(CC) $(CFLAGS) -DRASPBERRY_PI $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod_rpi test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
 
 test_gpiod_bbb: $(GPIOD_TEST_DEPS)
-	$(CC) $(CFLAGS) -DBEAGLEBONE_BLACK $(GPIOD_CFLAGS) $(INCLUDES) -o test_gpiod_bbb test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
+	$(CC) $(CFLAGS) -DBEAGLEBONE_BLACK $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod_bbb test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
 
 # Optional ThreadSanitizer target (D-10). `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into

@@ -274,6 +274,36 @@ make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
 WEB_VENV=/path makes and uses a venv at that place instead, with
 `make -C tests venv test WEB_VENV=/path`.
 
+### Against libgpiod 2.x
+
+The default run builds the libgpiod tests against the installed
+libgpiod, so on a host with libgpiod 1.x the 2.x code of
+boards/gpiod/gpiod_board.c is not compiled. To test it, build libgpiod
+2.3.1 into a directory of your own (git, meson, ninja and a C compiler;
+no root needed; libgpiod 2.3 and later build with meson) and name it on
+the command line, from the repository root:
+
+```bash
+G2=$HOME/libgpiod-2.3.1
+git clone -c advice.detachedHead=false --depth 1 --branch v2.3.1 \
+    https://git.kernel.org/pub/scm/libs/libgpiod/libgpiod.git "$G2-src"
+meson setup "$G2-src/build" "$G2-src" --prefix="$G2" --libdir=lib \
+    --auto-features=disabled
+ninja -C "$G2-src/build" install
+make -C tests clean test \
+    GPIOD_CFLAGS="-I$G2/include" \
+    GPIOD_LIBS="-L$G2/lib -lgpiod -Wl,-rpath,$G2/lib" \
+    GPIOD_EXPECT_VERSION=2
+```
+
+The first four commands are needed once. clean makes sure the libgpiod
+tests are rebuilt against the named library, because make does not
+notice changed flags. GPIOD_EXPECT_VERSION=2 stops the build with an
+error if the tests would be compiled against another libgpiod major
+version, or if libgpiod is not found there at all, instead of quietly
+testing the installed one or skipping the tests. The run needs the venv
+of the web app like the default run.
+
 ### ThreadSanitizer run
 
 Optional ThreadSanitizer run of the concurrency test (needs libtsan;
