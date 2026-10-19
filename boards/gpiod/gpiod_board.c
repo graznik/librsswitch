@@ -160,7 +160,12 @@ int32_t board_exit(void)
 
 #else /* LIBRSSWITCH_GPIOD_VERSION == 2 */
 
-#define MAX_CHIPPATH_LEN (MAX_CHIPNAME_LEN + 5) /* "/dev/" + chipname */
+/*
+ * Room for "/dev/", the longest chip name gpiod_config_parse() accepts
+ * (MAX_CHIPNAME_LEN - 1 characters) and the terminating NUL, so the
+ * path built in board_init() can never be truncated.
+ */
+#define MAX_CHIPPATH_LEN (MAX_CHIPNAME_LEN + 5)
 
 static struct gpiod_chip *chip;
 static struct gpiod_line_request *request;
@@ -180,17 +185,12 @@ int32_t board_init(const char *config)
 	struct gpiod_line_settings *settings;
 	struct gpiod_line_config *line_cfg;
 	struct gpiod_request_config *req_cfg;
-	int n;
 	int32_t ret = -1;
 
 	if (parse_config(config, chipname, sizeof(chipname), &line_offset) < 0)
 		return -1;
 
-	n = snprintf(chippath, sizeof(chippath), "/dev/%s", chipname);
-	if (n < 0 || (size_t)n >= sizeof(chippath)) {
-		syslog(LOG_ERR, "[-] GPIO chip name too long: %s", chipname);
-		return -1;
-	}
+	snprintf(chippath, sizeof(chippath), "/dev/%s", chipname);
 
 	chip = gpiod_chip_open(chippath);
 	if (!chip) {
