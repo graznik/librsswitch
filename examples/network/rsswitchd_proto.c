@@ -68,7 +68,7 @@ static size_t split_fields(const char *line, size_t len,
 }
 
 /*
- * A field is well-formed for v2 (D-07): only ASCII digits, and,
+ * A field is well-formed for v2: only ASCII digits, and,
  * unless it is the single character "0", no leading zero. Digit
  * count and numeric range are not checked here -- those are the
  * RANGE class, handled by field_to_u32() below.
@@ -94,7 +94,7 @@ static int field_ok(const char *s, size_t len)
 /*
  * Converts a field already accepted by field_ok() to a uint32_t.
  * Fails (returns -1) on more than 10 digits, strtoul()'s ERANGE, or a
- * value above UINT32_MAX -- all three are RANGE failures (D-11): the
+ * value above UINT32_MAX -- all three are RANGE failures: the
  * field is well-formed digits, just too large a number.
  */
 static int field_to_u32(const char *s, size_t len, uint32_t *out)
@@ -120,11 +120,11 @@ static int field_to_u32(const char *s, size_t len, uint32_t *out)
 
 /*
  * Checks dev, group, socket and data against librsswitch.h's
- * socket_addr_limits() (D-12, D-13), in that field order, and fills
+ * socket_addr_limits(), in that field order, and fills
  * *cmd accordingly: PROTO_SWITCH when every field is in range, or
  * PROTO_ERROR/PROTO_ERR_RANGE naming the first out-of-range field
  * otherwise. The check always happens before socket_send() is ever
- * called -- which still checks again on its own (D-12).
+ * called -- which still checks again on its own.
  */
 static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
 			 uint32_t socket, uint32_t data)
@@ -169,7 +169,7 @@ static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
 
 /*
  * Parses the two already-delimited fields of "raw <tristate>
- * <pulse_len>" (D-08) into *cmd. Syntax is checked first, for the
+ * <pulse_len>" into *cmd. Syntax is checked first, for the
  * whole command: tristate is non-empty and holds only '0', '1' and
  * uppercase 'F' -- not yet checked against its length limit, so an
  * over-length tristate that also has an invalid character is still a
@@ -179,7 +179,7 @@ static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
  * length against SOCKET_CODEWORD_MAX_LEN, then pulse's converted
  * value against [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US] --
  * and only then is tristate copied into *cmd. Never builds an error
- * text from a byte of tristate or pulse (D-15).
+ * text from a byte of tristate or pulse.
  */
 static void parse_raw(const char *tristate, size_t tlen, const char *pulse,
 		       size_t plen, struct proto_cmd *cmd)

@@ -17,7 +17,7 @@
 /*
  * rsswitchd's wire protocol parser, kept in its own unit with no
  * socket, GPIO or syslog dependency, so it is unit-testable without a
- * daemon or hardware (PROTO-07).
+ * daemon or hardware.
  *
  * Contract summary (see the individual declarations below for the
  * exact rules):
@@ -41,14 +41,14 @@
  *     value above UINT32_MAX) wins the PROTO_ERR_RANGE error.
  *   - Once dev, group, socket and data are all syntactically valid
  *     numbers, they are checked in that same order against
- *     librsswitch.h's socket_addr_limits() (D-12, D-13) -- never
+ *     librsswitch.h's socket_addr_limits() -- never
  *     against a table copied into this file. The first field out of
  *     range wins: an unknown dev gives "dev %u unknown"; an
  *     out-of-range group, socket or data gives "<field> %u not in
  *     0-%u", naming the field's highest valid value. Only once every
  *     field passes this check does the result become PROTO_SWITCH.
  *   - A line of exactly three fields whose first field is exactly the
- *     three bytes "raw" (lowercase) is the raw grammar (D-08): "raw
+ *     three bytes "raw" (lowercase) is the raw grammar: "raw
  *     <tristate> <pulse_len>". Every other three-field line is a
  *     syntax error -- the "raw" keyword is not case-insensitive and
  *     has no shorter or longer form. Syntax is checked first, for the
@@ -101,9 +101,9 @@
 
 /*
  * The result of one command boundary. PROTO_EMPTY is an ignored
- * empty line (D-09): no reply, nothing sent. PROTO_SWITCH is a fully
+ * empty line: no reply, nothing sent. PROTO_SWITCH is a fully
  * parsed, well-formed v2 switch command. PROTO_RAW is a
- * well-formed raw tri-state command (D-08). PROTO_ERROR is a
+ * well-formed raw tri-state command. PROTO_ERROR is a
  * malformed, out-of-range or too-long line.
  */
 enum proto_kind {
@@ -114,8 +114,8 @@ enum proto_kind {
 };
 
 /*
- * The four error classes a reply's first word after "ERR " names
- * (D-11). PROTO_ERR_SEND is never produced by this parser -- it has
+ * The four error classes a reply's first word after "ERR " names.
+ * PROTO_ERR_SEND is never produced by this parser -- it has
  * no socket_send() call to fail -- rsswitchd.c sets it after a
  * library call returns -1. proto_err_name() maps each class to its
  * wire/log word.
@@ -130,20 +130,20 @@ enum proto_err {
 /*
  * One parsed command boundary, filled in by proto_next().
  *
- * kind == PROTO_SWITCH: dev/group/socket/data hold the parsed fields
- * (D-07), already checked against UINT32_MAX and against
- * socket_addr_limits()'s per-device bounds (D-12, D-13). err/text are
+ * kind == PROTO_SWITCH: dev/group/socket/data hold the parsed fields,
+ * already checked against UINT32_MAX and against
+ * socket_addr_limits()'s per-device bounds. err/text are
  * unused.
  *
  * kind == PROTO_RAW: tristate is a NUL-terminated string of '0', '1'
  * and uppercase 'F', 1 to SOCKET_CODEWORD_MAX_LEN bytes long, exactly
  * as given by the client; pulse_len holds the parsed pulse length,
  * already checked against [SOCKET_PULSE_LEN_MIN_US,
- * SOCKET_PULSE_LEN_MAX_US] (D-08). Every other field is unused.
+ * SOCKET_PULSE_LEN_MAX_US]. Every other field is unused.
  *
  * kind == PROTO_ERROR: err names the class and text holds a short,
  * human-readable explanation built only from fixed words and
- * already-parsed numbers (D-15) -- never from bytes in the input
+ * already-parsed numbers -- never from bytes in the input
  * line. dev/group/socket/data/tristate/pulse_len are unused.
  *
  * kind == PROTO_EMPTY: no other field is meaningful.
@@ -204,7 +204,7 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 /*
  * Maps a proto_err to its fixed wire/log word: "syntax", "range",
  * "toolong" or "send". Used for both the ERR reply's first word and
- * the syslog error line (D-11).
+ * the syslog error line.
  */
 const char *proto_err_name(enum proto_err err);
 

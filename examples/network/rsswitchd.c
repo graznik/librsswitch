@@ -32,7 +32,7 @@ static int send_reply(int connfd, const char *ip, const char *reply);
 
 /*
  * Default --timeout, in seconds: how long a connection may go without
- * a complete command before it is closed (D-19, DMN-05).
+ * a complete command before it is closed.
  */
 #define DEFAULT_TIMEOUT 10U
 
@@ -200,7 +200,7 @@ int main(int argc, char *argv[])
 		sigset_t block_set, old_mask;
 
 		/*
-		 * D-24: SIGTERM and SIGINT are blocked everywhere
+		 * SIGTERM and SIGINT are blocked everywhere
 		 * except inside pselect() (wait_readable() and the
 		 * accept-error pause below both wait with wait_mask,
 		 * the only place either signal is ever unblocked). A
@@ -417,7 +417,7 @@ int main(int argc, char *argv[])
 			 * daemon keeps running either way -- accept()
 			 * failing must never end it. The pause is a
 			 * pselect() with no descriptors, so SIGTERM/
-			 * SIGINT still interrupt it at once (D-24)
+			 * SIGINT still interrupt it at once
 			 * instead of a plain sleep running to completion
 			 * regardless.
 			 */
@@ -437,7 +437,7 @@ int main(int argc, char *argv[])
 		 * the SO_SNDTIMEO check into one if/else so this
 		 * connection still reaches the single close(connfd)
 		 * below on either failure, instead of a second close
-		 * site (DMN-01 keeps exactly one).
+		 * site (a connection is closed exactly once).
 		 */
 		{
 			int cflags = fcntl(connfd, F_GETFL, 0);
@@ -469,8 +469,8 @@ int main(int argc, char *argv[])
 					 * idle-command deadline below:
 					 * a client that never reads its
 					 * replies cannot block this
-					 * connfd's write() forever
-					 * (DMN-05). A failure here is
+					 * connfd's write() forever.
+					 * A failure here is
 					 * unusual enough that skipping
 					 * the connection, rather than
 					 * treating it as fatal, keeps
@@ -507,7 +507,7 @@ int main(int argc, char *argv[])
  * Recomputes the remaining time and retries on EINTR, so a signal
  * other than SIGTERM/SIGINT cannot shorten the wait. Waits with
  * wait_mask, so SIGTERM/SIGINT -- blocked everywhere else -- are the
- * only signals that can interrupt this call (D-24).
+ * only signals that can interrupt this call.
  *
  * Returns 1 once fd is readable, 0 once deadline has passed with
  * nothing to read, or -1 with errno set on a real pselect() error --
@@ -564,21 +564,21 @@ static int wait_readable(int fd, const struct timespec *deadline)
  * address and ends this connection. Every complete command is fed
  * through the protocol parser as soon as it is available, so several
  * commands in one read(), or one command split across several
- * read()s, are both handled correctly (PROTO-01, PROTO-05).
+ * read()s, are both handled correctly.
  *
  * The idle deadline is set on entry and re-armed only when proto_next()
  * completes a result -- a command, an ERR or an empty line -- never by
  * partial bytes still buffered in pc: re-arming on every read() would
  * let a client that trickles one byte at a time hold the only
- * connection slot forever, exactly the stall DMN-05 exists to close.
+ * connection slot forever -- the very stall the timeout prevents.
  * A command still incomplete when the deadline passes, or when the
  * connection ends, is dropped without being sent or logged -- a
- * client that never closes its side hits this in normal operation
- * (D-25). The caller closes connfd exactly once, after this function
+ * client that never closes its side hits this in normal operation.
+ * The caller closes connfd exactly once, after this function
  * returns.
  *
  * stop_requested is checked after every wait and after every handled
- * command (D-24): a command already being read and handled always
+ * command: a command already being read and handled always
  * finishes and is answered before this function returns, since
  * SIGTERM/SIGINT stay blocked for the whole of that work; only a
  * command not yet read, or one still buffered when the check fires,
@@ -641,7 +641,7 @@ static void serve_connection(int connfd, const char *ip)
 
 /*
  * Turns one parsed command boundary into the corresponding library
- * call, syslog line and reply. PROTO_EMPTY produces neither (D-09).
+ * call, syslog line and reply. PROTO_EMPTY produces neither.
  * Returns 0 to keep serving this connection, -1 if the reply could
  * not be written (the caller then stops serving it).
  */
@@ -686,7 +686,7 @@ static int handle_command(int connfd, const char *ip,
 }
 
 /*
- * The single place every ERR result is logged (D-16): one line with
+ * The single place every ERR result is logged: one line with
  * the client's address, the fixed class word and the already-built,
  * client-byte-free text.
  */
