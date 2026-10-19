@@ -106,7 +106,7 @@ def test_a_host_name_for_the_daemon_is_refused_with_the_fix():
         resolve_config({"daemon_host": "localhost"})
     assert str(exc.value) == (
         "config: key 'daemon_host': must be an IP address such as "
-        "127.0.0.1 or ::1, not a host name (write 127.0.0.1 for localhost)")
+        "127.0.0.1, not a host name (write 127.0.0.1 for localhost)")
 
 
 def test_boundaries_between_accepted_and_refused():
