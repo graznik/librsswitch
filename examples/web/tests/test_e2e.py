@@ -218,7 +218,9 @@ def test_e2e_basic_auth_and_lockout(stack, real_daemon):
     status, headers, data = http.call("GET", "/api/rooms")
     assert status == 429
     assert data["error"]["code"] == "too_many_attempts"
-    assert headers["Retry-After"] == "60"
+    # The header is the whole seconds left of the lockout, computed when
+    # the request arrives, so a run that crosses a second boundary sees 59.
+    assert 55 <= int(headers["Retry-After"]) <= 60
 
 
 def test_e2e_stopped_daemon_is_reported(stack):
