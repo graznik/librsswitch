@@ -220,5 +220,40 @@ skip_is_error()
 check "an expected libgpiod version turns the skip into an error" \
 	skip_is_error
 
+# Release builds must not log the DEBUG lines. The example Makefiles add
+# -DDEBUG only on request: make DEBUG=1 <target>.
+
+# debug_defs DIR TARGET [VAR=VALUE]: how many times the dry run of
+# `make TARGET` in examples/DIR names -DDEBUG. The dry run executes no
+# recipe, so nothing is built.
+debug_defs()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -n -C "$ROOT/examples/$1" "$2" $3
+	) 2> /dev/null | grep -c -- -DDEBUG
+}
+
+# debug_off DIR TARGET: a release build does not define DEBUG.
+debug_off()
+{
+	[ "$(debug_defs "$1" "$2")" -eq 0 ]
+}
+
+# debug_on DIR TARGET: DEBUG=1 defines it, once.
+debug_on()
+{
+	[ "$(debug_defs "$1" "$2" DEBUG=1)" -eq 1 ]
+}
+
+for dir in basic network; do
+	for target in x86_64 rpi; do
+		check "examples/$dir $target: no -DDEBUG by default" \
+			debug_off "$dir" "$target"
+		check "examples/$dir $target: DEBUG=1 adds -DDEBUG" \
+			debug_on "$dir" "$target"
+	done
+done
+
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
