@@ -16,11 +16,12 @@ TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 # WEB_PYTHON=/path/to/venv/bin/python. It must be the venv's own
 # python, not the path that a symlink resolves to, or the venv's
 # packages are not found. `make venv` makes that venv: it creates
-# WEB_VENV with python3 -m venv when it has no python, and installs
-# examples/web/requirements-dev.txt into it, which needs network access
-# the first time. When the venv's python already imports pytest, it
-# only prints that the venv is ready. WEB_VENV=/path moves both the
-# venv and the WEB_PYTHON default.
+# WEB_VENV with python3 -m venv when it has no pip, removing what is
+# there first (for example after an interrupted run, or without
+# python3-venv), and installs examples/web/requirements-dev.txt into
+# it, which needs network access the first time. When the venv's python
+# already imports pytest, it only prints that the venv is ready.
+# WEB_VENV=/path moves both the venv and the WEB_PYTHON default.
 WEB_DIR := $(abspath ../examples/web)
 WEB_VENV ?= $(WEB_DIR)/venv
 WEB_PYTHON ?= $(WEB_VENV)/bin/python
@@ -71,6 +72,7 @@ endif
 # start through RSSWITCHD_BIN) the target fails instead.
 # test_rsswitchd_service.sh checks how rsswitchd is run as a service
 # from examples/network, and needs no root and no system manager.
+# test_build.sh checks the plumbing of this Makefile offline.
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
@@ -78,6 +80,7 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	done; \
 	sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
 	sh ./test_rsswitchd_service.sh ../examples/network > /dev/null || status=1; \
+	sh ./test_build.sh .. > /dev/null || status=1; \
 	py="$(abspath $(WEB_PYTHON))"; \
 	if [ ! -x "$$py" ]; then \
 		echo "web tests: $$py not found; run make -C tests venv (see examples/web/README.md), or make test WEB_PYTHON=/path/to/venv/bin/python" >&2; \
@@ -100,7 +103,7 @@ venv:
 	if "$$v/bin/python" -c 'import pytest' > /dev/null 2>&1; then \
 		echo "$$v is ready"; \
 	else \
-		[ -x "$$v/bin/python" ] || python3 -m venv "$$v" || exit 1; \
+		[ -x "$$v/bin/pip" ] || { rm -rf "$$v"; python3 -m venv "$$v" || exit 1; }; \
 		"$$v/bin/pip" install -r "$(WEB_DIR)/requirements-dev.txt" || exit 1; \
 	fi
 

@@ -283,13 +283,14 @@ make -C tests venv test
 The venv target makes the web app's virtual environment in
 examples/web/venv from examples/web/requirements-dev.txt. The first run
 downloads the packages, and later runs only check that the venv is
-there. `make -C tests test` then runs every C test, then the tests of
-the web app, including the end-to-end test against the x86_64
-rsswitchd that it builds. It exits non-zero when any of them fails.
-It fails, and never skips, when the venv, pytest or the daemon is
-missing; it never makes the venv itself. A venv at another place is
-named with WEB_PYTHON, as the absolute path of the python in its bin
-directory:
+there. A venv directory that has no pip, for example one left by an
+interrupted run, is removed and made again. `make -C tests test` then
+runs every C test, then the tests of the web app, including the
+end-to-end test against the x86_64 rsswitchd that it builds. It exits
+non-zero when any of them fails. It fails, and never skips, when the
+venv, pytest or the daemon is missing; it never makes the venv itself.
+A venv at another place is named with WEB_PYTHON, as the absolute path
+of the python in its bin directory:
 
 ```bash
 make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
