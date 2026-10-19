@@ -300,6 +300,13 @@ make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
 WEB_VENV=/path makes and uses a venv at that place instead, with
 `make -C tests venv test WEB_VENV=/path`.
 
+On a host where libgpiod cannot be linked, the two libgpiod tests
+(test_gpiod_rpi and test_gpiod_bbb) are skipped. Make warns about it
+at the start, and `make -C tests test` prints a line
+`SKIPPED: test_gpiod_rpi test_gpiod_bbb (libgpiod not linkable)` after
+the results. The exit status is not changed by the skip.
+GPIOD_EXPECT_VERSION (see below) turns the skip into an error.
+
 ### Against libgpiod 2.x
 
 The default run builds the libgpiod tests against the installed

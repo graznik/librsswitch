@@ -35,7 +35,9 @@ WEB_PYTHON ?= $(WEB_VENV)/bin/python
 # includes <gpiod.h> against GPIOD_CFLAGS and GPIOD_LIBS, into a
 # temporary file that is removed again; if that fails, both are left
 # out of TESTS and one SKIP line is printed, instead of failing the
-# whole `make test` run.
+# whole `make test` run. The skip is repeated as a SKIPPED line after
+# the results of `make test`, which are easy to take for a complete run,
+# and the exit status does not change.
 GPIOD_CFLAGS ?=
 GPIOD_LIBS ?= -lgpiod
 # When set to 1 or 2, the libgpiod tests refuse to compile against any
@@ -60,6 +62,7 @@ ifneq ($(GPIOD_EXPECT_VERSION),)
 $(error GPIOD_EXPECT_VERSION=$(GPIOD_EXPECT_VERSION) is set, but gpiod.h or libgpiod was not found with GPIOD_CFLAGS and GPIOD_LIBS)
 else
 $(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h or libgpiod not found)
+GPIOD_SKIPPED := test_gpiod_rpi test_gpiod_bbb
 endif
 endif
 
@@ -93,6 +96,7 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 			RSSWITCH_REQUIRE_DAEMON=1 \
 			"$$py" -m pytest -q -p no:cacheprovider) || status=1; \
 	fi; \
+	$(if $(GPIOD_SKIPPED),echo "SKIPPED: $(GPIOD_SKIPPED) (libgpiod not linkable)" >&2;) \
 	exit $$status
 
 # When both goals are given, test waits for venv, under -j as well. The

@@ -182,5 +182,43 @@ order_without_venv()
 }
 check "test alone does not depend on venv" order_without_venv
 
+# dry_test ARGS...: a dry run of make test with the variables ARGS...,
+# its output in $S/dry.out and $S/dry.err. Returns the status of make.
+dry_test()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -n -C "$ROOT/tests" test WEB_PYTHON=/nonexistent \
+			GPIOD_EXPECT_VERSION= "$@"
+	) > "$S/dry.out" 2> "$S/dry.err"
+}
+
+# When libgpiod cannot be linked, the recipe of test names the skipped
+# tests after the results.
+skip_named()
+{
+	dry_test GPIOD_AVAILABLE=no || return 1
+	grep -qF 'SKIPPED: test_gpiod_rpi test_gpiod_bbb (libgpiod not linkable)' \
+		"$S/dry.out"
+}
+check "test names the skipped libgpiod tests" skip_named
+
+# When it can, the recipe names nothing.
+skip_not_named()
+{
+	dry_test GPIOD_AVAILABLE=yes || return 1
+	! grep -q 'SKIPPED:' "$S/dry.out"
+}
+check "test names nothing when libgpiod links" skip_not_named
+
+# GPIOD_EXPECT_VERSION turns the skip into an error.
+skip_is_error()
+{
+	! dry_test GPIOD_AVAILABLE=no GPIOD_EXPECT_VERSION=2 &&
+		grep -qF 'GPIOD_EXPECT_VERSION=2 is set' "$S/dry.err"
+}
+check "an expected libgpiod version turns the skip into an error" \
+	skip_is_error
+
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
