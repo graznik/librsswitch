@@ -242,6 +242,8 @@ static const char * const malformed_gpio[] = {
 	"gpiochip3:17x", "gpiochip3:-1", "gpiochip3:+5", "gpiochip3: 5",
 	"gpiochip3:4294967296", "gpiochip0:17:5", "gpiochip0/../x:3",
 	"/dev/gpiochip0:17", "../tmp/x:3", "",
+	/* A chip name starts with a letter or digit. */
+	"..:3", ".:3", ".hidden:3", "-x:3",
 };
 
 /*

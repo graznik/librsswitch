@@ -255,7 +255,8 @@ example programs) is board-specific:
   "gpiochip0:17". NULL selects the board's default, gpiochip0:17. A
   string not of the form "chip:line" (for example a bare GPIO number
   such as "49", the BeagleBone Black's former format, a chip without
-  a line, or a chip name containing "/") is malformed. rsssend and
+  a line, a chip name containing "/", or a chip name that does not
+  start with a letter or digit, such as "..") is malformed. rsssend and
   rsswitchd check the string with socket_gpio_config_check() and
   refuse to start with exit status 1 and
   `<prog>: malformed --gpio '<value>'` on stderr, while the library

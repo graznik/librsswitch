@@ -28,13 +28,15 @@
  * config whose chip or line part cannot be parsed is refused, so a
  * typo or a stale config, such as the bare GPIO number of the former
  * BeagleBone Black board, never drives a line the operator did not
- * name. The chip part is a bare chip name such as "gpiochip0", and a
- * name with a "/" is malformed, since it would name a path outside
- * /dev. The line part is accepted only as a non-empty string of the
- * digits 0-9, with no sign, no surrounding whitespace and no trailing
- * garbage -- anything strtoul() would otherwise parse leniently is
- * rejected instead of silently misread. The format is the same for
- * both libgpiod API versions.
+ * name. The chip part is a bare chip name such as "gpiochip0". It
+ * starts with an ASCII letter or digit, which rules out "." and "..",
+ * hidden names and option-like names, and a name with a "/" is
+ * malformed, since it would name a path outside /dev. The line part
+ * is accepted only as a non-empty string of the digits 0-9, with no
+ * sign, no surrounding whitespace and no trailing garbage -- anything
+ * strtoul() would otherwise parse leniently is rejected instead of
+ * silently misread. The format is the same for both libgpiod API
+ * versions.
  *
  * gpiod_config_parse() applies the format. config must not be NULL;
  * the caller maps NULL to its own default. chipname_out receives the

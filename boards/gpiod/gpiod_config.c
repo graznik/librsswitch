@@ -22,6 +22,18 @@
 
 #include "gpiod_config.h"
 
+/*
+ * Tests the character as unsigned char against the three ASCII ranges
+ * instead of calling isalnum(), whose answer depends on the locale.
+ */
+static int is_alnum_ascii(char c)
+{
+	unsigned char u = (unsigned char)c;
+
+	return (u >= '0' && u <= '9') || (u >= 'a' && u <= 'z') ||
+	       (u >= 'A' && u <= 'Z');
+}
+
 int32_t gpiod_config_parse(const char *config, char *chipname_out,
 			   size_t chipname_out_len, unsigned int *line_out)
 {
@@ -42,6 +54,7 @@ int32_t gpiod_config_parse(const char *config, char *chipname_out,
 
 	chiplen = (size_t)(sep - config);
 	if (chiplen == 0 || chiplen >= chipname_out_len ||
+	    !is_alnum_ascii(config[0]) ||
 	    memchr(config, '/', chiplen) != NULL) {
 		syslog(LOG_ERR,
 		       "[-] Malformed GPIO config '%s' (bad chip name)",

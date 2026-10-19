@@ -633,6 +633,12 @@ static const char * const malformed[] = {
 	 * let it point outside /dev.
 	 */
 	"gpiochip0/../x:3", "/dev/gpiochip0:17", "../tmp/x:3",
+	/*
+	 * A chip name starts with a letter or digit, so "." and ".."
+	 * cannot name a directory, and neither can a hidden or an
+	 * option-like name.
+	 */
+	"..:3", ".:3", ".hidden:3", "-x:3",
 };
 
 /*
