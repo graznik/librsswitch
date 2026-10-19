@@ -203,6 +203,18 @@ the web app on the same host; edit the unit's ExecStart line to
 serve other hosts. The program's own default, used when --bind
 is not given, stays 0.0.0.0.
 
+The unit is ordered after network-online.target and wants it. That
+matters only when the edited ExecStart line binds a LAN address that
+DHCP assigns at boot: a start before the address exists fails, and
+after the start limit below the unit stays failed. With the shipped
+`--bind 127.0.0.1` it changes nothing. The target waits only when a
+wait-online service is enabled; this shows whether one is:
+
+```bash
+systemctl is-enabled NetworkManager-wait-online.service \
+	systemd-networkd-wait-online.service
+```
+
 The unit runs the daemon as the unprivileged rsswitchd user, in
 the gpio group (SupplementaryGroups=gpio). libgpiod opens
 `/dev/gpiochip*` on both boards, so that group needs read and write

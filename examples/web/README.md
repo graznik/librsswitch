@@ -44,6 +44,18 @@ at first. To use it from a phone, set a password, see the next
 section, and then set listen_address to the address of the Pi, or to
 0.0.0.0 for all of its IPv4 addresses.
 
+The unit is ordered after network-online.target and wants it. That
+matters when listen_address is an address that DHCP assigns at boot:
+a start before the address exists fails, and after the start limit
+described under "Running alongside rsswitchd" the unit stays failed.
+With the shipped 127.0.0.1 it changes nothing. The target waits only
+when a wait-online service is enabled; this shows whether one is:
+
+```bash
+systemctl is-enabled NetworkManager-wait-online.service \
+	systemd-networkd-wait-online.service
+```
+
 The unit is hardened: besides the unprivileged user, it makes the
 file system read-only except the data directory, hides the home
 directories and the devices, and allows no address family but IP and

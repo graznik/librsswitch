@@ -1,6 +1,13 @@
 [Unit]
 Description=RSS Service Daemon
-After=network.target
+# An ExecStart edited to bind a LAN address needs that address to
+# exist, and DHCP may assign it after network.target. Without the wait
+# the start at boot fails 5 times and the unit stays failed. With
+# --bind 127.0.0.1 this changes nothing.
+After=network.target network-online.target
+# Wants= pulls network-online.target in; After= alone would only order
+# the unit behind it when something else happens to start it.
+Wants=network-online.target
 # A start that keeps failing, for example because another program holds
 # the port or because an edited ExecStart has a malformed --gpio (both
 # exit status 1), or an option that the daemon refuses (exit status 2),

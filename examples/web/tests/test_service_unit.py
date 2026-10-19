@@ -118,8 +118,10 @@ def test_unit_filters_system_calls():
 
 def test_unit_follows_rsswitchd():
     assert one("Unit", "After").split() == ["network.target",
+                                            "network-online.target",
                                             "rsswitchd.service"]
-    assert one("Unit", "Wants") == "rsswitchd.service"
+    assert one("Unit", "Wants").split() == ["rsswitchd.service",
+                                            "network-online.target"]
     assert one("Service", "Restart") == "on-failure"
     assert one("Service", "RestartSec") == "2"
     assert one("Install", "WantedBy") == "multi-user.target"

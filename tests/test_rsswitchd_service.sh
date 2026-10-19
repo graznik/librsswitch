@@ -138,6 +138,10 @@ check "start limit is reachable with RestartSec" \
 	start_limit_reachable
 check "every StartLimit line has a comment above it" \
 	no_bare_start_limit
+check "[Unit] is ordered after network-online.target" \
+	is_value Unit After "network.target network-online.target"
+check "[Unit] wants network-online.target" \
+	is_value Unit Wants network-online.target
 
 # The install checks. Every tool that could reach the host is a stand-in
 # in $S/bin, first in PATH: systemctl, getent, groupadd and useradd only

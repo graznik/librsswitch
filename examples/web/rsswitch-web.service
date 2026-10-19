@@ -1,10 +1,16 @@
 [Unit]
 Description=rsswitch-web, web UI for rsswitchd
-# The app switches sockets through rsswitchd, so it starts after it and
-# pulls it in. It does not require it: the app starts and reports
-# "rsswitchd unreachable" for a switch while the daemon is down.
-After=network.target rsswitchd.service
-Wants=rsswitchd.service
+# The app switches sockets through rsswitchd, so it starts after it. It
+# also starts after the network is online: a listen_address that DHCP
+# assigns at boot needs that address to exist, and without the wait the
+# start fails 5 times and the unit stays failed. With the shipped
+# 127.0.0.1 this changes nothing.
+After=network.target network-online.target rsswitchd.service
+# The app pulls rsswitchd in but does not require it: it starts and
+# reports "rsswitchd unreachable" for a switch while the daemon is
+# down. Wants= also pulls network-online.target in; After= alone would
+# only order the unit behind it when something else starts it.
+Wants=rsswitchd.service network-online.target
 # A start that keeps failing, such as a configuration the app refuses
 # (exit status 2) or a data file it cannot use (exit status 1), is tried
 # 5 times within 60 seconds. Then systemd gives up and the unit is
