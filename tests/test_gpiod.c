@@ -647,6 +647,11 @@ static void test_parse_config(void)
 		 * without a chip name.
 		 */
 		"17", "49", "gpiochip0", "gpiochip0:17:5",
+		/*
+		 * A chip name is a bare device name, and a slash would
+		 * let it point outside /dev.
+		 */
+		"gpiochip0/../x:3", "/dev/gpiochip0:17", "../tmp/x:3",
 	};
 	size_t i;
 

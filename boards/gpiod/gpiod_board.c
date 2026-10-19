@@ -43,7 +43,9 @@
  * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL, or a
  * config whose chip or line part cannot be parsed, falls back to the
  * board's DEFAULT_CHIPNAME and DEFAULT_LINE_OFFSET from
- * gpiod_board.h (gpiochip0:17 on every board today). The line
+ * gpiod_board.h (gpiochip0:17 on every board today). The chip part
+ * is a bare chip name such as "gpiochip0", and a name with a "/" is
+ * malformed, since it would name a path outside /dev. The line
  * part is accepted only as a non-empty string of the digits 0-9, with
  * no sign, no surrounding whitespace and no trailing garbage --
  * anything strtoul() would otherwise parse leniently (Pitfall 4) is
@@ -76,7 +78,8 @@ static void parse_config(const char *config, char *chipname_out,
 	}
 
 	chiplen = (size_t)(sep - config);
-	if (chiplen == 0 || chiplen >= chipname_out_len) {
+	if (chiplen == 0 || chiplen >= chipname_out_len ||
+	    memchr(config, '/', chiplen) != NULL) {
 		syslog(LOG_ERR,
 		       "[-] Malformed GPIO config '%s' (bad chip name), using default",
 		       config);
