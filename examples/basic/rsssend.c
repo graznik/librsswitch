@@ -20,7 +20,7 @@ static void usage(void)
  * Parses arg as a base-10 uint32_t, rejecting everything strtoul()
  * would otherwise silently accept: a leading sign, whitespace, a hex
  * prefix, trailing garbage, an empty string and overflow past
- * UINT32_MAX (Pitfall 4). On success writes the value to *out and
+ * UINT32_MAX. On success writes the value to *out and
  * returns 0; on failure prints "rsssend: invalid NAME 'arg'" to
  * stderr and returns -1.
  */
