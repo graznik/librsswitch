@@ -154,7 +154,7 @@ mkdir "$S/bin" "$S/build"
 REAL_INSTALL=$(command -v install)
 : > "$S/calls.log"
 
-for tool in getent groupadd useradd systemctl; do
+for tool in groupadd useradd systemctl; do
 cat > "$S/bin/$tool" <<EOF
 #!/bin/sh
 echo "$tool \$*" >> "$S/calls.log"
@@ -162,6 +162,18 @@ exit 0
 EOF
 chmod +x "$S/bin/$tool"
 done
+
+# getent logs its call like the others. While $S/no-accounts exists it
+# exits 2, as the real getent does for a name that is not there, so the
+# host looks like one without the gpio group and the rsswitchd user.
+# Otherwise it exits 0, and both accounts exist.
+cat > "$S/bin/getent" <<EOF
+#!/bin/sh
+echo "getent \$*" >> "$S/calls.log"
+[ ! -e "$S/no-accounts" ] || exit 2
+exit 0
+EOF
+chmod +x "$S/bin/getent"
 
 cat > "$S/bin/install" <<EOF
 #!/bin/sh
@@ -240,6 +252,35 @@ restarts_service()
 	fi
 }
 
+# no_account_tools: neither groupadd nor useradd was called, as on a
+# host that already has the gpio group and the rsswitchd user.
+no_account_tools()
+{
+	! grep -Eq '^(groupadd|useradd) ' "$S/calls.log"
+}
+
+# The calls of an install on a host with neither the group nor the
+# user: look both up, create both, then the service calls.
+EXPECTED_FRESH="getent group gpio
+groupadd --system gpio
+getent passwd rsswitchd
+useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd
+systemctl daemon-reload
+systemctl enable rsswitchd
+systemctl reset-failed rsswitchd
+systemctl restart rsswitchd"
+
+# creates_accounts: the whole call log is EXPECTED_FRESH. Prints the
+# actual calls when they differ.
+creates_accounts()
+{
+	if [ "$(cat "$S/calls.log")" != "$EXPECTED_FRESH" ]; then
+		echo "  calls were:" >&2
+		sed 's/^/    /' "$S/calls.log" >&2
+		return 1
+	fi
+}
+
 # same_file SRC DEST: DEST is a file equal to SRC.
 same_file()
 {
@@ -271,6 +312,7 @@ staged_calls_none()
 
 unstaged_rc=1
 upgrade_rc=1
+fresh_rc=1
 staged_rc=1
 
 check "the five tools resolve into the stand-in directory" shims_first
@@ -284,6 +326,8 @@ check "install puts the unit in place" \
 	same_file "$NET/rsswitchd.service" "$S/units/rsswitchd.service"
 check "install runs daemon-reload, enable, reset-failed, restart" \
 	restarts_service
+check "install on a host with the accounts calls no groupadd or useradd" \
+	no_account_tools
 
 # An upgrade: a new build replaces the old binary and restarts the
 # daemon, which is already installed and running.
@@ -296,6 +340,18 @@ check "upgrade installs the new binary" \
 	binary_equals "$S/build/rsswitchd" "$S/prefix/bin/rsswitchd"
 check "upgrade runs daemon-reload, enable, reset-failed, restart" \
 	restarts_service
+check "upgrade on a host with the accounts calls no groupadd or useradd" \
+	no_account_tools
+
+# A fresh host has neither the gpio group nor the rsswitchd user, and
+# make install creates both before it starts the service.
+: > "$S/no-accounts"
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
+fresh_rc=$?
+rm -f "$S/no-accounts"
+check "fresh host install exits 0" test "$fresh_rc" -eq 0
+check "fresh host install creates the group and the user" creates_accounts
 
 # A staged install touches no account and no service.
 : > "$S/calls.log"
