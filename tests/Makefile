@@ -28,8 +28,9 @@ WEB_PYTHON ?= $(WEB_VENV)/bin/python
 # `make test`. GPIOD_CFLAGS/GPIOD_LIBS let a caller point at a
 # different libgpiod (see the D-15 verification in 01-05-SUMMARY.md);
 # by default they use the installed system headers/library. Probed
-# once, at parse time, by asking the compiler whether it can
-# preprocess a one-line <gpiod.h> include; if it can't, both are left
+# once, at parse time, by compiling and linking a one-line program that
+# includes <gpiod.h> against GPIOD_CFLAGS and GPIOD_LIBS, into a
+# temporary file that is removed again; if that fails, both are left
 # out of TESTS and one SKIP line is printed, instead of failing the
 # whole `make test` run.
 GPIOD_CFLAGS ?=
@@ -44,16 +45,18 @@ GPIOD_EXPECT_VERSION ?=
 # versions need it. Outside a function call the escape works in every
 # version.
 HASH := \#
-GPIOD_AVAILABLE := $(shell printf '$(HASH)include <gpiod.h>\n' | \
-	$(CC) $(GPIOD_CFLAGS) -E - >/dev/null 2>&1 && echo yes)
+GPIOD_AVAILABLE := $(shell t=$$(mktemp) && \
+	printf '$(HASH)include <gpiod.h>\nint main(void) { return 0; }\n' | \
+	$(CC) $(GPIOD_CFLAGS) -x c - -x none $(GPIOD_LIBS) -o "$$t" \
+	>/dev/null 2>&1 && echo yes; rm -f "$$t")
 
 ifeq ($(GPIOD_AVAILABLE),yes)
 TESTS += test_gpiod_rpi test_gpiod_bbb
 else
 ifneq ($(GPIOD_EXPECT_VERSION),)
-$(error GPIOD_EXPECT_VERSION=$(GPIOD_EXPECT_VERSION) is set, but gpiod.h was not found with GPIOD_CFLAGS)
+$(error GPIOD_EXPECT_VERSION=$(GPIOD_EXPECT_VERSION) is set, but gpiod.h or libgpiod was not found with GPIOD_CFLAGS and GPIOD_LIBS)
 else
-$(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h not found)
+$(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h or libgpiod not found)
 endif
 endif
 
