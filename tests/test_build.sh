@@ -16,8 +16,8 @@
 
 # Checks the build and test plumbing of the Makefiles offline, without
 # root and without network: the venv target of tests/Makefile, with
-# stand-ins for python3 and pip. Takes the root of the code repository
-# as $1; run by `make test`.
+# stand-ins for python3 and pip, and the order of venv and test. Takes
+# the root of the code repository as $1; run by `make test`.
 
 if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 	echo "usage: $0 <code repository root>" >&2
@@ -153,6 +153,34 @@ venv_left_alone()
 	calls_are ""
 }
 check "venv with pytest is left alone" venv_left_alone
+
+# test_rule GOAL...: the "test:" lines of the make database for the
+# goals GOAL..., from a dry run that executes no recipe.
+test_rule()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -pn -C "$ROOT/tests" "$@" WEB_PYTHON=/nonexistent \
+			GPIOD_EXPECT_VERSION=
+	) 2>/dev/null | grep '^test:'
+}
+
+# With venv among the goals, test has venv as an order-only
+# prerequisite, so make -j makes the venv first.
+order_with_venv()
+{
+	test_rule venv test | grep -q '| venv$'
+}
+check "venv test: test waits for venv" order_with_venv
+
+# Without venv among the goals, test has no order-only prerequisite, so
+# make test never makes the venv.
+order_without_venv()
+{
+	rules=$(test_rule test) || return 1
+	! printf '%s\n' "$rules" | grep -q '|'
+}
+check "test alone does not depend on venv" order_without_venv
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

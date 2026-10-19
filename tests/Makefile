@@ -95,6 +95,14 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	fi; \
 	exit $$status
 
+# When both goals are given, test waits for venv, under -j as well. The
+# prerequisite is declared only then, so plain `make test` never runs
+# venv and still fails instead of installing anything. It is order-only
+# because a newer venv must not make test run again.
+ifneq ($(filter venv,$(MAKECMDGOALS)),)
+test: | venv
+endif
+
 # Makes the web app's virtual environment, on request only. It is never
 # a prerequisite of test, so test still fails instead of installing
 # anything on its own.
