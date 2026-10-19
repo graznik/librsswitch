@@ -186,6 +186,7 @@ GPIOD_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
 		   -Wl,--wrap=gpiod_line_settings_free \
 		   -Wl,--wrap=gpiod_line_config_new \
 		   -Wl,--wrap=gpiod_line_config_free \
+		   -Wl,--wrap=gpiod_line_config_add_line_settings \
 		   -Wl,--wrap=gpiod_request_config_new \
 		   -Wl,--wrap=gpiod_request_config_free \
 		   -Wl,--wrap=gpiod_chip_request_lines

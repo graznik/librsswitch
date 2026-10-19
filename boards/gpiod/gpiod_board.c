@@ -262,6 +262,7 @@ int32_t board_init(const char *config)
 		syslog(LOG_ERR,
 		       "[-] Failed to add GPIO line %u settings: %s",
 		       line_offset, strerror(errno));
+		gpiod_line_config_free(line_cfg);
 		goto out;
 	}
 

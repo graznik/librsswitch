@@ -166,6 +166,7 @@ static int mock_request_default;
 static int mock_fail_settings_new;
 static int mock_fail_line_cfg_new;
 static int mock_fail_req_cfg_new;
+static int mock_fail_add_settings;
 static int mock_fail_request_lines;
 static int mock_settings_live;
 static int mock_line_cfg_live;
@@ -336,6 +337,26 @@ void __wrap_gpiod_line_config_free(struct gpiod_line_config *config)
 	__real_gpiod_line_config_free(config);
 }
 
+extern int __real_gpiod_line_config_add_line_settings(
+	struct gpiod_line_config *config, const unsigned int *offsets,
+	size_t num_offsets, struct gpiod_line_settings *settings);
+int __wrap_gpiod_line_config_add_line_settings(
+	struct gpiod_line_config *config, const unsigned int *offsets,
+	size_t num_offsets, struct gpiod_line_settings *settings);
+int __wrap_gpiod_line_config_add_line_settings(
+	struct gpiod_line_config *config, const unsigned int *offsets,
+	size_t num_offsets, struct gpiod_line_settings *settings)
+{
+	if (mock_fail_add_settings) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	return __real_gpiod_line_config_add_line_settings(config, offsets,
+							  num_offsets,
+							  settings);
+}
+
 extern struct gpiod_request_config *__real_gpiod_request_config_new(void);
 struct gpiod_request_config *__wrap_gpiod_request_config_new(void);
 struct gpiod_request_config *__wrap_gpiod_request_config_new(void)
@@ -479,6 +500,7 @@ static void mock_reset(void)
 	mock_fail_settings_new = 0;
 	mock_fail_line_cfg_new = 0;
 	mock_fail_req_cfg_new = 0;
+	mock_fail_add_settings = 0;
 	mock_fail_request_lines = 0;
 	mock_settings_live = 0;
 	mock_line_cfg_live = 0;
@@ -935,6 +957,28 @@ static void test_board_init_request_lines_fails(void)
 	mock_reset();
 }
 
+/*
+ * gpiod_line_config_add_line_settings() fails: board_init() returns -1,
+ * closes the chip once, frees the line settings, the line config and
+ * the request config and logs the error. libgpiod fails this call here
+ * only when it runs out of memory, and the line config must still be
+ * freed.
+ */
+static void test_board_init_frees_line_config_on_add_failure(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_add_settings = 1;
+
+	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK(captured_find("[-] Failed to add GPIO line 3 settings"));
+	CHECK(request == NULL);
+	check_board_init_failed_cleanly();
+
+	mock_reset();
+}
+
 #endif /* LIBRSSWITCH_GPIOD_VERSION */
 
 int main(void)
@@ -952,6 +996,7 @@ int main(void)
 	test_board_init_request_output_fails();
 #else
 	test_board_init_alloc_fails();
+	test_board_init_frees_line_config_on_add_failure();
 	test_board_init_request_lines_fails();
 #endif
 
