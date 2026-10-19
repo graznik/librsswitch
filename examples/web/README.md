@@ -142,6 +142,12 @@ restarted to run the new code. Installing rsswitchd again with
 `sudo make -C ../network install` restarts rsswitchd as well, so the
 new daemon runs at once.
 
+Earlier versions listened on all addresses when config.json had no
+listen_address. The default is now 127.0.0.1, so after the upgrade of
+such a configuration the phones cannot reach the app until
+listen_address is set to the address of the Pi, or to 0.0.0.0 for all
+of its IPv4 addresses. Set a password first, see "Security".
+
 
 ## Staged install
 
