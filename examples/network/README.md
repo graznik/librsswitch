@@ -232,9 +232,11 @@ leaves out PrivateDevices and DevicePolicy, which would hide
 `/dev/gpiochip*` and break GPIO access.
 
 With an edited ExecStart line, the GPIO line is chosen with
-`--gpio chip:line`, e.g. `--gpio gpiochip0:17`. A bare GPIO number
-is not accepted: it is logged and the daemon falls back to the
-default line of the board.
+`--gpio chip:line`, e.g. `--gpio gpiochip0:17`. Any other form, such
+as a bare GPIO number, is refused: the daemon still starts, but it
+logs `[-] Malformed GPIO config` and answers every switching command
+with `ERR send transmission failed` until the ExecStart line is
+fixed.
 
 When the daemon cannot start, for example because another program
 holds port 5000, systemd tries again after 2 seconds, at most 5

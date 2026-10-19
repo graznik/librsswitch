@@ -238,11 +238,15 @@ The config string passed to socket_gpio_config() (or "--gpio" on the
 example programs) is board-specific:
 
 - Raspberry Pi / Raspberry Pi 3 / BeagleBone Black: "chip:line", e.g.
-  "gpiochip0:17". NULL, or a malformed string, is logged and the board
-  falls back to its default, gpiochip0:17. A bare GPIO number such as
-  "49", the BeagleBone Black's former format, is malformed too. The
-  default is GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on a
-  BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
+  "gpiochip0:17". NULL selects the board's default, gpiochip0:17. A
+  string not of the form "chip:line" (for example a bare GPIO number
+  such as "49", the BeagleBone Black's former format, a chip without
+  a line, or a chip name containing "/") is logged as
+  "[-] Malformed GPIO config" and makes every send fail without
+  opening a GPIO chip: socket_send() and socket_send_codeword()
+  return -1, rsssend exits 1 and rsswitchd answers ERR send. The
+  default is GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on
+  a BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
   chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
   package and pass it as "chip:line".
 - x86_64: ignored -- the stub board never touches real GPIO.

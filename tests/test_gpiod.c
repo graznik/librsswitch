@@ -616,20 +616,19 @@ static void test_exit_without_open_chip(void)
 }
 
 /*
- * A malformed config falls all the way back to the compiled-in
- * default (gpiochip0:17), and one "[-] Malformed GPIO config" message
- * is logged.
+ * A malformed config is refused: parse_config() returns -1 and logs
+ * one "[-] Malformed GPIO config" message.
  */
-static void check_parse_config_default(const char *config)
+static void check_parse_config_malformed(const char *config)
 {
 	char chipname[MAX_CHIPNAME_LEN];
 	unsigned int line_offset;
 
 	captured_reset();
-	parse_config(config, chipname, sizeof(chipname), &line_offset);
+	CHECK_EQ(parse_config(config, chipname, sizeof(chipname),
+			      &line_offset), -1);
 
-	CHECK(strcmp(chipname, DEFAULT_CHIPNAME) == 0);
-	CHECK_EQ(line_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+	CHECK_EQ(captured_count(), (size_t)1);
 	CHECK(captured_find("[-] Malformed GPIO config"));
 }
 
@@ -657,25 +656,30 @@ static void test_parse_config(void)
 
 	/* NULL config: default, no log. */
 	captured_reset();
-	parse_config(NULL, chipname, sizeof(chipname), &line_offset);
+	CHECK_EQ(parse_config(NULL, chipname, sizeof(chipname),
+			      &line_offset), 0);
 	CHECK(strcmp(chipname, DEFAULT_CHIPNAME) == 0);
 	CHECK_EQ(line_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+	CHECK_EQ(captured_count(), (size_t)0);
 
 	/* Well-formed configs: chip and line taken from the string. */
 	captured_reset();
-	parse_config("gpiochip3:5", chipname, sizeof(chipname), &line_offset);
+	CHECK_EQ(parse_config("gpiochip3:5", chipname, sizeof(chipname),
+			      &line_offset), 0);
 	CHECK(strcmp(chipname, "gpiochip3") == 0);
 	CHECK_EQ(line_offset, 5U);
+	CHECK_EQ(captured_count(), (size_t)0);
 
 	captured_reset();
-	parse_config("gpiochip3:007", chipname, sizeof(chipname),
-		     &line_offset);
+	CHECK_EQ(parse_config("gpiochip3:007", chipname, sizeof(chipname),
+			      &line_offset), 0);
 	CHECK(strcmp(chipname, "gpiochip3") == 0);
 	CHECK_EQ(line_offset, 7U);
+	CHECK_EQ(captured_count(), (size_t)0);
 
-	/* Every malformed form falls back to gpiochip0:17, logged. */
+	/* Every malformed form is refused and logged once. */
 	for (i = 0; i < ARRAY_SIZE(malformed); i++)
-		check_parse_config_default(malformed[i]);
+		check_parse_config_malformed(malformed[i]);
 }
 
 /*
@@ -873,6 +877,62 @@ static void check_board_init_failed_cleanly(void)
 	CHECK_EQ(mock_release_count, 0);
 }
 
+/*
+ * A malformed config makes board_init() fail before any GPIO chip is
+ * opened: no open is even attempted, nothing is left open, and the
+ * error is logged. The chip open is armed to hand out the dummy chip,
+ * so an open attempt would be visible both in the call count and as a
+ * successful return.
+ */
+static void test_board_init_malformed_opens_no_chip(void)
+{
+	static const char * const configs[] = {
+		"49", "gpiochip0", "gpiochip0/../x:3",
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(configs); i++) {
+		mock_reset();
+		captured_reset();
+		mock_fake_chip_open = 1;
+
+		CHECK_EQ(board_init(configs[i]), -1);
+		CHECK_EQ(mock_open_calls, 0);
+		CHECK(chip == NULL);
+		CHECK(captured_find("[-] Malformed GPIO config"));
+		CHECK_EQ(board_exit(), 0);
+
+		mock_reset();
+	}
+}
+
+/*
+ * A NULL config selects the board's default chip and line, without
+ * logging anything.
+ */
+static void test_board_init_null_config_opens_default(void)
+{
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+
+	CHECK_EQ(board_init(NULL), 0);
+
+	CHECK_EQ(mock_open_calls, 1);
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	CHECK(strcmp(mock_open_arg, DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(mock_get_line_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+#else
+	CHECK(strcmp(mock_open_arg, "/dev/" DEFAULT_CHIPNAME) == 0);
+	CHECK_EQ(mock_request_offset, (unsigned int)DEFAULT_LINE_OFFSET);
+#endif
+	CHECK_EQ(captured_count(), (size_t)0);
+
+	CHECK_EQ(board_exit(), 0);
+
+	mock_reset();
+}
+
 #if LIBRSSWITCH_GPIOD_VERSION == 1
 
 /* gpiod_chip_get_line() fails: the chip is closed and the error logged. */
@@ -996,6 +1056,8 @@ int main(void)
 	test_clean_session_adds_no_write();
 	test_failed_drive_low_still_releases();
 	test_board_init_success();
+	test_board_init_malformed_opens_no_chip();
+	test_board_init_null_config_opens_default();
 #if LIBRSSWITCH_GPIOD_VERSION == 1
 	test_board_init_get_line_fails();
 	test_board_init_request_output_fails();

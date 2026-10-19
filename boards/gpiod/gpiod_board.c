@@ -40,21 +40,28 @@
 #define MAX_CHIPNAME_LEN 64
 
 /*
- * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL, or a
- * config whose chip or line part cannot be parsed, falls back to the
- * board's DEFAULT_CHIPNAME and DEFAULT_LINE_OFFSET from
- * gpiod_board.h (gpiochip0:17 on every board today). The chip part
- * is a bare chip name such as "gpiochip0", and a name with a "/" is
- * malformed, since it would name a path outside /dev. The line
+ * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL selects
+ * the board's DEFAULT_CHIPNAME and DEFAULT_LINE_OFFSET from
+ * gpiod_board.h (gpiochip0:17 on every board today). A non-NULL
+ * config whose chip or line part cannot be parsed is refused:
+ * parse_config() logs it and returns -1, and board_init() fails
+ * without opening a chip, so a typo or a stale config, such as the
+ * bare GPIO number of the former BeagleBone Black board, never drives
+ * a line the operator did not name. The chip part is a bare chip
+ * name such as "gpiochip0", and a name with a "/" is malformed, since
+ * it would name a path outside /dev. The line
  * part is accepted only as a non-empty string of the digits 0-9, with
  * no sign, no surrounding whitespace and no trailing garbage --
  * anything strtoul() would otherwise parse leniently (Pitfall 4) is
  * rejected instead of silently misread. The format is the same for
  * both libgpiod API versions; only how the chip is opened differs
  * (see board_init() below).
+ *
+ * Returns 0 for NULL and for a well-formed config, -1 for a malformed
+ * one. The outputs are initialised to the defaults in every case.
  */
-static void parse_config(const char *config, char *chipname_out,
-			 size_t chipname_out_len, unsigned int *line_out)
+static int parse_config(const char *config, char *chipname_out,
+			size_t chipname_out_len, unsigned int *line_out)
 {
 	const char *sep;
 	const char *linestr;
@@ -67,23 +74,23 @@ static void parse_config(const char *config, char *chipname_out,
 	*line_out = DEFAULT_LINE_OFFSET;
 
 	if (!config)
-		return;
+		return 0;
 
 	sep = strchr(config, ':');
 	if (!sep) {
 		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (expected chip:line), using default",
+		       "[-] Malformed GPIO config '%s' (expected chip:line)",
 		       config);
-		return;
+		return -1;
 	}
 
 	chiplen = (size_t)(sep - config);
 	if (chiplen == 0 || chiplen >= chipname_out_len ||
 	    memchr(config, '/', chiplen) != NULL) {
 		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (bad chip name), using default",
+		       "[-] Malformed GPIO config '%s' (bad chip name)",
 		       config);
-		return;
+		return -1;
 	}
 
 	linestr = sep + 1;
@@ -106,12 +113,13 @@ static void parse_config(const char *config, char *chipname_out,
 	memcpy(chipname_out, config, chiplen);
 	chipname_out[chiplen] = '\0';
 	*line_out = (unsigned int)parsed_line;
-	return;
+	return 0;
 
 bad_line:
 	syslog(LOG_ERR,
-	       "[-] Malformed GPIO config '%s' (bad line number), using default",
+	       "[-] Malformed GPIO config '%s' (bad line number)",
 	       config);
+	return -1;
 }
 
 /*
@@ -135,7 +143,8 @@ int32_t board_init(const char *config)
 	char chipname[MAX_CHIPNAME_LEN];
 	unsigned int line_offset;
 
-	parse_config(config, chipname, sizeof(chipname), &line_offset);
+	if (parse_config(config, chipname, sizeof(chipname), &line_offset) < 0)
+		return -1;
 
 	chip = gpiod_chip_open_by_name(chipname);
 	if (!chip) {
@@ -225,7 +234,8 @@ int32_t board_init(const char *config)
 	int n;
 	int32_t ret = -1;
 
-	parse_config(config, chipname, sizeof(chipname), &line_offset);
+	if (parse_config(config, chipname, sizeof(chipname), &line_offset) < 0)
+		return -1;
 
 	n = snprintf(chippath, sizeof(chippath), "/dev/%s", chipname);
 	if (n < 0 || (size_t)n >= sizeof(chippath)) {
