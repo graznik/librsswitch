@@ -147,7 +147,7 @@ make -C examples/network x86_64
 
 ## Usage
 
-Four public functions, declared in librsswitch.h.
+Five public functions, declared in librsswitch.h.
 
 ```c
 socket_gpio_config(const char *config);
@@ -157,6 +157,18 @@ Sets the GPIO configuration string used by every following
 socket_send()/socket_send_codeword() call. NULL (the default, if never
 called) means "use this board's compiled-in default". Format is
 per-board -- see "GPIO configuration" below.
+
+```c
+socket_gpio_config_check(const char *config);
+```
+
+Checks a GPIO configuration string without storing it and without
+touching the GPIO. Returns 0 for NULL and for a string the board can
+parse, and -1 for a malformed one, after the board has logged the
+cause via syslog. Only the format is checked, so a well-formed string
+may still name a chip that does not exist; the first send reports
+that. Call it before socket_gpio_config() to refuse a bad
+configuration at start-up, as rsssend and rsswitchd do.
 
 ```c
 socket_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
@@ -210,18 +222,20 @@ unknown dev or a NULL pointer, leaving the outputs untouched.
 
 ## Thread safety
 
-socket_send(), socket_send_codeword(), socket_addr_limits() and
-socket_gpio_config() are safe to call concurrently from multiple
-threads of the same process. Every send session -- board_init(), all
-repetitions, board_exit() -- is serialized by one library-wide lock,
-so concurrent sends never interleave their pulses; a calling thread
-simply blocks until the previous send session completes.
+socket_send(), socket_send_codeword(), socket_addr_limits(),
+socket_gpio_config_check() and socket_gpio_config() are safe to call
+concurrently from multiple threads of the same process. Every send
+session -- board_init(), all repetitions, board_exit() -- is
+serialized by one library-wide lock, so concurrent sends never
+interleave their pulses; a calling thread simply blocks until the
+previous send session completes.
 socket_gpio_config() takes the same lock around its store, so a config
 change is ordered against sends that start after it returns (it does
-not affect a session already in progress). socket_addr_limits() takes
-no lock at all: it only reads constant tables and never touches
-gpio_config or the board, so it never blocks and never waits behind a
-send in progress.
+not affect a session already in progress). socket_addr_limits() and
+socket_gpio_config_check() take no lock at all: the first only reads
+constant tables, the second only parses the string it is given, and
+neither touches gpio_config or opens the board, so they never block
+and never wait behind a send in progress.
 
 This guarantee is process-local only: two separate processes driving
 the same GPIO line (for example rsssend run once while rsswitchd is
@@ -241,15 +255,20 @@ example programs) is board-specific:
   "gpiochip0:17". NULL selects the board's default, gpiochip0:17. A
   string not of the form "chip:line" (for example a bare GPIO number
   such as "49", the BeagleBone Black's former format, a chip without
-  a line, or a chip name containing "/") is logged as
-  "[-] Malformed GPIO config" and makes every send fail without
-  opening a GPIO chip: socket_send() and socket_send_codeword()
-  return -1, rsssend exits 1 and rsswitchd answers ERR send. The
-  default is GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on
-  a BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
-  chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
-  package and pass it as "chip:line".
-- x86_64: ignored -- the stub board never touches real GPIO.
+  a line, or a chip name containing "/") is malformed. rsssend and
+  rsswitchd check the string with socket_gpio_config_check() and
+  refuse to start with exit status 1 and
+  `<prog>: malformed --gpio '<value>'` on stderr, while the library
+  logs "[-] Malformed GPIO config". A program that stores such a
+  string with socket_gpio_config() without checking it still gets -1
+  from socket_send() and socket_send_codeword(), and no GPIO chip is
+  opened. The default is GPIO17 (header pin 11) on the Raspberry Pi,
+  and P9_23 on a BeagleBone Black with Debian 13 (kernel 6.x). On
+  other kernels the chip of P9_23 can differ: find it with `gpioinfo`
+  from the gpiod package and pass it as "chip:line".
+- x86_64: the host build checks the string with the same "chip:line"
+  rules, so the programs refuse the same values, and its stub board
+  drives no GPIO.
 
 
 ## Running the tests (x86_64 host)
