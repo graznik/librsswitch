@@ -17,7 +17,9 @@
 # Checks the build and test plumbing of the Makefiles offline, without
 # root and without network: the venv target of tests/Makefile, with
 # stand-ins for python3 and pip, and the order of venv and test. Takes
-# the root of the code repository as $1; run by `make test`.
+# the root of the code repository as $1; run by `make test`. It also
+# checks the DEBUG opt-in and the .PHONY lines of the Makefiles, and that
+# stale comments stay out of librsswitch.c.
 
 if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 	echo "usage: $0 <code repository root>" >&2
@@ -293,6 +295,16 @@ for dir in basic network; do
 		phony_names "$ROOT/examples/$dir/Makefile" \
 		rpi rpi3 bbb x86_64 clean
 done
+
+# These comments of librsswitch.c described a parameter, a struct and a
+# protocol that do not exist. Each phrase names one of them.
+stale_comments_gone()
+{
+	[ -f "$ROOT/librsswitch.c" ] &&
+		! grep -qE 'ntimes|Configuration struct|Protocol 2' \
+			"$ROOT/librsswitch.c"
+}
+check "librsswitch.c: the stale comments stay gone" stale_comments_gone
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
