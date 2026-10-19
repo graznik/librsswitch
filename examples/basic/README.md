@@ -42,5 +42,7 @@ make x86_64
 
 Arguments: DEV (0 = REV 008345, 1 = Pollin 2605), GROUP, SOCKET, DATA
 (0 = off, 1 = on), and optionally --gpio CONFIG. Exit status: 0 sent,
-1 send failed or the address was rejected by the library (nothing
-sent), 2 usage error (nothing sent).
+1 send failed, the address was rejected by the library or --gpio is
+malformed (nothing sent), 2 usage error (nothing sent). A malformed
+--gpio is refused before anything is sent, with
+`rsssend: malformed --gpio '<value>'` on stderr.

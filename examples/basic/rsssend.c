@@ -13,7 +13,7 @@ static void usage(void)
 		"Usage: rsssend DEV GROUP SOCKET DATA [--gpio CONFIG]\n"
 		"  DEV:  0 = REV 008345, 1 = Pollin 2605\n"
 		"  DATA: 0 = off, 1 = on\n"
-		"Exit status: 0 sent, 1 send failed, 2 usage error\n");
+		"Exit status: 0 sent, 1 send failed or malformed --gpio, 2 usage error\n");
 }
 
 /*
@@ -78,6 +78,16 @@ int main(int argc, char *argv[])
 	if (data != 0 && data != 1) {
 		fprintf(stderr, "rsssend: invalid DATA '%s'\n", argv[4]);
 		exit(2);
+	}
+
+	/*
+	 * Without this check a malformed config would show up only as
+	 * a failed send, which reads like a problem with the radio.
+	 */
+	if (socket_gpio_config_check(gpio_config) < 0) {
+		fprintf(stderr, "rsssend: malformed --gpio '%s'\n",
+			gpio_config);
+		exit(1);
 	}
 
 	socket_gpio_config(gpio_config);

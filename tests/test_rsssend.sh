@@ -16,10 +16,10 @@
 
 # Exercises rsssend's argument handling (CLI-01, D-20..D-22): usage or
 # parse errors exit 2 with the diagnostic on stderr and nothing on
-# stdout, an address the library rejects exits 1 with nothing on
-# stdout, and valid input still produces the exact codeword on stdout
-# with an empty stderr. Takes the path to the rsssend binary as $1;
-# run by `make test`.
+# stdout, an address the library rejects or a malformed --gpio exits 1
+# with nothing on stdout, and valid input still produces the exact
+# codeword on stdout with an empty stderr. Takes the path to the
+# rsssend binary as $1; run by `make test`.
 
 BIN=$1
 if [ -z "$BIN" ]; then
@@ -111,7 +111,12 @@ check "pollin group uint32-max" 1 "" contains "rsssend:"  1 4294967295 0 1
 # --- commit 2: left-to-right order, --gpio only at positions 5/6 ----
 check "first bad arg names DEV" 2 "" contains "invalid DEV"  abc def 0 1
 check "first bad arg not GROUP" 2 "" not-contains "GROUP"  abc def 0 1
-check "gpio option accepted" 0 "0FFF0000F00F" empty ""  1 17 23 1 --gpio x
+check "gpio option accepted" 0 "0FFF0000F00F" empty ""  1 17 23 1 --gpio gpiochip0:17
+check "gpio bare number refused" 1 "" contains "rsssend: malformed --gpio '49'"  1 17 23 1 --gpio 49
+check "gpio without line refused" 1 "" contains "rsssend: malformed --gpio 'gpiochip0'"  1 17 23 1 --gpio gpiochip0
+check "gpio empty refused" 1 "" contains "rsssend: malformed --gpio ''"  1 17 23 1 --gpio ""
+check "gpio path refused" 1 "" contains "rsssend: malformed --gpio '/dev/gpiochip0:17'"  1 17 23 1 --gpio /dev/gpiochip0:17
+check "usage error before gpio check" 2 "" contains "invalid DEV 'abc'"  abc 17 23 1 --gpio 49
 check "gpio missing value" 2 "" any ""  1 17 23 1 --gpio
 check "trailing extra arg" 2 "" any ""  1 17 23 1 extra
 check "gpio plus extra arg" 2 "" any ""  1 17 23 1 --gpio x extra
