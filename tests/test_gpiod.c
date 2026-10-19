@@ -15,13 +15,14 @@
  */
 
 /*
- * Drives boards/gpiod/gpiod_board.c's error paths and config parser on
- * any Linux host, without a Raspberry Pi or a real GPIO chip. syslog is
- * captured the same way tests/test_logging.c captures it --
- * #undef/#define syslog before including the source -- so error
- * messages can be asserted on directly. Included, not linked, so this
- * file can also reach parse_config(), board_init(), board_exit() and
- * their static state.
+ * Drives boards/gpiod/gpiod_board.c's error paths and, through
+ * boards/gpiod/gpiod_config.c, its config parser on any Linux host,
+ * without a Raspberry Pi or a real GPIO chip. syslog is captured the
+ * same way tests/test_logging.c captures it -- #undef/#define syslog
+ * before including the sources -- so error messages can be asserted on
+ * directly. Both files are included, not linked, so this file can also
+ * reach parse_config(), board_init(), board_exit() and their static
+ * state.
  *
  * The file is built once per libgpiod board, as test_gpiod_rpi and
  * test_gpiod_bbb, so each build also checks that board's defaults.
@@ -56,6 +57,7 @@ static void capture_syslog(int priority, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 
 #include "minitest.h"
+#include "../boards/gpiod/gpiod_config.c"
 #include "../boards/gpiod/gpiod_board.c"
 
 /* tests/Makefile sets EXPECT_GPIOD_VERSION from GPIOD_EXPECT_VERSION. */

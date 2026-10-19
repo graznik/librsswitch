@@ -1,14 +1,13 @@
 #include <errno.h>
 #include <gpiod.h>
-#include <limits.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <syslog.h>
 #include <time.h>
 
 #include "gpiod_board.h"
+#include "gpiod_config.h"
 
 /*
  * Board code for every board that drives its line through libgpiod.
@@ -37,89 +36,27 @@
 #error "LIBRSSWITCH_GPIOD_VERSION must be 1 or 2"
 #endif
 
-#define MAX_CHIPNAME_LEN 64
-
 /*
- * config format: "<chip>:<line>", e.g. "gpiochip0:17". NULL selects
- * the board's DEFAULT_CHIPNAME and DEFAULT_LINE_OFFSET from
- * gpiod_board.h (gpiochip0:17 on every board today). A non-NULL
- * config whose chip or line part cannot be parsed is refused:
- * parse_config() logs it and returns -1, and board_init() fails
- * without opening a chip, so a typo or a stale config, such as the
- * bare GPIO number of the former BeagleBone Black board, never drives
- * a line the operator did not name. The chip part is a bare chip
- * name such as "gpiochip0", and a name with a "/" is malformed, since
- * it would name a path outside /dev. The line
- * part is accepted only as a non-empty string of the digits 0-9, with
- * no sign, no surrounding whitespace and no trailing garbage --
- * anything strtoul() would otherwise parse leniently is
- * rejected instead of silently misread. The format is the same for
- * both libgpiod API versions; only how the chip is opened differs
- * (see board_init() below).
- *
- * Returns 0 for NULL and for a well-formed config, -1 for a malformed
- * one. The outputs are initialised to the defaults in every case.
+ * The format of the config string is documented in gpiod_config.h and
+ * applied by gpiod_config_parse(). This writes the board's defaults to
+ * the outputs and returns 0 for NULL, which selects them. Otherwise it
+ * returns what gpiod_config_parse() returns: 0 for a well-formed config,
+ * -1 for a malformed one. board_init() then fails without opening a
+ * chip, so a typo or a stale config never drives a line the operator
+ * did not name. Both libgpiod API versions share it; only how the chip
+ * is opened differs (see board_init() below).
  */
 static int parse_config(const char *config, char *chipname_out,
 			size_t chipname_out_len, unsigned int *line_out)
 {
-	const char *sep;
-	const char *linestr;
-	size_t chiplen;
-	size_t i;
-	unsigned long parsed_line;
-	char *end;
-
 	snprintf(chipname_out, chipname_out_len, "%s", DEFAULT_CHIPNAME);
 	*line_out = DEFAULT_LINE_OFFSET;
 
 	if (!config)
 		return 0;
 
-	sep = strchr(config, ':');
-	if (!sep) {
-		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (expected chip:line)",
-		       config);
-		return -1;
-	}
-
-	chiplen = (size_t)(sep - config);
-	if (chiplen == 0 || chiplen >= chipname_out_len ||
-	    memchr(config, '/', chiplen) != NULL) {
-		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (bad chip name)",
-		       config);
-		return -1;
-	}
-
-	linestr = sep + 1;
-	if (linestr[0] == '\0')
-		goto bad_line;
-	for (i = 0; linestr[i] != '\0'; i++) {
-		if (linestr[i] < '0' || linestr[i] > '9')
-			goto bad_line;
-	}
-
-	errno = 0;
-	parsed_line = strtoul(linestr, &end, 10);
-	if (errno == ERANGE)
-		goto bad_line;
-	if (parsed_line > UINT_MAX)
-		goto bad_line;
-	if (*end != '\0')
-		goto bad_line;
-
-	memcpy(chipname_out, config, chiplen);
-	chipname_out[chiplen] = '\0';
-	*line_out = (unsigned int)parsed_line;
-	return 0;
-
-bad_line:
-	syslog(LOG_ERR,
-	       "[-] Malformed GPIO config '%s' (bad line number)",
-	       config);
-	return -1;
+	return gpiod_config_parse(config, chipname_out, chipname_out_len,
+				  line_out);
 }
 
 /*

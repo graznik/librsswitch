@@ -200,13 +200,15 @@ GPIOD_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
 		   -Wl,--wrap=gpiod_chip_request_lines
 
 GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
-		  ../boards/gpiod/gpiod_board.h ../boards/rpi/rpi.h \
+		  ../boards/gpiod/gpiod_board.h ../boards/gpiod/gpiod_config.c \
+		  ../boards/gpiod/gpiod_config.h ../boards/rpi/rpi.h \
 		  ../boards/bbb/bbb.h ../boards/board.h
 
 # test_gpiod_rpi and test_gpiod_bbb are built from the one test file
 # test_gpiod.c, once per board macro. The test includes
-# ../boards/gpiod/gpiod_board.c directly (like test_logging includes
-# ../librsswitch.c), so it can drive board_init()/board_exit(),
+# ../boards/gpiod/gpiod_config.c and ../boards/gpiod/gpiod_board.c
+# directly (like test_logging includes ../librsswitch.c), so it can
+# capture the parser's log lines and drive board_init()/board_exit(),
 # transmit() and parse_config() and their static state. It needs a
 # board macro, because gpiod_board.h picks the default chip
 # and line by it. The -DX86_64 from CFLAGS does no harm, because the

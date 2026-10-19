@@ -65,13 +65,13 @@ LIBS = -L/usr/local/lib
 
 
 rpi:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 rpi3:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 bbb:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 x86_64:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/x86_64/x86_64.c $(LFLAGS)
