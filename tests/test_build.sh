@@ -255,5 +255,44 @@ for dir in basic network; do
 	done
 done
 
+# A comma in a .PHONY line made make treat "rpi," as a name, so the real
+# board targets were not phony and an existing file of that name stopped
+# the build.
+
+# phony_lines FILE: the .PHONY lines of the Makefile FILE.
+phony_lines()
+{
+	awk '/^\.PHONY:/' "$1"
+}
+
+# phony_without_comma FILE: FILE has a .PHONY line and none holds a comma.
+phony_without_comma()
+{
+	lines=$(phony_lines "$1") || return 1
+	[ -n "$lines" ] && ! printf '%s\n' "$lines" | grep -q ,
+}
+
+# phony_names FILE NAME...: the .PHONY lines of FILE list every NAME.
+phony_names()
+{
+	file=$1
+	shift
+	lines=$(phony_lines "$file") || return 1
+	for name in "$@"; do
+		printf '%s\n' "$lines" | tr ' \t' '\n\n' | grep -qx -- "$name" ||
+			return 1
+	done
+}
+
+for mk in examples/basic examples/network examples/web tests; do
+	check "$mk/Makefile: no comma in a .PHONY line" \
+		phony_without_comma "$ROOT/$mk/Makefile"
+done
+for dir in basic network; do
+	check "examples/$dir/Makefile: the board targets are phony" \
+		phony_names "$ROOT/examples/$dir/Makefile" \
+		rpi rpi3 bbb x86_64 clean
+done
+
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1
