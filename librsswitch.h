@@ -40,10 +40,12 @@
  * functions from a signal handler. Cancelling a thread while it is
  * inside a send is not supported; doing so may leave the lock held.
  *
- * socket_addr_limits() takes no lock at all: it only reads the same
- * constant tables socket_send() checks addresses against, and never
- * touches gpio_config or the board. It is safe to call concurrently
- * with any of the functions above, from any thread.
+ * socket_addr_limits() and socket_gpio_config_check() take no lock at
+ * all and read no shared state. The first only reads the same constant
+ * tables socket_send() checks addresses against; the second only
+ * parses the string it is given, and neither touches gpio_config or
+ * opens the board. They are safe to call concurrently with any of the
+ * functions above, from any thread.
  */
 
 /*
@@ -55,11 +57,24 @@
  * call returns -1 without opening a GPIO chip, and the error is
  * logged. Format is board-specific -- see the README section "GPIO
  * configuration"; the libgpiod boards parse it in
- * boards/gpiod/gpiod_board.c. config is not
- * copied; the pointer must stay valid for as long as socket_send() may
- * still be called.
+ * boards/gpiod/gpiod_config.c. rsssend and rsswitchd call
+ * socket_gpio_config_check() first and refuse a malformed config.
+ * config is not copied; the pointer must stay valid for as long as
+ * socket_send() may still be called.
  */
 void socket_gpio_config(const char *config);
+
+/*
+ * Checks a GPIO config string without storing it and without touching
+ * the GPIO. Returns 0 for NULL (the board default) and for a config
+ * the board can parse, and -1 for a malformed one, with the cause
+ * logged via syslog by the board. Well-formed does not mean the chip
+ * exists: only the format is checked, and the first socket_send()
+ * still reports a missing chip. Call it before socket_gpio_config() to
+ * refuse a bad config at start-up. It takes no lock and never touches
+ * the board.
+ */
+int32_t socket_gpio_config_check(const char *config);
 
 /*
  * Sends a switch command for one of the two built-in device tables.

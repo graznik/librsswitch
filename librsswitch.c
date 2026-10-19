@@ -364,6 +364,11 @@ void socket_gpio_config(const char *config)
 	pthread_mutex_unlock(&send_lock);
 }
 
+int32_t socket_gpio_config_check(const char *config)
+{
+	return board_config_check(config);
+}
+
 int32_t socket_send(uint32_t dev, uint32_t group,
 		    uint32_t socket, uint32_t data)
 {

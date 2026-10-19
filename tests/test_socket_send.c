@@ -265,6 +265,28 @@ static void test_board_config_check_x86_64(void)
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 }
 
+/*
+ * socket_gpio_config_check() answers like the board's check, without
+ * storing the string and without opening a session or transmitting.
+ */
+static void test_gpio_config_check(void)
+{
+	size_t i;
+
+	x86_64_recorder_reset();
+
+	CHECK_EQ(socket_gpio_config_check(NULL), 0);
+	CHECK_EQ(socket_gpio_config_check("gpiochip0:17"), 0);
+	CHECK_EQ(socket_gpio_config_check("gpiochip3:5"), 0);
+	CHECK_EQ(socket_gpio_config_check("gpiochip3:007"), 0);
+
+	for (i = 0; i < ARRAY_SIZE(malformed_gpio); i++)
+		CHECK_EQ(socket_gpio_config_check(malformed_gpio[i]), -1);
+
+	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+}
+
 int main(void)
 {
 	test_rev_008345_valid();
@@ -278,6 +300,7 @@ int main(void)
 	test_transmit_failure_aborts_codeword();
 	test_addr_limits();
 	test_board_config_check_x86_64();
+	test_gpio_config_check();
 
 	return MT_REPORT();
 }
