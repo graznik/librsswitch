@@ -58,8 +58,8 @@ ls /tmp/rsswitchd-stage/usr/local/bin/rsswitchd /tmp/rsswitchd-stage/etc/systemd
 ```
 
 Exit status is 0 for --help or a clean stop by SIGTERM/SIGINT, 1
-when socket setup fails (also printed on stderr), or 2 for a
-usage error.
+when socket setup fails or --gpio is malformed (both printed on
+stderr), or 2 for a usage error.
 
 As soon as the daemon is listening, it prints one line to
 stderr: `rsswitchd: listening on ADDR:PORT`. With --port 0 this
@@ -233,10 +233,15 @@ leaves out PrivateDevices and DevicePolicy, which would hide
 
 With an edited ExecStart line, the GPIO line is chosen with
 `--gpio chip:line`, e.g. `--gpio gpiochip0:17`. Any other form, such
-as a bare GPIO number, is refused: the daemon still starts, but it
-logs `[-] Malformed GPIO config` and answers every switching command
-with `ERR send transmission failed` until the ExecStart line is
-fixed.
+as a bare GPIO number, makes the daemon refuse to start: it prints
+`rsswitchd: malformed --gpio '<value>'` on stderr, which
+`journalctl -u rsswitchd` shows, logs the reason as
+`[-] Malformed GPIO config`, and exits with status 1. The unit then
+fails after the start limit below, instead of running with a GPIO line
+it cannot use. Only the format is checked: a well-formed `chip:line`
+that names a missing chip still starts, and each switching command is
+answered with `ERR send transmission failed` until the ExecStart line
+is fixed.
 
 When the daemon cannot start, for example because another program
 holds port 5000, systemd tries again after 2 seconds, at most 5

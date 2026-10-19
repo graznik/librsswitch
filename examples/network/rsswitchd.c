@@ -290,6 +290,17 @@ int main(int argc, char *argv[])
 		exit(2);
 	}
 
+	/*
+	 * A daemon that started with a malformed config would answer
+	 * every switching command with an error while systemd saw a
+	 * healthy unit. Refuse it here, before the port is opened.
+	 */
+	if (socket_gpio_config_check(gpio_config) < 0) {
+		fprintf(stderr, "rsswitchd: malformed --gpio '%s'\n",
+			gpio_config);
+		exit(1);
+	}
+
 	socket_gpio_config(gpio_config);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);

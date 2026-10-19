@@ -868,6 +868,51 @@ static void test_invalid_options(void)
 	}
 }
 
+/*
+ * A malformed --gpio is refused before the daemon listens: exit status
+ * 1, nothing on stdout, the offending value on stderr. A usage error on
+ * the same command line still wins with status 2.
+ */
+static void test_malformed_gpio_refused(void)
+{
+	static const char *const values[] = {
+		"49", "gpiochip0", "", "/dev/gpiochip0:17",
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(values); i++) {
+		const char *args[] = {
+			"--bind", "127.0.0.1", "--port", "0",
+			"--gpio", values[i], NULL
+		};
+		char out[512], err[512], want[128];
+		int status = 0;
+
+		snprintf(want, sizeof(want), "rsswitchd: malformed --gpio '%s'",
+			 values[i]);
+		CHECK_EQ(daemon_run(args, &status, out, sizeof(out), err,
+				    sizeof(err), 2000), 0);
+		CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 1);
+		CHECK_EQ(out[0], '\0');
+		CHECK(strstr(err, want) != NULL);
+		CHECK(strstr(err, "listening on") == NULL);
+	}
+
+	{
+		static const char *const args[] = {
+			"--bind", "127.0.0.1", "--port", "abc",
+			"--gpio", "49", NULL
+		};
+		char out[512], err[512];
+		int status = 0;
+
+		CHECK_EQ(daemon_run(args, &status, out, sizeof(out), err,
+				    sizeof(err), 2000), 0);
+		CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 2);
+		CHECK(strstr(err, "malformed --gpio") == NULL);
+	}
+}
+
 static void test_option_forms(void)
 {
 	struct daemon d;
@@ -932,7 +977,7 @@ static void test_option_forms(void)
 	{
 		static const char *const args[] = {
 			"--bind", "127.0.0.1", "--port", "0",
-			"--gpio", "anything", NULL
+			"--gpio", "gpiochip0:17", NULL
 		};
 
 		CHECK_EQ(daemon_spawn(&d, args, 0), 0);
@@ -2437,6 +2482,7 @@ int main(int argc, char *argv[])
 	test_help();
 	test_invalid_options();
 	test_option_forms();
+	test_malformed_gpio_refused();
 	test_bind_only_there();
 	test_default_bind_address();
 	test_two_reads_one_connection();
