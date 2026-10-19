@@ -116,7 +116,11 @@ def _check_host(value):
     try:
         ipaddress.ip_address(value)
     except ValueError:
-        return what + ", not a host name (write 127.0.0.1 for localhost)"
+        # Only a value that can be a name gets the hint; a mistyped
+        # address such as 1.2.3.4.5 has no letter and gets none.
+        if any("a" <= c.lower() <= "z" for c in value):
+            return what + ", not a host name (write 127.0.0.1 for localhost)"
+        return what
     return None
 
 

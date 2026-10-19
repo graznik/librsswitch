@@ -109,6 +109,15 @@ def test_a_host_name_for_the_daemon_is_refused_with_the_fix():
         "127.0.0.1, not a host name (write 127.0.0.1 for localhost)")
 
 
+def test_a_malformed_address_gets_no_host_name_hint():
+    # 1.2.3.4.5 is not a name, so the hint about localhost would mislead.
+    with pytest.raises(ConfigError) as exc:
+        resolve_config({"daemon_host": "1.2.3.4.5"})
+    assert str(exc.value) == (
+        "config: key 'daemon_host': must be an IP address such as "
+        "127.0.0.1")
+
+
 def test_boundaries_between_accepted_and_refused():
     assert resolve_config({"daemon_port": 1})["daemon_port"] == 1
     assert resolve_config({"daemon_port": 65535})["daemon_port"] == 65535
