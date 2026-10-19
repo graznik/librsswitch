@@ -50,7 +50,9 @@ check()
 }
 
 # unit_values SECTION KEY: prints the value of every KEY= directive in
-# [SECTION] of rsswitchd.service, one per line.
+# [SECTION] of rsswitchd.service, one per line. The unit must use the
+# KEY=value form without blanks around "=", as the shipped units do; a
+# valid "KEY = value" line is not found and fails its check.
 unit_values()
 {
 	awk -v sec="$1" -v key="$2" '
@@ -155,7 +157,12 @@ check "[Unit] wants network-online.target" \
 # Only install is wrapped. A recipe line that wrote with mkdir, cp, ln
 # or chown would reach the host, and the recipe uses install only.
 S=$(mktemp -d) || exit 1
+# Two traps: under dash the EXIT trap alone does not run when a signal
+# ends the script, and a cleanup trap on the signals alone would let
+# the script go on and exit 0. So a signal exits with status 1, which
+# runs the EXIT trap and removes $S.
 trap 'rm -rf "$S"' EXIT
+trap 'exit 1' HUP INT TERM
 mkdir "$S/bin" "$S/build"
 REAL_INSTALL=$(command -v install)
 : > "$S/calls.log"
