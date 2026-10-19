@@ -24,6 +24,12 @@ all:
 # tests. The user, the venv (a venv cannot be moved, it records its
 # own path) and systemctl are left to the real install.
 #
+# The real install clears a failed state of the unit before it
+# restarts it, because systemd refuses a restart within the start-limit
+# interval after failed starts. That reset-failed may fail, since a
+# unit that never failed makes it complain; the other systemctl calls
+# report their status.
+#
 # The modes are set here, and not taken from the source tree, because
 # a checkout on a shared folder can have group-writable files, and the
 # code that a root-owned service runs must not be writable by others.
@@ -58,5 +64,6 @@ install:
 		( umask 022 && "$(APPDIR)/venv/bin/python" -m compileall -q "$(APPDIR)/rsswitch_web" ); \
 		systemctl daemon-reload; \
 		systemctl enable rsswitch-web; \
+		systemctl reset-failed rsswitch-web 2>/dev/null || true; \
 		systemctl restart rsswitch-web; \
 	fi

@@ -224,11 +224,13 @@ systemctl_calls()
 
 EXPECTED_CALLS="systemctl daemon-reload
 systemctl enable rsswitchd
+systemctl reset-failed rsswitchd
 systemctl restart rsswitchd"
 
-# restarts_service: the calls are daemon-reload, enable and restart, in
-# this order, so that a running daemon is replaced and a stopped one is
-# started. Prints the actual calls when they differ.
+# restarts_service: the calls are daemon-reload, enable, reset-failed and
+# restart, in this order, so that a failed start limit is cleared before
+# a running daemon is replaced and a stopped one is started. Prints the
+# actual calls when they differ.
 restarts_service()
 {
 	if [ "$(systemctl_calls)" != "$EXPECTED_CALLS" ]; then
@@ -280,7 +282,8 @@ check "install puts the binary in place" \
 	binary_equals "$S/build/rsswitchd" "$S/prefix/bin/rsswitchd"
 check "install puts the unit in place" \
 	same_file "$NET/rsswitchd.service" "$S/units/rsswitchd.service"
-check "install runs daemon-reload, enable, restart" restarts_service
+check "install runs daemon-reload, enable, reset-failed, restart" \
+	restarts_service
 
 # An upgrade: a new build replaces the old binary and restarts the
 # daemon, which is already installed and running.
@@ -291,7 +294,8 @@ upgrade_rc=$?
 check "upgrade exits 0" test "$upgrade_rc" -eq 0
 check "upgrade installs the new binary" \
 	binary_equals "$S/build/rsswitchd" "$S/prefix/bin/rsswitchd"
-check "upgrade runs daemon-reload, enable, restart" restarts_service
+check "upgrade runs daemon-reload, enable, reset-failed, restart" \
+	restarts_service
 
 # A staged install touches no account and no service.
 : > "$S/calls.log"

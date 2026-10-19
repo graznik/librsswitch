@@ -193,3 +193,18 @@ def test_makefile_never_adds_the_user_to_a_group():
     assert "gpio" not in text
     assert "--groups" not in text
     assert " -G " not in text
+
+
+def test_install_resets_the_unit_before_the_restart():
+    """A unit that hit its start limit refuses a restart until it is
+    reset. Only that call may fail silently."""
+    lines = [line.strip() for line in
+             (WEB_DIR / "Makefile").read_text().splitlines()]
+    restart = [i for i, line in enumerate(lines)
+               if line.startswith("systemctl restart rsswitch-web")]
+    assert len(restart) == 1
+    assert lines[restart[0] - 1] == ("systemctl reset-failed rsswitch-web "
+                                     "2>/dev/null || true; \\")
+    silenced = [line for line in lines
+                if line.startswith("systemctl") and "|| true" in line]
+    assert len(silenced) == 1

@@ -122,6 +122,9 @@ sudo systemctl reset-failed rsswitch-web
 sudo systemctl restart rsswitch-web
 ```
 
+`sudo make install` clears the start limit itself before it restarts
+the service, so a fixed version can be installed at once.
+
 
 ## Upgrading
 

@@ -89,7 +89,10 @@ x86_64:
 # already running keeps running the old one until it is restarted.
 # A restart also starts a stopped service. daemon-reload comes first,
 # as in examples/web/Makefile, so that the restart uses the unit file
-# that make install has just written.
+# that make install has just written. Within the start-limit interval
+# after failed starts, systemd refuses a restart, so reset-failed
+# clears that first. It may fail, because a unit that never failed
+# makes it complain; the other systemctl calls report their status.
 install:
 	@if [ ! -x rsswitchd ]; then \
 		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
@@ -102,6 +105,7 @@ install:
 		getent passwd rsswitchd > /dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd || exit 1; \
 		systemctl daemon-reload; \
 		systemctl enable rsswitchd; \
+		systemctl reset-failed rsswitchd 2>/dev/null || true; \
 		systemctl restart rsswitchd; \
 	fi
 

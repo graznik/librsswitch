@@ -261,7 +261,9 @@ times within 60 seconds (`StartLimitIntervalSec`,
 `StartLimitBurst`). Then it gives up and the unit is failed, with
 the reason in `journalctl -u rsswitchd`. Until 60 seconds after the
 first of these starts, systemd refuses a start by hand as well, and
-`sudo systemctl reset-failed rsswitchd` clears that.
+`sudo systemctl reset-failed rsswitchd` clears that. `sudo make
+install` clears the start limit itself before it restarts the service,
+so a fixed build can be installed at once.
 
 
 ## Logging
