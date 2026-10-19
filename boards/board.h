@@ -33,12 +33,13 @@
 #include <stdint.h>
 
 /*
- * config: board-specific, opaque to callers outside this board's own
- * .c file. NULL means "use this board's compiled-in default". Each
- * board documents and parses its own format -- see the board_init()
- * doc comment in the matching boards/<platform>/<platform>.c. The
- * libgpiod boards share the "chip:line" format documented above
- * parse_config() in boards/gpiod/gpiod_board.c.
+ * config: board-specific, opaque to the library's callers. NULL means
+ * "use this board's compiled-in default". Each board documents and
+ * parses its own format. The libgpiod boards share the "chip:line"
+ * format documented above parse_config() in boards/gpiod/gpiod_board.c
+ * and the x86_64 stub ignores the string. A non-NULL string that a
+ * board cannot parse makes board_init() return -1 without opening the
+ * GPIO; it never selects the default instead.
  *
  * board_init() opens a send session with the line driven low, even if
  * an earlier process left it high (G-01-5) -- so a stuck-high line is
