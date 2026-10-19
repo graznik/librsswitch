@@ -15,7 +15,7 @@
  */
 
 /*
- * Concurrency tests (LIB-01, D-09). Proves that the x86_64 board's
+ * Concurrency tests. Proves that the x86_64 board's
  * overlap detector actually detects an unserialized board session
  * (not a vacuous always-zero counter), then, once socket_send() is
  * serialized with a mutex, that concurrent callers from multiple
@@ -276,7 +276,7 @@ static void *mixed_worker_main(void *arg)
 /*
  * Like run_round(), but three threads send through socket_send() and
  * three through socket_send_codeword() with distinct literal
- * codewords and distinct pulse_len values (D-09: different codewords
+ * codewords and distinct pulse_len values (different codewords
  * through both entry points), proving the two entry points share the
  * same lock and never interleave with each other either.
  */

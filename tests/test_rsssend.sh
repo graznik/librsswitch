@@ -14,7 +14,7 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-# Exercises rsssend's argument handling (CLI-01, D-20..D-22): usage or
+# Exercises rsssend's argument handling: usage or
 # parse errors exit 2 with the diagnostic on stderr and nothing on
 # stdout, an address the library rejects or a malformed --gpio exits 1
 # with nothing on stdout, and valid input still produces the exact
@@ -78,12 +78,12 @@ check()
 	fi
 }
 
-# --- commit 1: usage to stderr, distinct exit codes -----------------
+# --- usage to stderr, distinct exit codes ---------------------------
 check "no arguments" 2 "" contains "Usage:"
 check "valid pollin on" 0 "0FFF0000F00F" empty ""  1 17 23 1
 check "library-rejected group" 1 "" contains "rsssend:"  1 32 0 1
 
-# --- commit 2: strtoul validation, one bad argument at a time -------
+# --- strtoul validation, one bad argument at a time -----------------
 check "invalid dev" 2 "" contains "invalid DEV 'abc'"  abc 0 0 1
 check "invalid group" 2 "" contains "invalid GROUP 'abc'"  1 abc 0 1
 check "invalid socket" 2 "" contains "invalid SOCKET 'x'"  1 0 x 1
@@ -100,7 +100,7 @@ check "overflow huge" 2 "" contains "invalid GROUP"  1 99999999999999999999 0 1
 check "dev out of range" 2 "" contains "invalid DEV '2'"  2 0 0 1
 check "data out of range" 2 "" contains "invalid DATA '2'"  1 0 0 2
 
-# --- commit 2: still the same codewords for valid input -------------
+# --- the exact codewords for valid input ---------------------------
 check "rev off group2 socket1" 0 "FF1FF1F00010" empty ""  0 2 1 1
 check "pollin max group/socket" 0 "0000000000F0" empty ""  1 31 31 0
 check "rev on group3 socket2" 0 "FFF1FF100001" empty ""  0 3 2 0
@@ -108,7 +108,7 @@ check "leading zeros" 0 "0FFF0000F00F" empty ""  1 017 023 1
 check "rev group out of range" 1 "" contains "rsssend:"  0 4 0 1
 check "pollin group uint32-max" 1 "" contains "rsssend:"  1 4294967295 0 1
 
-# --- commit 2: left-to-right order, --gpio only at positions 5/6 ----
+# --- left-to-right order, --gpio only at positions 5/6 --------------
 check "first bad arg names DEV" 2 "" contains "invalid DEV"  abc def 0 1
 check "first bad arg not GROUP" 2 "" not-contains "GROUP"  abc def 0 1
 check "gpio option accepted" 0 "0FFF0000F00F" empty ""  1 17 23 1 --gpio gpiochip0:17

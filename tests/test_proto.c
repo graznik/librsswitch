@@ -222,7 +222,7 @@ static void test_fragmented(void)
 	}
 
 	/* A v2 line directly followed by an empty line, a malformed line
-	 * and a 4-digit line, all in one feed (PROTO-01 edge).
+	 * and a 4-digit line, all in one feed.
 	 */
 	{
 		struct proto_conn pc;
@@ -390,7 +390,7 @@ static void test_overflow(void)
 }
 
 /*
- * Every field is checked against socket_addr_limits() (D-12, D-13),
+ * Every field is checked against socket_addr_limits(),
  * in dev/group/socket/data order, and the range check never opens a
  * board session.
  */
@@ -641,7 +641,7 @@ static void check_raw(const struct proto_cmd *cmd, const char *tristate,
 }
 
 /*
- * The raw grammar (D-08): well-formed lines produce PROTO_RAW with
+ * The raw grammar: well-formed lines produce PROTO_RAW with
  * the tristate copied exactly and pulse_len parsed; every malformed
  * or out-of-range shape is rejected with the right class, syntax
  * always winning over range for an over-length tristate that also
@@ -941,7 +941,7 @@ static void test_err_names(void)
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_TOOLONG), "toolong"), 0);
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_SEND), "send"), 0);
 
-	/* The parser never opens a board, in this plan or ever. */
+	/* The parser never opens a board. */
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 }
 

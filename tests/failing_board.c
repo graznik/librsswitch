@@ -18,7 +18,7 @@
  * Test-only board whose board_init() always fails. Linked into
  * test_rsswitchd_failbin instead of a real board, so a socket-level
  * test can reach the path where socket_send() fails after the
- * daemon's own checks already passed (D-12, D-14): a well-formed,
+ * daemon's own checks already passed: a well-formed,
  * in-range command still reaches the library, and the library's
  * board_init() call is what fails, exactly as a real GPIO failure
  * would. Its config passes the check, so only board_init() fails.

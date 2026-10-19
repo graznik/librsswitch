@@ -15,7 +15,7 @@
  */
 
 /*
- * Exact-codeword tests (LIB-07). Asserts the tri-state codeword the
+ * Exact-codeword tests. Asserts the tri-state codeword the
  * x86_64 board recorder captured for a socket_send() call against
  * literal expected strings, so a single wrong table entry in
  * librsswitch.c fails this suite. The expected-value tables below are

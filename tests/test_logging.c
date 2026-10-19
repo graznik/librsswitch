@@ -15,14 +15,15 @@
  */
 
 /*
- * Captures every syslog() call the library makes (LIB-02, LIB-03).
+ * Captures every syslog() call the library makes.
  * syslog is redefined to capture_syslog before ../librsswitch.c is
  * included directly, so every log call inside the library -- and the
  * DEBUG-only line in socket_send(), since this binary is built with
  * -DDEBUG (see tests/Makefile) -- is captured instead of going to the
  * real syslog. Included directly rather than linked, exactly like
  * tests/test_codeword_api.c, so this file can also reach the static
- * socket_ctrl() to test LIB-03 (see Task 2).
+ * socket_ctrl() to test how it tells a truncated codeword from a
+ * snprintf() failure.
  */
 #include <stdarg.h>
 #include <stdio.h>
@@ -152,7 +153,7 @@ static void test_uint32_values_logged_unsigned(void)
  * socket_ctrl() must tell a too-long assembled codeword apart from a
  * genuine snprintf() failure, and it must reject both a wildly
  * oversized input (17 characters) and one just one byte over the
- * limit (13 characters) without transmitting anything (LIB-03).
+ * limit (13 characters) without transmitting anything.
  */
 static void test_socket_ctrl_truncation(void)
 {

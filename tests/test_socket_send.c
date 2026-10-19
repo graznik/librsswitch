@@ -171,7 +171,7 @@ static void test_transmit_failure_aborts_codeword(void)
  * pointer without touching its outputs; and every address at or one
  * past each device's reported limit gets the same accept/reject
  * verdict from socket_send() -- with no board session opened for a
- * rejected address (D-13).
+ * rejected address.
  */
 static void test_addr_limits(void)
 {

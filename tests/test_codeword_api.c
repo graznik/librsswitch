@@ -15,8 +15,8 @@
  */
 
 /*
- * Tests send_tris()'s strict alphabet enforcement (LIB-09) and the
- * raw tri-state API socket_send_codeword() (LIB-04). Includes
+ * Tests send_tris()'s strict alphabet enforcement and the
+ * raw tri-state API socket_send_codeword(). Includes
  * ../librsswitch.c directly, instead of linking it, so this file can
  * call the static send_tris() and socket_ctrl() directly -- neither
  * is part of the public API in librsswitch.h. This binary therefore

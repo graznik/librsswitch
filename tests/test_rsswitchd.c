@@ -19,7 +19,7 @@
  * ephemeral port, waits for its stderr "listening on" line, connects
  * as a real client and reads the codewords it prints on stdout. The
  * contract this relies on -- "--port 0", the stderr listening line,
- * codewords on stdout -- is also the contract Phase 4's Python
+ * codewords on stdout -- is also the contract the web app's Python
  * end-to-end fixture uses, so keep the two in sync.
  *
  * Every helper below is static and reusable: daemon_spawn()/
@@ -529,8 +529,8 @@ static void daemon_stop(struct daemon *d, int sig, int *status)
 	live_remove(d->pid);
 }
 
-/* Stops d with SIGTERM and CHECKs it exited cleanly with status 0
- * (D-24): every test that stops a daemon now expects a controlled,
+/* Stops d with SIGTERM and CHECKs it exited cleanly with status 0.
+ * Every test that stops a daemon expects a controlled,
  * signal-driven exit, never termination by the signal's default
  * disposition.
  */
@@ -1035,7 +1035,7 @@ static void test_default_bind_address(void)
 }
 
 /* A connection carries two commands with a gap between them; both
- * must be executed, in order (DMN-01).
+ * must be executed, in order.
  */
 static void test_two_reads_one_connection(void)
 {
@@ -1194,7 +1194,7 @@ static void test_one_connection_at_a_time(void)
 }
 
 /* A bind() conflict must exit 1 loudly, never silently listen on a
- * random port (DMN-02).
+ * random port.
  */
 static void test_bind_failure_exits(void)
 {
@@ -1241,9 +1241,9 @@ static void test_bind_failure_exits(void)
 }
 
 /* An accept() failure (EMFILE, forced with a low RLIMIT_NOFILE) must
- * not stop or spin the daemon (DMN-02), and SIGTERM must still stop
+ * not stop or spin the daemon, and SIGTERM must still stop
  * it within 1 s even while the accept-error pause is looping: that
- * pause is itself a pselect() and so is interrupted at once (D-24).
+ * pause is itself a pselect() and so is interrupted at once.
  */
 static void test_accept_failure_keeps_running(void)
 {
@@ -1289,7 +1289,7 @@ static void test_accept_failure_keeps_running(void)
 }
 
 /* A daemon waiting for connections exits with status 0 within 1 s of
- * SIGTERM (D-24): idle accept() must return promptly on the signal.
+ * SIGTERM: idle accept() must return promptly on the signal.
  */
 static void test_sigterm_idle(void)
 {
@@ -1306,7 +1306,7 @@ static void test_sigterm_idle(void)
 	CHECK_EQ(WEXITSTATUS(st), 0);
 }
 
-/* Same as test_sigterm_idle, for SIGINT (D-24). */
+/* Same as test_sigterm_idle, for SIGINT. */
 static void test_sigint_idle(void)
 {
 	struct daemon d;
@@ -1323,7 +1323,7 @@ static void test_sigint_idle(void)
 }
 
 /* A connected, idle client sees EOF and the daemon exits 0 within 1 s
- * of SIGTERM (D-24): the client's connection is closed exactly once,
+ * of SIGTERM: the client's connection is closed exactly once,
  * from main()'s single close(connfd) site, as the daemon shuts down.
  */
 static void test_sigterm_with_client(void)
@@ -1354,7 +1354,7 @@ static void test_sigterm_with_client(void)
  * exits 0, and OK is received on the client exactly in the runs where
  * the codeword also appears on stdout -- a send, from board_init() to
  * board_exit(), and its reply can never be cut short by the signal,
- * because both signals stay blocked outside pselect() (D-24). A
+ * because both signals stay blocked outside pselect(). A
  * command not yet read when the signal is noticed gets no reply.
  */
 static void test_sigterm_races_command(void)
@@ -1398,7 +1398,7 @@ static void test_sigterm_races_command(void)
 }
 
 /* Two commands on one connection, with no artificial gap between
- * them (DMN-08).
+ * them.
  */
 static void test_no_pause_between_commands(void)
 {
@@ -1427,7 +1427,7 @@ static void test_no_pause_between_commands(void)
 }
 
 /* A daemon stopped while a client connection was still open must not
- * block an immediate restart on the same port (SO_REUSEADDR, DMN-03).
+ * block an immediate restart on the same port (SO_REUSEADDR).
  */
 static void test_restart_same_port(void)
 {
@@ -1471,7 +1471,7 @@ static void test_restart_same_port(void)
 }
 
 /* 20 connections that each send a command or nothing, then close,
- * must not leak a file descriptor per connection (DMN-01/T-02-06).
+ * must not leak a file descriptor per connection.
  */
 static void test_no_fd_leak(void)
 {
@@ -1557,8 +1557,8 @@ static void expect_ok(struct daemon *d, int fd, const char *cmd_bytes,
 	CHECK_EQ(strcmp(reply, "OK"), 0);
 }
 
-/* v2 commands reach the library, including Pollin group/socket >= 10
- * (PROTO-01), and each gets an OK reply (PROTO-04).
+/* v2 commands reach the library, including Pollin group/socket >= 10,
+ * and each gets an OK reply.
  */
 static void test_v2_codewords(void)
 {
@@ -1611,8 +1611,7 @@ static void test_four_digits_get_err(void)
 }
 
 /* One write carrying two v2 lines and a CRLF-terminated v2 line
- * produces three codewords and three OK replies, in order
- * (PROTO-05).
+ * produces three codewords and three OK replies, in order.
  */
 static void test_back_to_back(void)
 {
@@ -1650,8 +1649,7 @@ static void test_back_to_back(void)
 }
 
 /* The same bytes as test_back_to_back, sent one byte per write, 2ms
- * apart, produce the same three codewords and OK replies (PROTO-05
- * fragmentation).
+ * apart, produce the same three codewords and OK replies.
  */
 static void test_byte_by_byte(void)
 {
@@ -1693,7 +1691,7 @@ static void test_byte_by_byte(void)
 }
 
 /* A malformed v2 line gets ERR syntax and transmits nothing; a v2
- * command right after it still executes and gets OK (PROTO-03).
+ * command right after it still executes and gets OK.
  */
 static void test_bad_line_then_good(void)
 {
@@ -1724,7 +1722,7 @@ static void test_bad_line_then_good(void)
 }
 
 /* An overlong line is discarded, not transmitted, gets ERR toolong,
- * and the connection still works afterwards (D-17).
+ * and the connection still works afterwards.
  */
 static void test_toolong_then_good(void)
 {
@@ -1760,8 +1758,7 @@ static void test_toolong_then_good(void)
 }
 
 /* "1 17 23 1" with no trailing newline, followed by close(), sends
- * nothing and gets no reply -- a partial command at EOF is dropped
- * (PROTO-04).
+ * nothing and gets no reply -- a partial command at EOF is dropped.
  */
 static void test_partial_at_eof(void)
 {
@@ -1853,8 +1850,7 @@ static void test_worked_replies(void)
 
 /* A pipeline of 7 commands (including a 4-digit line, answered ERR
  * syntax, and one empty line) sent in one write gets exactly 7
- * replies, in order, then nothing more (PROTO-04, D-10, D-11, D-14,
- * D-18).
+ * replies, in order, then nothing more.
  */
 static void test_one_reply_per_command(void)
 {
@@ -1898,7 +1894,7 @@ static void test_one_reply_per_command(void)
 
 /* A library failure after the daemon's own checks passed is reported
  * as ERR send, with no codeword printed, and the connection stays
- * open (D-12, D-14).
+ * open.
  */
 static void test_err_send(void)
 {
@@ -1934,7 +1930,7 @@ static void test_err_send(void)
  * library is ever called, the connection stays usable afterwards,
  * and the same range check fires even against a daemon whose board
  * always fails -- proving the daemon validated first, since a board
- * failure would give ERR send instead (D-05, D-11, D-12, D-13).
+ * failure would give ERR send instead.
  */
 static void test_range_replies(void)
 {
@@ -1988,7 +1984,7 @@ static void test_range_replies(void)
 
 /* A raw tri-state command sends exactly the given codeword at the
  * given pulse length and gets OK; an out-of-range one gets a precise
- * ERR range and nothing is printed (PROTO-06).
+ * ERR range and nothing is printed.
  */
 static void test_raw_command(void)
 {
@@ -2043,8 +2039,7 @@ static void test_raw_back_to_back(void)
 }
 
 /* A library failure after the daemon's own checks passed is reported
- * as ERR send for a raw command too, just like a v2 one (D-12,
- * D-14).
+ * as ERR send for a raw command too, just like a v2 one.
  */
 static void test_raw_err_send(void)
 {
@@ -2072,7 +2067,7 @@ static void test_raw_err_send(void)
 }
 
 /* --timeout is validated with the same strict rules as --port, and a
- * valid value is accepted and shown in --help (DMN-07, D-19).
+ * valid value is accepted and shown in --help.
  */
 static void test_timeout_option(void)
 {
@@ -2123,7 +2118,7 @@ static void test_timeout_option(void)
 
 /* A silent client is closed between 0.9 and 2.0 s after connecting,
  * with no bytes sent to it and no fd leaked, and a following client
- * is unaffected (D-19, DMN-05).
+ * is unaffected.
  */
 static void test_idle_timeout(void)
 {
@@ -2184,7 +2179,7 @@ static void test_idle_timeout(void)
 
 /* A command trickled one byte every 300 ms, with no newline, must not
  * hold the connection slot past --timeout: the deadline counts from
- * the last completed command, not from the last byte (D-19, DMN-05).
+ * the last completed command, not from the last byte.
  */
 static void test_trickle_timeout(void)
 {
@@ -2249,7 +2244,7 @@ static void test_trickle_timeout(void)
 
 /* Commands sent well within --timeout of each other keep the
  * connection alive indefinitely: the deadline is re-armed on every
- * completed command (D-19, DMN-05).
+ * completed command.
  */
 static void test_commands_rearm(void)
 {
@@ -2275,7 +2270,7 @@ static void test_commands_rearm(void)
 }
 
 /* An idle connection blocks other clients for at most --timeout
- * seconds, never longer (DMN-05, DMN-06).
+ * seconds, never longer.
  */
 static void test_timeout_frees_daemon(void)
 {
@@ -2312,7 +2307,7 @@ static void test_timeout_frees_daemon(void)
 
 /* A client that fills the daemon's send buffer and never reads cannot
  * block another client past --timeout: SO_SNDTIMEO bounds the reply
- * write (DMN-05).
+ * write.
  */
 static void test_stuck_reader(void)
 {
@@ -2365,7 +2360,7 @@ static void test_stuck_reader(void)
 }
 
 /* Neither a reply nor a syslog line ever contains raw client bytes
- * (D-15) -- checked here at the reply, escape sequences and garbage
+ * -- checked here at the reply, escape sequences and garbage
  * alike collapse to the same fixed text.
  */
 static void test_no_echo(void)
@@ -2395,7 +2390,7 @@ static void test_no_echo(void)
 
 /* The daemon serves one connection at a time: B's command is not
  * answered while A's connection is open and silent, and gets its
- * reply once A closes (DMN-06).
+ * reply once A closes.
  */
 static void test_serialized_replies(void)
 {
@@ -2433,7 +2428,7 @@ static void test_serialized_replies(void)
 }
 
 /* A client that writes many lines and closes before reading any
- * reply must not kill the daemon with SIGPIPE (DMN-04).
+ * reply must not kill the daemon with SIGPIPE.
  */
 static void test_early_disconnect(void)
 {
