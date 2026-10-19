@@ -220,6 +220,20 @@ def test_timeout_hint_only_for_switches():
     assert js.count("it may have been sent") >= 2
 
 
+def test_page_reloads_meta_when_shown_again():
+    js = source("app.js")
+    start = js.index('addEventListener("visibilitychange"')
+    handler = js[start:js.index("});", start)]
+    assert "loadTree();" in handler
+    assert "loadMeta();" in handler
+    # loadMeta() has no guard of its own: it must not wait for a
+    # failed first load, so nothing but the visibility test is a
+    # condition inside the handler.
+    assert "ui.meta" not in handler
+    assert handler.count("if (") == 1
+    assert 'if (document.visibilityState === "visible")' in handler
+
+
 def test_page_says_last_sent_is_not_real_state():
     hint = [a for _, a in parse() if a.get("id") == "hint"]
     assert len(hint) == 1

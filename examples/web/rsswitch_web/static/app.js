@@ -1073,13 +1073,13 @@ document.addEventListener("DOMContentLoaded", () => {
  * it was loaded. Load them again when the page is shown again, for
  * example after switching back to the browser. There is no timer:
  * render() reads ui.pending and ui.notes, so the rows in flight stay
- * disabled and the messages under the rows stay.
+ * disabled and the messages under the rows stay. The timing and the
+ * limits come from /api/meta and change when the owner changes the
+ * configuration, so they are read again too.
  */
 document.addEventListener("visibilitychange", () => {
 	if (document.visibilityState === "visible") {
 		loadTree();
-		if (ui.meta === null) {
-			loadMeta();
-		}
+		loadMeta();
 	}
 });

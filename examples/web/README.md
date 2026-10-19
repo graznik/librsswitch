@@ -460,11 +460,12 @@ been sent", as in "no answer in time, it may have been sent": the
 command may still have reached rsswitchd, so look at the socket, not
 at the label.
 
-The page loads the rooms again whenever it is shown again, for
-example after switching back to the browser, so that changes made
-from another phone appear without a manual reload. A message under a
-row and a row that is still sending stay as they are. The page does
-not poll.
+The page loads the rooms and the timing again whenever it is shown
+again, for example after switching back to the browser, so that
+changes made from another phone appear without a manual reload, and
+so that a changed `daemon_read_timeout` or `all_off_gap_ms` takes
+effect on a page that stayed open. A message under a row and a row
+that is still sending stay as they are. The page does not poll.
 
 The Edit button at the top switches the page into edit mode, and
 Done switches it back. In edit mode the On and Off buttons and the
