@@ -26,7 +26,7 @@ WEB_PYTHON ?= $(WEB_VENV)/bin/python
 # test_gpiod_rpi and test_gpiod_bbb link against libgpiod, whose
 # headers are not guaranteed to be installed on every host that runs
 # `make test`. GPIOD_CFLAGS/GPIOD_LIBS let a caller point at a
-# different libgpiod (see the D-15 verification in 01-05-SUMMARY.md);
+# different libgpiod (see "Against libgpiod 2.x" in ../README.md);
 # by default they use the installed system headers/library. Probed
 # once, at parse time, by compiling and linking a one-line program that
 # includes <gpiod.h> against GPIOD_CFLAGS and GPIOD_LIBS, into a
@@ -177,7 +177,7 @@ test_logging: test_logging.c $(TEST_DEPS)
 # silently ignored), so test_gpiod.c's __wrap_* functions can drive
 # board_init(), transmit() and board_exit() against dummy chip and
 # line or request handles
-# without ever opening a real chip (G-01-5). Belongs only to this test
+# without ever opening a real chip. Belongs only to this test
 # rule: it must never appear in examples/basic/Makefile or
 # examples/network/Makefile, which link the real libgpiod for shipped
 # binaries.

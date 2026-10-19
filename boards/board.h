@@ -42,7 +42,7 @@
  * GPIO; it never selects the default instead.
  *
  * board_init() opens a send session with the line driven low, even if
- * an earlier process left it high (G-01-5) -- so a stuck-high line is
+ * an earlier process left it high -- so a stuck-high line is
  * bounded to "until the next board_init()" regardless of how it got
  * that way. The x86_64 stub has no real line, so it has nothing to
  * drive; its board_init()/board_exit()/transmit() are no-ops.
@@ -53,7 +53,7 @@ int32_t board_init(const char *config);
  * Ends the send session opened by board_init(), closing or releasing
  * the line. If the line may still be high (a transmit() failed after
  * driving it high), board_exit() first drives it low, so no session
- * ends with the 433 MHz transmitter keyed (G-01-5). A failure to
+ * ends with the 433 MHz transmitter keyed. A failure to
  * drive it low is logged and makes board_exit() return -1, but the
  * line is closed or released regardless.
  */

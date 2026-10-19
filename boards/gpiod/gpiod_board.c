@@ -52,7 +52,7 @@
  * it would name a path outside /dev. The line
  * part is accepted only as a non-empty string of the digits 0-9, with
  * no sign, no surrounding whitespace and no trailing garbage --
- * anything strtoul() would otherwise parse leniently (Pitfall 4) is
+ * anything strtoul() would otherwise parse leniently is
  * rejected instead of silently misread. The format is the same for
  * both libgpiod API versions; only how the chip is opened differs
  * (see board_init() below).
@@ -128,7 +128,7 @@ bad_line:
  * be high. A failed high write leaves it 0, since the failed write
  * did not change the level. board_exit() uses it to drive the line
  * low before releasing it, so a transmit() that failed between its
- * two writes cannot leave the transmitter keyed (G-01-5). Shared by
+ * two writes cannot leave the transmitter keyed. Shared by
  * both libgpiod API variants below.
  */
 static int line_high;
@@ -187,7 +187,7 @@ int32_t board_exit(void)
 	/*
 	 * A transmit() that failed between its high and low writes
 	 * leaves the line high; drive it low here, before release, so
-	 * the session never ends with the transmitter keyed (G-01-5).
+	 * the session never ends with the transmitter keyed.
 	 * Best effort: a failure is logged and returned, but never
 	 * skips the release/close below.
 	 */
@@ -324,7 +324,7 @@ int32_t board_exit(void)
 	/*
 	 * A transmit() that failed between its high and low writes
 	 * leaves the line high; drive it low here, before release, so
-	 * the session never ends with the transmitter keyed (G-01-5).
+	 * the session never ends with the transmitter keyed.
 	 * Best effort: a failure is logged and returned, but never
 	 * skips the release/close below.
 	 */

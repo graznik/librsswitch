@@ -117,7 +117,7 @@ static int captured_find(const char *needle)
 }
 
 /*
- * Mock state for the G-01-5 transmit()/board_exit() tests below.
+ * Mock state for the transmit()/board_exit() tests below.
  * dummy_chip_obj and dummy_line_obj/dummy_request_obj are ordinary
  * file-scope objects whose addresses stand in for opaque libgpiod
  * handles: gpiod_board.c and its wrapped libgpiod calls only ever
@@ -543,7 +543,7 @@ static off_t call_board_init_capturing_stderr(const char *config,
 {
 	int saved_fd;
 	int tmp_fd;
-	char tmp_path[] = "/tmp/librsswitch-test-rpi-stderr-XXXXXX";
+	char tmp_path[] = "/tmp/librsswitch-test-gpiod-stderr-XXXXXX";
 	off_t size;
 
 	fflush(stderr);
@@ -717,7 +717,7 @@ static void test_board_defaults(void)
 /*
  * transmit()'s low write fails once (armed via mock_fail_low_writes),
  * leaving the mocked line at 1 and transmit() returning -1.
- * board_exit() then drives it low itself before releasing (G-01-5):
+ * board_exit() then drives it low itself before releasing:
  * level at release 0, release and chip close each called once, and
  * chip (and line/request) cleared to NULL.
  */
