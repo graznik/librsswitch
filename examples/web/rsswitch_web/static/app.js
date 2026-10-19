@@ -141,7 +141,9 @@ function waitForAllOff(sockets) {
  * "timeout": a phone that drops off the Wi-Fi in the middle of a
  * request may otherwise wait for minutes, and the row would stay on
  * "Sending..." without an error. The app may have got the request all
- * the same, so "timeout" does not say that nothing happened.
+ * the same, so "timeout" does not say that nothing happened. Only a
+ * switch or All off adds "it may have been sent" to the text, because
+ * only they can make a command reach rsswitchd.
  *
  * The default is for the requests that only read or change the data
  * file, which take milliseconds. A request that makes the app talk to
@@ -219,7 +221,7 @@ function errorText(error, retryAfter) {
 	case "network":
 		return "web app unreachable";
 	case "timeout":
-		return "no answer in time, it may have been sent";
+		return "no answer in time";
 	case "too_many_attempts":
 		return "too many failed logins, try again "
 			+ (retryAfter ? "in " + retryAfter + " s" : "later");
@@ -516,8 +518,11 @@ async function switchSocket(id, wanted) {
 		const error = res.ok
 			? {code: "http_error", message: "unexpected answer"}
 			: res.error;
-		ui.notes.set(id, {
-			kind: "error", text: errorText(error, res.retryAfter)});
+		let text = errorText(error, res.retryAfter);
+		if (error.code === "timeout") {
+			text += ", it may have been sent";
+		}
+		ui.notes.set(id, {kind: "error", text: text});
 	}
 	ui.pending.delete(id);
 	render();
@@ -571,7 +576,11 @@ async function allOff(roomId) {
 		const error = res.ok
 			? {code: "http_error", message: "unexpected answer"}
 			: res.error;
-		showBanner(errorText(error, res.retryAfter), "error");
+		let text = errorText(error, res.retryAfter);
+		if (error.code === "timeout") {
+			text += ", it may have been sent";
+		}
+		showBanner(text, "error");
 	}
 	ui.busyAllOff.delete(key);
 	render();

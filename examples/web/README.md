@@ -454,9 +454,11 @@ as long as the app can take for one command, which is the connect and
 the read timeout together, and for an All off as long as for one
 command and one pause for each socket, with 10 seconds more. It
 learns both from `GET /api/meta`, so a longer `daemon_read_timeout`
-needs no change in the page. When the time is over, the row says "no
-answer in time, it may have been sent": the command may still have
-reached rsswitchd, so look at the socket, not at the label.
+needs no change in the page. When the time is over, a load or an edit
+says "no answer in time". A switch or an All off adds "it may have
+been sent", as in "no answer in time, it may have been sent": the
+command may still have reached rsswitchd, so look at the socket, not
+at the label.
 
 The page loads the rooms again whenever it is shown again, for
 example after switching back to the browser, so that changes made

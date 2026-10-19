@@ -210,6 +210,16 @@ def test_switch_feedback_texts():
         assert text in js, text
 
 
+def test_timeout_hint_only_for_switches():
+    js = source("app.js")
+    assert 'return "no answer in time";' in js
+    start = js.index("function errorText(")
+    body = js[start:js.index("\n}\n", start)]
+    assert "may have been sent" not in body
+    # The switch row and the All off banner add the hint themselves.
+    assert js.count("it may have been sent") >= 2
+
+
 def test_page_says_last_sent_is_not_real_state():
     hint = [a for _, a in parse() if a.get("id") == "hint"]
     assert len(hint) == 1
