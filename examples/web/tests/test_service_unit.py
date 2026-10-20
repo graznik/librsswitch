@@ -154,6 +154,16 @@ def test_unit_grants_nothing_extra():
     assert values("Service", "User") == ["rsswitch-web"]
 
 
+def test_unit_and_readme_state_the_cost_of_waiting_for_the_network():
+    # The wait for network-online.target delays the start at boot when a
+    # wait-online service is enabled, also with the shipped loopback
+    # address. Neither text may say that it makes no difference.
+    for path in (UNIT, WEB_DIR / "README.md"):
+        text = " ".join(path.read_text().split())
+        assert "changes nothing" not in text, path
+        assert "start at boot is delayed" in text, path
+
+
 def test_every_service_directive_has_a_comment():
     bare = [k for k, _, commented in parse()["Service"]
             if not commented and k != "Type"]

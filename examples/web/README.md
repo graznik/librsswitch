@@ -48,8 +48,13 @@ The unit is ordered after network-online.target and wants it. That
 matters when listen_address is an address that DHCP assigns at boot:
 a start before the address exists fails, and after the start limit
 described under "Running alongside rsswitchd" the unit stays failed.
-With the shipped 127.0.0.1 it changes nothing. The target waits only
-when a wait-online service is enabled; this shows whether one is:
+The target waits only when a wait-online service is enabled, and then
+the start at boot is delayed until the network is online or the
+timeout of that service (often 60 to 90 seconds) has passed, even
+with the shipped 127.0.0.1, which needs no network. If you keep
+127.0.0.1, remove network-online.target from the After= and Wants=
+lines of the unit to start at once. This shows whether a wait-online
+service is enabled:
 
 ```bash
 systemctl is-enabled NetworkManager-wait-online.service \

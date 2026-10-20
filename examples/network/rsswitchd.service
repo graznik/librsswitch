@@ -2,8 +2,12 @@
 Description=RSS Service Daemon
 # An ExecStart edited to bind a LAN address needs that address to
 # exist, and DHCP may assign it after network.target. Without the wait
-# the start at boot fails 5 times and the unit stays failed. With
-# --bind 127.0.0.1 this changes nothing.
+# the start at boot fails 5 times and the unit stays failed. The wait
+# costs time even with --bind 127.0.0.1, which needs no network: when
+# a wait-online service is enabled, the start at boot is delayed until
+# the network is online or the timeout of that service (often 60 to
+# 90 seconds) has passed, for example while the Wi-Fi is down. Remove
+# network-online.target from the two lines below to start at once.
 After=network.target network-online.target
 # Wants= pulls network-online.target in; After= alone would only order
 # the unit behind it when something else happens to start it.

@@ -148,6 +148,28 @@ check "[Unit] is ordered after network-online.target" \
 check "[Unit] wants network-online.target" \
 	is_value Unit Wants network-online.target
 
+# waiting_cost_stated FILE: FILE says that the wait for the network
+# delays the start at boot, and not that it changes nothing. Blanks and
+# the comment marks are folded first, so a line break does not matter.
+waiting_cost_stated()
+{
+	text=$(tr '\n' ' ' < "$1" | sed 's/# / /g; s/  */ /g')
+	case $text in
+	*"changes nothing"*)
+		return 1
+		;;
+	*"start at boot is delayed"*)
+		return 0
+		;;
+	esac
+	return 1
+}
+
+check "rsswitchd.service states the cost of waiting for the network" \
+	waiting_cost_stated "$NET/rsswitchd.service"
+check "the README states the cost of waiting for the network" \
+	waiting_cost_stated "$NET/README.md"
+
 # The daemon runs as the unprivileged user rsswitchd, in the group gpio
 # that owns /dev/gpiochip*, and without the raised priority that the old
 # unit asked for with Nice=.
