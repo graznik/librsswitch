@@ -234,6 +234,25 @@ def test_page_reloads_meta_when_shown_again():
     assert 'if (document.visibilityState === "visible")' in handler
 
 
+def test_meta_reload_keeps_limits_and_other_banners():
+    # The page loads /api/meta again whenever it is shown. A phone
+    # that comes back with the radio off must not be told that editing
+    # is gone while the limits it holds are still good, and a late
+    # answer must not replace a newer one.
+    js = source("app.js")
+    start = js.index("async function loadMeta(")
+    body = js[start:js.index("\n}\n", start)]
+    assert "const seq = ++ui.metaSeq;" in body
+    assert "if (seq !== ui.metaSeq)" in body
+    assert body.index("seq !== ui.metaSeq") < body.index("ui.meta = ")
+    # A failure after a first success returns before it shows a banner.
+    assert body.index("if (ui.meta !== null)") < body.index("showBanner(")
+    # Only the banner of a failed load is hidden by a later success:
+    # any other banner clears the flag.
+    start = js.index("function showBanner(")
+    assert "ui.metaFailed = false;" in js[start:js.index("\n}\n", start)]
+
+
 def test_page_says_last_sent_is_not_real_state():
     hint = [a for _, a in parse() if a.get("id") == "hint"]
     assert len(hint) == 1

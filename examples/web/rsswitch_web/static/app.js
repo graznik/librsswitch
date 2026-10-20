@@ -44,6 +44,7 @@ const FIELD_ERRORS = {
  *   flash    ids of the rows that flash after a successful switch
  *   busyAllOff  room ids, and HOUSEHOLD, of the All-off requests in flight
  *   loadSeq  number of the newest request for the rooms
+ *   metaSeq  number of the newest request for the limits
  *   edit     true while the page is in edit mode
  *   meta     the "socket_types" of GET /api/meta, or null before it loads
  *   timing   {switchSeconds, gapMs} of GET /api/meta, or null before it
@@ -63,6 +64,7 @@ const ui = {
 	flash: new Set(),
 	busyAllOff: new Set(),
 	loadSeq: 0,
+	metaSeq: 0,
 	loadFailed: false,
 	edit: false,
 	meta: null,
@@ -254,6 +256,7 @@ function formatLastSent(lastSent) {
 function showBanner(text, kind) {
 	const banner = document.getElementById("banner");
 	ui.loadFailed = false;
+	ui.metaFailed = false;
 	banner.textContent = text;
 	banner.className = kind === "error" ? "banner banner-error" : "banner";
 	banner.hidden = false;
@@ -589,17 +592,29 @@ async function allOff(roomId) {
 /*
  * Load the limits of the socket types. The socket form takes its group
  * and number limits from them, so the page keeps no copy of its own.
- * Edit mode is off until they are here.
+ * Edit mode is off until they are here. An answer older than the
+ * newest request is dropped. When a later request fails, the limits
+ * from the earlier one stay and the page says nothing: they still hold
+ * and editing still works.
  */
 async function loadMeta() {
+	const seq = ++ui.metaSeq;
 	const res = await api("GET", "/api/meta");
+	if (seq !== ui.metaSeq) {
+		return;
+	}
 	if (!res.ok || !res.data || typeof res.data.socket_types !== "object"
 			|| res.data.socket_types === null) {
+		if (ui.meta !== null) {
+			return;
+		}
 		const error = res.ok
 			? {code: "http_error", message: "unexpected answer"}
 			: res.error;
 		showBanner("Editing is not available: "
 			+ errorText(error, res.retryAfter), "error");
+		/* After showBanner(), which clears the flag: only this
+		 * banner goes away with a later successful load. */
 		ui.metaFailed = true;
 		return;
 	}
