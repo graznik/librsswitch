@@ -114,13 +114,18 @@ def _check_host(value):
     if type(value) is not str:
         return what
     try:
-        ipaddress.ip_address(value)
+        address = ipaddress.ip_address(value)
     except ValueError:
         # Only a value that can be a name gets the hint; a mistyped
         # address such as 1.2.3.4.5 has no letter and gets none.
         if any("a" <= c.lower() <= "z" for c in value):
             return what + ", not a host name (write 127.0.0.1 for localhost)"
         return what
+    # rsswitchd listens on IPv4 only, so no IPv6 address can reach it,
+    # and every switch would fail with "rsswitchd unreachable".
+    if address.version != 4:
+        return ("must be an IPv4 address such as 127.0.0.1, "
+                "rsswitchd listens on IPv4 only")
     return None
 
 

@@ -276,7 +276,7 @@ Every key is optional:
 
 | Key | Meaning |
 |-----|---------|
-| `daemon_host` | where rsswitchd listens (default `"127.0.0.1"`); an IP address, not a host name: write `"127.0.0.1"` where you used `"localhost"`, and the app refuses to start with a message that says so; rsswitchd listens on IPv4 only, so an IPv6 address is accepted here but cannot reach it |
+| `daemon_host` | where rsswitchd listens (default `"127.0.0.1"`); an IPv4 address, not a host name: write `"127.0.0.1"` where you used `"localhost"`, and the app refuses to start with a message that says so; rsswitchd listens on IPv4 only, so the app refuses an IPv6 address such as `"::1"` too |
 | `daemon_port` | TCP port of rsswitchd (default 5000); an integer, 1-65535 |
 | `daemon_connect_timeout` | seconds to wait for the connection to rsswitchd (default 2); a number above 0 and at most 60 |
 | `daemon_read_timeout` | seconds to wait for its reply (default 5); a number above 0 and at most 60 |
