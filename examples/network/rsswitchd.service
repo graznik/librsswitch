@@ -15,10 +15,11 @@ Wants=network-online.target
 # A start that keeps failing, for example because another program holds
 # the port or because an edited ExecStart has a malformed --gpio (both
 # exit status 1), or an option that the daemon refuses (exit status 2),
-# is tried 5 times within 60 seconds. Then systemd gives up and the unit is failed. The default of
-# systemd, 5 starts within 10 seconds, is never reached with
-# RestartSec=2 below, because the starts are more than 2 seconds apart,
-# so without these lines the daemon would restart forever.
+# is tried 5 times within 60 seconds. Then systemd gives up and the
+# unit is failed. The default of systemd, 5 starts within 10 seconds,
+# is never reached with RestartSec=2 below, because the starts are
+# more than 2 seconds apart, so without these lines the daemon would
+# restart forever.
 StartLimitIntervalSec=60
 # The 5 starts are the default of systemd, written out next to the
 # interval they belong to.
