@@ -191,8 +191,9 @@ check "[Service] has no Nice=" \
 # the service are stand-ins in $S/bin, first in PATH: systemctl, getent,
 # groupadd and useradd only log their call to $S/calls.log. install is
 # a wrapper that refuses an absolute argument outside $S, a
-# target-directory option (-t, --target-directory) and a path with
-# "..", and logs "install REFUSED"; otherwise it runs the real install.
+# target-directory option (-t, also inside a bundle of short options
+# such as -Dt, and --target-directory) and a path with "..", and logs
+# "install REFUSED"; otherwise it runs the real install.
 # Only install is wrapped. A recipe line that wrote with mkdir, cp, ln
 # or chown would reach the host, and the recipe uses install only.
 S=$(mktemp -d) || exit 1
@@ -231,7 +232,7 @@ cat > "$S/bin/install" <<EOF
 #!/bin/sh
 for arg in "\$@"; do
 	case \$arg in
-	*/../*|*/..|-t*|--target-directory*)
+	*/../*|*/..|-t*|-[!-]*t*|--target-directory*)
 		echo "install REFUSED \$arg" >> "$S/calls.log"
 		exit 1
 		;;
@@ -432,6 +433,8 @@ wrapper_refuses()
 
 check "install wrapper refuses -t/DIR" \
 	wrapper_refuses -t/nonexistent-rss-dir
+check "install wrapper refuses a bundled -Dt/DIR" \
+	wrapper_refuses -Dt/nonexistent-rss-dir
 check "install wrapper refuses --target-directory=DIR" \
 	wrapper_refuses --target-directory=/nonexistent-rss-dir
 check "install wrapper refuses a path with .." \
