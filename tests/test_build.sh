@@ -297,11 +297,14 @@ for dir in basic network; do
 done
 
 # These comments of librsswitch.c described a parameter, a struct and a
-# protocol that do not exist. Each phrase names one of them.
+# protocol that do not exist. Each phrase names one of them. The name of
+# the parameter is matched as a whole word only, so that a word which
+# merely contains it does not fail the check.
 stale_comments_gone()
 {
 	[ -f "$ROOT/librsswitch.c" ] &&
-		! grep -qE 'ntimes|Configuration struct|Protocol 2' \
+		! grep -qw 'ntimes' "$ROOT/librsswitch.c" &&
+		! grep -qE 'Configuration struct|Protocol 2' \
 			"$ROOT/librsswitch.c"
 }
 check "librsswitch.c: the stale comments stay gone" stale_comments_gone
