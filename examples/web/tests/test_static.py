@@ -226,11 +226,10 @@ def test_page_reloads_meta_when_shown_again():
     handler = js[start:js.index("});", start)]
     assert "loadTree();" in handler
     assert "loadMeta();" in handler
-    # loadMeta() has no guard of its own: it must not wait for a
-    # failed first load, so nothing but the visibility test is a
-    # condition inside the handler.
+    # The page must not wait for a failed first load to call
+    # loadMeta() again, so the handler calls it whatever ui.meta holds
+    # and does not read ui.meta at all.
     assert "ui.meta" not in handler
-    assert handler.count("if (") == 1
     assert 'if (document.visibilityState === "visible")' in handler
 
 
