@@ -260,16 +260,19 @@ example programs) is board-specific:
   rsswitchd check the string with socket_gpio_config_check() and
   refuse to start with exit status 1 and
   `<prog>: malformed --gpio '<value>'` on stderr, while the library
-  logs "[-] Malformed GPIO config". A program that stores such a
-  string with socket_gpio_config() without checking it still gets -1
-  from socket_send() and socket_send_codeword(), and no GPIO chip is
-  opened. The default is GPIO17 (header pin 11) on the Raspberry Pi,
-  and P9_23 on a BeagleBone Black with Debian 13 (kernel 6.x). On
-  other kernels the chip of P9_23 can differ: find it with `gpioinfo`
-  from the gpiod package and pass it as "chip:line".
+  logs "[-] Malformed GPIO config". On these libgpiod boards, a
+  program that stores such a string with socket_gpio_config() without
+  checking it still gets -1 from socket_send() and
+  socket_send_codeword(), and no GPIO chip is opened. The default is
+  GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on a
+  BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
+  chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
+  package and pass it as "chip:line".
 - x86_64: the host build checks the string with the same "chip:line"
   rules, so the programs refuse the same values, and its stub board
-  drives no GPIO.
+  drives no GPIO. The stub ignores the string stored with
+  socket_gpio_config(), so on this build socket_send() and
+  socket_send_codeword() succeed even with a malformed one.
 
 
 ## Running the tests (x86_64 host)
