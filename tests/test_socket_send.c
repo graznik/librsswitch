@@ -289,6 +289,132 @@ static void test_gpio_config_check(void)
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 }
 
+/*
+ * A GPIO config whose chip is "fail" plus a cause word makes the stub
+ * fail where hardware would: in board_init() with that cause. Neither
+ * send function transmits a pulse or calls board_exit() after it, both
+ * report the cause, and the config alone decides, so the next send
+ * fails the same way until the config is cleared.
+ */
+static void test_injected_init_causes(void)
+{
+	static const struct {
+		const char *config;
+		enum socket_err cause;
+	} causes[] = {
+		{ "failnochip:0", SOCKET_ERR_NOCHIP },
+		{ "failbusy:0", SOCKET_ERR_BUSY },
+		{ "faildenied:0", SOCKET_ERR_DENIED },
+		{ "failbadline:0", SOCKET_ERR_BADLINE },
+		{ "failother:0", SOCKET_ERR_OTHER },
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(causes); i++) {
+		x86_64_recorder_reset();
+		socket_gpio_config(causes[i].config);
+
+		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+		CHECK_EQ(socket_last_error(), causes[i].cause);
+		CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), -1);
+		CHECK_EQ(socket_last_error(), causes[i].cause);
+
+		CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+		CHECK_EQ(x86_64_board_init_count(), (size_t)2);
+		CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
+
+		socket_gpio_config(NULL);
+		x86_64_recorder_reset();
+	}
+}
+
+/*
+ * failio lets board_init() succeed and fails the first transmit(), so
+ * the session is opened and closed like any other and no pulse is
+ * recorded.
+ */
+static void test_injected_io_cause(void)
+{
+	x86_64_recorder_reset();
+	socket_gpio_config("failio:0");
+
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+	CHECK_EQ(socket_last_error(), SOCKET_ERR_IO);
+	CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), -1);
+	CHECK_EQ(socket_last_error(), SOCKET_ERR_IO);
+
+	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)2);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)2);
+	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+
+	socket_gpio_config(NULL);
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(socket_last_error(), SOCKET_ERR_NONE);
+	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
+}
+
+/*
+ * Only the exact chip name before the colon injects a failure: a name
+ * that merely resembles one, in any case or with a prefix or suffix,
+ * and every real chip send normally.
+ */
+static void test_injection_needs_exact_name(void)
+{
+	static const char * const sends[] = {
+		"failbusyx:0", "fail:0", "failBUSY:0", "xfailbusy:0",
+		"failbusy", "gpiochip0:17",
+	};
+	static const char * const injecting[] = {
+		"failnochip:0", "failbusy:0", "faildenied:0",
+		"failbadline:0", "failio:0", "failother:0",
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(sends); i++) {
+		x86_64_recorder_reset();
+		socket_gpio_config(sends[i]);
+
+		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+		CHECK_EQ(socket_last_error(), SOCKET_ERR_NONE);
+		CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(injecting); i++)
+		CHECK_EQ(board_config_check(injecting[i]), 0);
+
+	socket_gpio_config(NULL);
+	x86_64_recorder_reset();
+}
+
+/*
+ * A failed injected board_init() opens no board session, so a send
+ * that follows it is not counted as an overlap. A pending failio state
+ * dies with x86_64_recorder_reset().
+ */
+static void test_injection_opens_no_session(void)
+{
+	x86_64_recorder_reset();
+	socket_gpio_config("failbusy:0");
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+	socket_gpio_config(NULL);
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(x86_64_board_init_count(), (size_t)3);
+	CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
+	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+
+	x86_64_recorder_reset();
+	socket_gpio_config("failio:0");
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+	socket_gpio_config(NULL);
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(x86_64_recorder_count() > 0, 1);
+	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+}
+
 int main(void)
 {
 	test_rev_008345_valid();
@@ -303,6 +429,10 @@ int main(void)
 	test_addr_limits();
 	test_board_config_check_x86_64();
 	test_gpio_config_check();
+	test_injected_init_causes();
+	test_injected_io_cause();
+	test_injection_needs_exact_name();
+	test_injection_opens_no_session();
 
 	return MT_REPORT();
 }

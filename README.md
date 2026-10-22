@@ -308,9 +308,21 @@ example programs) is board-specific:
   "other" on purpose, because a wrong cause is worse than none.
 - x86_64: the host build checks the string with the same "chip:line"
   rules, so the programs refuse the same values, and its stub board
-  drives no GPIO. The stub ignores the string stored with
-  socket_gpio_config(), so on this build socket_send() and
-  socket_send_codeword() succeed even with a malformed one.
+  drives no GPIO. Apart from the chip names below, the stub ignores the
+  string stored with socket_gpio_config(), so on this build
+  socket_send() and socket_send_codeword() succeed even with a
+  malformed one.
+
+  A chip named failnochip, failbusy, faildenied, failbadline, failio
+  or failother (followed by ":" and a line, e.g. "failbusy:0") makes
+  the stub fail on purpose, so every failure cause can be tested
+  without hardware. socket_last_error() then reads SOCKET_ERR_NOCHIP,
+  SOCKET_ERR_BUSY, SOCKET_ERR_DENIED, SOCKET_ERR_BADLINE,
+  SOCKET_ERR_IO or SOCKET_ERR_OTHER. failio fails at the first pulse,
+  so the codeword is still printed; the others fail before anything is
+  sent. Every send fails while such a name is set. On a libgpiod board
+  these names are ordinary chip names that do not exist, so they report
+  a missing chip.
 
 
 ## Running the tests (x86_64 host)

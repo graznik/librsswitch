@@ -16,9 +16,28 @@
 
 #include <sched.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "x86_64.h"
 #include "../gpiod/gpiod_config.h"
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+/*
+ * The chip names that make the stub fail: "fail" followed by the wire
+ * word of the cause. failother is the unclassified failure.
+ */
+static const struct x86_64_inject {
+	const char *name;
+	enum socket_err cause;
+} inject_table[] = {
+	{ "failnochip", SOCKET_ERR_NOCHIP },
+	{ "failbusy", SOCKET_ERR_BUSY },
+	{ "faildenied", SOCKET_ERR_DENIED },
+	{ "failbadline", SOCKET_ERR_BADLINE },
+	{ "failio", SOCKET_ERR_IO },
+	{ "failother", SOCKET_ERR_OTHER },
+};
 
 static struct x86_64_pulse recorder[X86_64_RECORDER_MAX_PULSES];
 static size_t recorder_count;
@@ -29,13 +48,56 @@ static size_t fail_at_index = SIZE_MAX;
 static size_t open_sessions;
 static size_t overlap_count;
 
+/* Set by board_init() for failio, read by transmit(). */
+static int inject_io;
+
+/*
+ * Returns the cause a config asks the stub to fail with, or
+ * SOCKET_ERR_NONE. Only a table name directly followed by ':' counts.
+ * This is a plain prefix match and does not use the shared chip:line
+ * parser, which logs on malformed input, because the stub's
+ * board_init() still accepts any string.
+ */
+static enum socket_err injected_cause(const char *config)
+{
+	size_t i;
+
+	if (!config)
+		return SOCKET_ERR_NONE;
+
+	for (i = 0; i < ARRAY_SIZE(inject_table); i++) {
+		size_t len = strlen(inject_table[i].name);
+
+		if (strncmp(config, inject_table[i].name, len) == 0 &&
+		    config[len] == ':')
+			return inject_table[i].cause;
+	}
+
+	return SOCKET_ERR_NONE;
+}
+
+/*
+ * A chip named "fail" plus a cause word (the six names above) makes
+ * the stub fail where hardware would: in board_init() with that cause,
+ * or for failio at the first transmit(). Every send fails while such a
+ * config is set. Any other config behaves as before. A failed
+ * board_init() opens no session, because the library calls no
+ * board_exit() after it.
+ */
 int32_t board_init(const char *config)
 {
-	(void)config;
+	enum socket_err cause = injected_cause(config);
+
+	init_count++;
+	inject_io = cause == SOCKET_ERR_IO;
+	if (cause != SOCKET_ERR_NONE && cause != SOCKET_ERR_IO) {
+		sched_yield();
+		return -(int32_t)cause;
+	}
+
 	if (open_sessions > 0)
 		overlap_count++;
 	open_sessions++;
-	init_count++;
 	sched_yield();
 	return 0;
 }
@@ -67,6 +129,11 @@ int32_t board_exit(void)
 
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
+	if (inject_io) {
+		sched_yield();
+		return -(int32_t)SOCKET_ERR_IO;
+	}
+
 	if (recorder_count == fail_at_index) {
 		fail_at_index = SIZE_MAX;
 		sched_yield();
@@ -94,6 +161,7 @@ void x86_64_recorder_reset(void)
 	init_count = 0;
 	exit_count = 0;
 	fail_at_index = SIZE_MAX;
+	inject_io = 0;
 	open_sessions = 0;
 	overlap_count = 0;
 }

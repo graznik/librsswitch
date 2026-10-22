@@ -50,7 +50,9 @@
  * non-NULL string that cannot be parsed makes board_init() return -1
  * without opening the GPIO; it never selects the default instead. The
  * x86_64 stub applies the same format in board_config_check(), but its
- * board_init() drives nothing and accepts any string.
+ * board_init() drives nothing and accepts any string, except a chip
+ * named "fail" plus a cause word (see boards/x86_64/x86_64.c), which
+ * makes it fail with that cause so tests reach every failure path.
  *
  * board_init() opens a send session with the line driven low, even if
  * an earlier process left it high -- so a stuck-high line is

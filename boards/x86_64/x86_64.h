@@ -25,6 +25,18 @@
  * board_exit() -- they exist to make a missing or too-narrow lock
  * visible to a concurrency test instead of relying on luck to
  * interleave unsynchronized callers.
+ *
+ * A GPIO config whose chip is "fail" plus a cause word makes the stub
+ * fail the way hardware would, so tests reach every failure path:
+ * failnochip, failbusy, faildenied, failbadline and failother make
+ * board_init() fail with that cause (NOCHIP, BUSY, DENIED, BADLINE,
+ * OTHER); failio lets board_init() succeed and fails the first
+ * transmit() with IO. The name must be followed by ':' and a line, e.g.
+ * "failbusy:0". The injection keeps no state across sends besides the
+ * config: every send fails while such a config is set, and any other
+ * config sends normally. x86_64_recorder_reset() clears a pending
+ * failio state. A failed injected board_init() is counted by
+ * x86_64_board_init_count() but opens no session.
  */
 #include <stddef.h>
 
