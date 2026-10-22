@@ -22,6 +22,9 @@
  * is part of the public API in librsswitch.h. This binary therefore
  * links only ../boards/x86_64/x86_64.c, not librsswitch.c a second
  * time.
+ *
+ * It also checks that a failed board_init() releases the send lock in
+ * both send functions.
  */
 #include <stdint.h>
 #include <unistd.h>
@@ -191,6 +194,39 @@ static void test_codeword_api_prints_codeword(void)
 	CHECK(strcmp(buf, "0FFF0000F00F\n") == 0);
 }
 
+/*
+ * Checks that send_lock is free. A thread that already holds a default
+ * mutex gets EBUSY from trylock, so a lock leaked by a failed send is
+ * seen at once. The unlock runs in every case, so a leaked lock does
+ * not hang the later tests. No send function may run between the
+ * failure and this check, because it would block on the leaked lock.
+ */
+static void check_send_lock_released(void)
+{
+	int rc = pthread_mutex_trylock(&send_lock);
+
+	CHECK_EQ(rc, 0);
+	pthread_mutex_unlock(&send_lock);
+}
+
+static void test_failed_board_init_releases_send_lock(void)
+{
+	x86_64_recorder_reset();
+	socket_gpio_config("failbusy:0");
+
+	CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), -1);
+	CHECK_EQ(socket_last_error(), SOCKET_ERR_BUSY);
+	check_send_lock_released();
+
+	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+	CHECK_EQ(socket_last_error(), SOCKET_ERR_BUSY);
+	check_send_lock_released();
+
+	socket_gpio_config(NULL);
+	x86_64_recorder_reset();
+	CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), 0);
+}
+
 int main(void)
 {
 	test_send_tris_rejects_invalid();
@@ -201,6 +237,7 @@ int main(void)
 	test_codeword_api_bounds();
 	test_codeword_api_matches_socket_send();
 	test_codeword_api_prints_codeword();
+	test_failed_board_init_releases_send_lock();
 
 	return MT_REPORT();
 }
