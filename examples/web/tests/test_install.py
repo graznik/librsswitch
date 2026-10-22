@@ -13,15 +13,18 @@
 # License along with this library; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
-"""Tests of make install, staged below a DESTDIR below tmp_path.
+"""Tests of make install.
 
-The real install needs root, a system manager and the network, so it is
-not run here. The staged install copies the files and nothing else.
+The staged install, below a DESTDIR below tmp_path, copies the files and
+nothing else. The real install needs root, a system manager and the
+network, so it only runs with stand-ins for those, and with every
+directory below tmp_path.
 """
 
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -55,6 +58,93 @@ def staged(dest):
     proc = make("install", "DESTDIR=%s" % dest)
     assert proc.returncode == 0, proc.stderr
     return proc
+
+
+def write_tool(directory, name, body):
+    path = directory / name
+    path.write_text("#!/bin/sh\n" + body)
+    path.chmod(0o755)
+
+
+def real_install(tmp_path, pip_fails):
+    """Run the real install recipe, with stand-ins for what it needs.
+
+    Every directory of the recipe is overridden to a place below
+    tmp_path, the commands that manage accounts and the service are
+    stand-ins that only log their call, and install is a wrapper that
+    refuses any absolute path outside tmp_path: no run may touch the
+    host. The python stand-in makes a venv whose pip logs its call and
+    fails while the flag file exists.
+
+    Return the CompletedProcess and the lines of the call log.
+    """
+    bin_dir = tmp_path / "standins"
+    bin_dir.mkdir()
+    log = tmp_path / "calls.log"
+    flag = tmp_path / "pip-fails"
+    log.write_text("")
+    if pip_fails:
+        flag.write_text("")
+    q_log = shlex.quote(str(log))
+    q_root = shlex.quote(str(tmp_path))
+
+    write_tool(bin_dir, "id", "echo 0\n")
+    write_tool(bin_dir, "getent", "exit 0\n")
+    for name in ("useradd", "systemctl", "chgrp", "chown"):
+        write_tool(bin_dir, name, 'echo "%s $*" >> %s\n' % (name, q_log))
+    # The group and the user of the service do not exist on the host
+    # that runs the test, so install is called without them.
+    write_tool(bin_dir, "install", """\
+root=%s
+n=$#
+while [ "$n" -gt 0 ]; do
+	arg=$1
+	shift
+	n=$((n - 1))
+	case $arg in
+	-g|-o)
+		shift
+		n=$((n - 1))
+		continue
+		;;
+	*..*|-t*|-[!-]*t*|--target-directory*)
+		echo "install REFUSED $arg" >> %s
+		exit 1
+		;;
+	"$root"/*)
+		;;
+	/*)
+		echo "install REFUSED $arg" >> %s
+		exit 1
+		;;
+	esac
+	set -- "$@" "$arg"
+done
+exec %s "$@"
+""" % (q_root, q_log, q_log, shlex.quote(shutil.which("install"))))
+    write_tool(bin_dir, "python", """\
+if [ "$1" = -m ] && [ "$2" = venv ]; then
+	mkdir -p "$3/bin"
+	printf '#!/bin/sh\\nexit 0\\n' > "$3/bin/python"
+	printf '#!/bin/sh\\necho "pip $*" >> %s\\n[ ! -e %s ] || exit 1\\n' \\
+		> "$3/bin/pip"
+	chmod 755 "$3/bin/python" "$3/bin/pip"
+	exit 0
+fi
+exit 1
+""" % (q_log, shlex.quote(str(flag))))
+
+    old = tmp_path / "opt" / "rsswitch_web"
+    old.mkdir(parents=True)
+    (old / "OLD_MARKER").write_text("installed before\n")
+    proc = make("install",
+                "APPDIR=%s" % (tmp_path / "opt"),
+                "CONFDIR=%s" % (tmp_path / "etc"),
+                "STATEDIR=%s" % (tmp_path / "var"),
+                "SYSTEMD_UNIT_DIR=%s" % (tmp_path / "units"),
+                "PYTHON=%s" % (bin_dir / "python"),
+                extra_path=str(bin_dir))
+    return proc, log.read_text().splitlines()
 
 
 def mode(path):
@@ -208,3 +298,38 @@ def test_install_resets_the_unit_before_the_restart():
     silenced = [line for line in lines
                 if line.startswith("systemctl") and "|| true" in line]
     assert len(silenced) == 1
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="would install for real")
+def test_failed_pip_leaves_the_installed_code(tmp_path):
+    """A pip run that fails (no network, a broken mirror) must stop the
+    install before the installed code is touched, and before the service
+    is told anything."""
+    proc, calls = real_install(tmp_path, pip_fails=True)
+    assert proc.returncode != 0
+    code = tmp_path / "opt" / "rsswitch_web"
+    assert (code / "OLD_MARKER").is_file()
+    assert not (code / "app.py").exists()
+    assert "pip install -r requirements.txt" in calls
+    assert not [line for line in calls if line.startswith("systemctl")]
+    assert not [line for line in calls if "REFUSED" in line]
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="would install for real")
+def test_install_replaces_the_code_after_pip(tmp_path):
+    proc, calls = real_install(tmp_path, pip_fails=False)
+    assert proc.returncode == 0, proc.stderr
+    code = tmp_path / "opt" / "rsswitch_web"
+    assert not (code / "OLD_MARKER").exists()
+    assert (code / "app.py").is_file()
+    assert not [line for line in calls if "REFUSED" in line]
+    pip = calls.index("pip install -r requirements.txt")
+    systemctl = [i for i, line in enumerate(calls)
+                 if line.startswith("systemctl")]
+    assert systemctl and pip < systemctl[0]
+    assert [calls[i] for i in systemctl] == [
+        "systemctl daemon-reload",
+        "systemctl enable rsswitch-web",
+        "systemctl reset-failed rsswitch-web",
+        "systemctl restart rsswitch-web",
+    ]

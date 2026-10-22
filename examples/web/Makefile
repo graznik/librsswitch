@@ -20,6 +20,11 @@ all:
 # never overwritten, because the configuration may hold the password
 # hash. The user is in no group but its own, the app needs no device.
 #
+# The real install puts the dependencies into the venv before it
+# replaces the code directory, so a pip run that fails (no network, a
+# broken mirror) stops make install with the installed code as it was.
+# The service keeps running the old code until the final restart.
+#
 # With DESTDIR only the files are copied below it, for packaging and
 # tests. The user, the venv (a venv cannot be moved, it records its
 # own path) and systemctl are left to the real install.
@@ -41,6 +46,12 @@ install:
 	@if [ -z "$(DESTDIR)" ]; then \
 		getent passwd rsswitch-web > /dev/null || useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin rsswitch-web || exit 1; \
 	fi
+	@if [ -z "$(DESTDIR)" ]; then \
+		set -e; \
+		install -d -m 0755 "$(APPDIR)"; \
+		[ -x "$(APPDIR)/venv/bin/python" ] || $(PYTHON) -m venv "$(APPDIR)/venv" || { echo "could not create the venv; install python3-venv and run make install again" >&2; exit 1; }; \
+		"$(APPDIR)/venv/bin/pip" install -r requirements.txt; \
+	fi
 	rm -rf "$(DESTDIR)$(APPDIR)/rsswitch_web"
 	install -d -m 0755 "$(DESTDIR)$(APPDIR)"
 	cp -R rsswitch_web "$(DESTDIR)$(APPDIR)/"
@@ -59,8 +70,6 @@ install:
 		install -d -m 0750 -g rsswitch-web "$(CONFDIR)"; \
 		[ -e "$(CONFDIR)/config.json" ] || install -m 0640 -g rsswitch-web config.example.json "$(CONFDIR)/config.json"; \
 		install -d -m 0750 -o rsswitch-web -g rsswitch-web "$(STATEDIR)"; \
-		[ -x "$(APPDIR)/venv/bin/python" ] || $(PYTHON) -m venv "$(APPDIR)/venv" || { echo "could not create the venv; install python3-venv and run make install again" >&2; exit 1; }; \
-		"$(APPDIR)/venv/bin/pip" install -r "$(APPDIR)/requirements.txt"; \
 		( umask 022 && "$(APPDIR)/venv/bin/python" -m compileall -q "$(APPDIR)/rsswitch_web" ); \
 		systemctl daemon-reload; \
 		systemctl enable rsswitch-web; \
