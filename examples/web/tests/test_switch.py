@@ -25,6 +25,7 @@ import pytest
 from conftest import (CLOSE, HANG, RESET, post_json, refused_port,
                       sample_doc)
 
+from rsswitch_web.errors import GPIO_TEXT
 from rsswitch_web.store import Store, StoreError
 
 REV = "s_000000000001"
@@ -221,6 +222,45 @@ def test_err_reply_is_502_daemon_error_with_class_and_message(fake_daemon,
     assert error["daemon_class"] == "range"
     assert error["daemon_message"] == "group 40 not in 0-31"
     assert file_bytes(app) == before
+
+
+def test_gpio_err_reply_names_the_cause(fake_daemon, switch_app):
+    fake = fake_daemon(
+        lambda line: b"ERR gpio busy GPIO line in use by another program\n")
+    app = switch_app(fake)
+    before = file_bytes(app)
+    resp = switch(app, POLLIN, "on")
+    assert resp.status_code == 502
+    error = resp.get_json()["error"]
+    assert error == {"code": "daemon_error", "message": GPIO_TEXT["busy"],
+                     "daemon_class": "gpio", "cause": "busy"}
+    assert list(error) == ["code", "message", "daemon_class", "cause"]
+    assert file_bytes(app) == before
+
+
+def test_unknown_gpio_cause_is_generic(fake_daemon, switch_app):
+    fake = fake_daemon(
+        lambda line: b"ERR gpio zzz something /dev/gpiochip0 17\n")
+    app = switch_app(fake)
+    before = file_bytes(app)
+    resp = switch(app, POLLIN, "on")
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == {
+        "code": "daemon_error", "message": "the GPIO failed",
+        "daemon_class": "gpio"}
+    body = resp.get_data(as_text=True)
+    for leaked in ("zzz", "something", "/dev", "gpiochip"):
+        assert leaked not in body, leaked
+    assert file_bytes(app) == before
+
+
+def test_bare_gpio_err_is_generic(fake_daemon, switch_app):
+    app = switch_app(fake_daemon(lambda line: b"ERR gpio\n"))
+    resp = switch(app, POLLIN, "on")
+    assert resp.status_code == 502
+    assert resp.get_json()["error"] == {
+        "code": "daemon_error", "message": "the GPIO failed",
+        "daemon_class": "gpio"}
 
 
 @pytest.mark.parametrize("reply", [b"WAT\n", CLOSE, RESET, b"x" * 300])

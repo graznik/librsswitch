@@ -206,8 +206,21 @@ def test_switch_feedback_texts():
     for text in ("rsswitchd unreachable", "rsswitchd timed out",
                  "rsswitchd: ", "web app unreachable",
                  "no answer in time", "Never sent",
-                 "Last sent: "):
+                 "Last sent: ", "GPIO: "):
         assert text in js, text
+
+
+def test_error_text_shows_the_gpio_cause():
+    js = source("app.js")
+    start = js.index("function errorText(")
+    body = js[start:js.index("\n}\n", start)]
+    assert 'error.daemon_class === "gpio"' in body
+    assert '"GPIO: " + (error.message || "the GPIO failed")' in body
+    # The gpio check comes before the generic daemon text.
+    assert body.index('error.daemon_class === "gpio"') \
+        < body.index('"rsswitchd: "')
+    # The text comes from the server's table, not from the cause field.
+    assert "error.cause" not in body
 
 
 def test_timeout_hint_only_for_switches():

@@ -219,6 +219,9 @@ function errorText(error, retryAfter) {
 	case "daemon_timeout":
 		return "rsswitchd timed out";
 	case "daemon_error":
+		if (error.daemon_class === "gpio") {
+			return "GPIO: " + (error.message || "the GPIO failed");
+		}
 		return "rsswitchd: " + (error.daemon_message || error.message);
 	case "network":
 		return "web app unreachable";

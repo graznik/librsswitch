@@ -44,6 +44,10 @@ MAX_REPLY = 256
 # Longest daemon text that is passed on to a client.
 MAX_MESSAGE = 128
 
+# The cause words rsswitchd sends after ERR gpio. A word outside this
+# list is treated as unknown: nothing the daemon says is shown as text.
+GPIO_CAUSES = ("nochip", "busy", "denied", "badline", "io")
+
 _ERR = re.compile(r"ERR ([a-z]+)(?: (.*))?", re.DOTALL)
 
 
@@ -85,16 +89,23 @@ class DaemonReplyError(DaemonError):
     """rsswitchd answered ERR <class> <text>.
 
     daemon_class is the fixed word after ERR. daemon_message is the
-    text after it, reduced to printable ASCII, because the daemon's
-    words are shown to a user.
+    text after it, reduced to printable ASCII.
+
+    For the class gpio the first word of the text is the cause. It is
+    checked against GPIO_CAUSES and kept in cause, which is None for a
+    word that is not in the list. The rest of the text is not meant to
+    be shown: the app has a text of its own for each cause.
     """
 
     code = "daemon_error"
 
-    def __init__(self, daemon_class, daemon_message):
+    def __init__(self, daemon_class, daemon_message, cause=None):
         super().__init__("%s %s" % (daemon_class, daemon_message))
         self.daemon_class = daemon_class
         self.daemon_message = daemon_message
+        if cause is None and daemon_class == "gpio":
+            cause = daemon_message.split(" ", 1)[0]
+        self.cause = cause if cause in GPIO_CAUSES else None
 
 
 def sanitize(text) -> str:

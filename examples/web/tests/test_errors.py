@@ -25,7 +25,9 @@ import pytest
 from conftest import sample_doc, write_doc
 
 from rsswitch_web import create_app
-from rsswitch_web.errors import HTTP_CODES, MAX_BODY_BYTES
+from rsswitch_web.daemon import GPIO_CAUSES, DaemonReplyError
+from rsswitch_web.errors import (GPIO_TEXT, GPIO_UNKNOWN_TEXT, HTTP_CODES,
+                                 MAX_BODY_BYTES, daemon_error_info)
 
 JSON = {"Content-Type": "application/json"}
 
@@ -189,3 +191,49 @@ def test_vanished_data_dir_is_500_store_error_not_an_empty_list(tmp_path,
     assert str(tmp_path).encode("utf-8") not in resp.data
     assert str(data_dir) in caplog.text
     assert not data_dir.exists()
+
+
+def test_gpio_text_table():
+    assert set(GPIO_TEXT) == set(GPIO_CAUSES)
+    texts = list(GPIO_TEXT.values()) + [GPIO_UNKNOWN_TEXT]
+    assert len(set(texts)) == len(texts)
+    for word, text in GPIO_TEXT.items():
+        # The page puts "GPIO: " in front, so a text must not repeat it.
+        assert not text.upper().startswith("GPIO"), word
+        for forbidden in ("root", "sudo", "chmod", "chown"):
+            assert forbidden not in text, (word, forbidden)
+    assert GPIO_TEXT == {
+        "nochip": "chip not found \u2013 check the chip in rsswitchd's --gpio",
+        "busy": "line busy \u2013 another program is using it",
+        "denied": "no permission for the chip \u2013 "
+                  "is the daemon user in the gpio group?",
+        "badline": "line not valid for this chip \u2013 "
+                   "check the line in rsswitchd's --gpio",
+        "io": "driving the line failed \u2013 "
+              "check the board, then try again",
+    }
+    assert "gpio group" in GPIO_TEXT["denied"]
+    assert GPIO_UNKNOWN_TEXT == "the GPIO failed"
+
+
+def test_daemon_error_info_for_gpio():
+    known = DaemonReplyError("gpio",
+                             "busy GPIO line in use by another program")
+    assert known.cause == "busy"
+    info = daemon_error_info(known)
+    assert info == {"code": "daemon_error", "message": GPIO_TEXT["busy"],
+                    "daemon_class": "gpio", "cause": "busy"}
+    assert list(info) == ["code", "message", "daemon_class", "cause"]
+
+    generic = {"code": "daemon_error", "message": "the GPIO failed",
+               "daemon_class": "gpio"}
+    for text in ("zzz x", ""):
+        unknown = DaemonReplyError("gpio", text)
+        assert unknown.cause is None
+        assert daemon_error_info(unknown) == generic
+    # A word the whitelist knows is only taken for the gpio class.
+    other = DaemonReplyError("send", "busy x")
+    assert other.cause is None
+    assert daemon_error_info(DaemonReplyError("send", "transmission failed")) \
+        == {"code": "daemon_error", "message": "rsswitchd refused the command",
+            "daemon_class": "send", "daemon_message": "transmission failed"}

@@ -23,7 +23,9 @@ makes it send the right codeword. They prove the codewords of the
 stub board, not the radio signal.
 
 Like every test that uses real_daemon, they are skipped when no
-rsswitchd is available, unless RSSWITCH_REQUIRE_DAEMON is 1.
+rsswitchd is available, unless RSSWITCH_REQUIRE_DAEMON is 1. The tests
+of a failure at the GPIO start a daemon of their own for each cause,
+with a chip name that makes the stub board fail.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 from conftest import Child, refused_port
+from rsswitch_web.errors import GPIO_TEXT
 
 POLLIN_ON = "0FFF0000F00F"
 POLLIN_OFF = "0FFF0000F0F0"
@@ -234,3 +237,57 @@ def test_e2e_stopped_daemon_is_reported(stack):
     status, _, tree = http.call("GET", "/api/rooms")
     assert status == 200
     assert tree["rooms"][0]["sockets"][0]["last_sent"] is None
+
+
+GPIO_CLASSES = [("failnochip:0", "nochip"), ("failbusy:0", "busy"),
+                ("faildenied:0", "denied"), ("failbadline:0", "badline"),
+                ("failio:0", "io")]
+
+
+@pytest.mark.parametrize("config,word", GPIO_CLASSES)
+def test_e2e_gpio_cause_reaches_the_api(stack, gpio_daemon, config, word):
+    http, _ = stack(daemon_port=gpio_daemon(config).port)
+    rid = make_room(http, "Living room")
+    sid = make_socket(http, rid, "Heater", "pollin_2605", 17, 23)
+    status, _, data = http.call("POST", "/api/sockets/%s/switch" % sid,
+                                {"state": "on"})
+    assert status == 502, data
+    assert data["error"] == {"code": "daemon_error",
+                             "message": GPIO_TEXT[word],
+                             "daemon_class": "gpio", "cause": word}
+    status, _, tree = http.call("GET", "/api/rooms")
+    assert status == 200
+    assert tree["rooms"][0]["sockets"][0]["last_sent"] is None
+
+
+def test_e2e_unclassified_gpio_failure_stays_send(stack, gpio_daemon):
+    http, _ = stack(daemon_port=gpio_daemon("failother:0").port)
+    rid = make_room(http, "Living room")
+    sid = make_socket(http, rid, "Heater", "pollin_2605", 17, 23)
+    status, _, data = http.call("POST", "/api/sockets/%s/switch" % sid,
+                                {"state": "on"})
+    assert status == 502, data
+    error = data["error"]
+    assert error["code"] == "daemon_error"
+    assert error["daemon_class"] == "send"
+    assert error["daemon_message"] == "transmission failed"
+    assert "cause" not in error
+    status, _, tree = http.call("GET", "/api/rooms")
+    assert tree["rooms"][0]["sockets"][0]["last_sent"] is None
+
+
+def test_e2e_all_off_reports_the_gpio_cause(stack, gpio_daemon):
+    http, _ = stack(daemon_port=gpio_daemon("failbusy:0").port)
+    rid = make_room(http, "Living room")
+    heater = make_socket(http, rid, "Heater", "pollin_2605", 17, 23)
+    lamp = make_socket(http, rid, "Lamp", "rev_008345", 3, 0)
+    status, _, report = http.call("POST", "/api/all-off", {})
+    assert status == 200, report
+    assert report["ok"] is False
+    assert report["summary"] == {"ok": 0, "error": 2, "skipped": 0}
+    assert [r["socket_id"] for r in report["results"]] == [heater, lamp]
+    busy = {"code": "daemon_error", "message": GPIO_TEXT["busy"],
+            "daemon_class": "gpio", "cause": "busy"}
+    for result in report["results"]:
+        assert result["status"] == "error"
+        assert result["error"] == busy

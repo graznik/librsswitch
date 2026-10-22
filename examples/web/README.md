@@ -447,7 +447,9 @@ On success the label changes and flashes. On failure a red message
 appears under the row and stays until the next tap on that row, for
 example "rsswitchd unreachable" or "rsswitchd timed out". The
 message of the daemon is shown as "rsswitchd: ", followed by its
-text.
+text. A failure at the GPIO of the daemon's board is shown as
+"GPIO: ", followed by the app's own text for the cause, for example
+"GPIO: line busy – another program is using it".
 
 Each room card has an All off button, which switches off the sockets
 of that room at once, like a tap on a single socket. The All off
@@ -729,6 +731,24 @@ well: the class word and the text of the ERR reply (see
 [rsswitchd](../network/README.md)), reduced to printable ASCII and
 at most 128 characters.
 
+A failure at the GPIO is the exception. rsswitchd answers it with
+`ERR gpio` and a cause word, and the app does not pass the text of
+the reply on: it checks the word against the five it knows (nochip,
+busy, denied, badline, io) and answers with a text of its own for
+the cause. The error then has daemon_class `gpio`, message with that
+text and cause with the word, and it has no daemon_message. For a
+word the app does not know, or no word, the message is "the GPIO
+failed" and cause is missing:
+
+```json
+{"error": {"code": "daemon_error",
+           "message": "line busy \u2013 another program is using it",
+           "daemon_class": "gpio", "cause": "busy"}}
+```
+
+The same error is the error of an All-off result for a socket that
+failed this way.
+
 The code is fixed and a client may branch on it. The message may
 change, like the text of an rsswitchd reply.
 
@@ -746,7 +766,7 @@ change, like the text of an rsswitchd reply.
 | `unsupported_media_type` | 415 | `Content-Type` is not `application/json` |
 | `validation` | 422 | a field is missing, unknown or has a bad value; field names it |
 | `daemon_unreachable` | 502 | no connection to rsswitchd |
-| `daemon_error` | 502 | rsswitchd replied ERR; see daemon_class, daemon_message |
+| `daemon_error` | 502 | rsswitchd replied ERR; see daemon_class, daemon_message, and cause for class gpio |
 | `daemon_protocol` | 502 | rsswitchd sent a reply that was not understood, or hung up |
 | `daemon_timeout` | 504 | rsswitchd did not answer in time |
 | `store_error` | 500 | the data file cannot be used |

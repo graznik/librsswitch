@@ -24,7 +24,7 @@ from __future__ import annotations
 from flask import jsonify, request
 from werkzeug.exceptions import HTTPException, MethodNotAllowed
 
-from .daemon import (DaemonError, DaemonProtocolError, DaemonReplyError,
+from .daemon import (GPIO_CAUSES, DaemonError, DaemonProtocolError, DaemonReplyError,
                      DaemonTimeout, DaemonUnreachable)
 from .jsonutil import strict_loads
 from .store import StoreError
@@ -52,6 +52,23 @@ _DAEMON_MESSAGES = (
     (DaemonProtocolError, "rsswitchd sent a reply that was not understood"),
     (DaemonReplyError, "rsswitchd refused the command"),
 )
+
+# The text of each cause of a failure at the GPIO, in the owner's words:
+# what is wrong and what to do about it. It is the one table every view
+# that shows the result of a send uses. The page puts "GPIO: " in front,
+# so no text may start with "GPIO".
+GPIO_TEXT = {
+    "nochip": "chip not found \u2013 check the chip in rsswitchd's --gpio",
+    "busy": "line busy \u2013 another program is using it",
+    "denied": "no permission for the chip \u2013 "
+              "is the daemon user in the gpio group?",
+    "badline": "line not valid for this chip \u2013 "
+               "check the line in rsswitchd's --gpio",
+    "io": "driving the line failed \u2013 check the board, then try again",
+}
+
+# Shown for a failure at the GPIO whose cause is missing or not known.
+GPIO_UNKNOWN_TEXT = "the GPIO failed"
 
 _STORE_ERROR_MESSAGE = "the data store is unavailable"
 _INTERNAL_ERROR_MESSAGE = "internal server error"
@@ -83,6 +100,12 @@ def daemon_error_info(exc) -> dict:
     It has code and message. An ERR reply adds daemon_class and
     daemon_message, which are what rsswitchd said, already reduced to
     printable ASCII. A client must show them as text and nothing else.
+
+    A failure at the GPIO (class gpio) is the exception: the daemon's
+    text is not passed on. The message is the app's own text for the
+    cause, from GPIO_TEXT, and cause is added when it is one the app
+    knows. For a missing or unknown cause the message is
+    GPIO_UNKNOWN_TEXT and there is no cause.
     """
     message = "rsswitchd failed"
     for cls, text in _DAEMON_MESSAGES:
@@ -91,8 +114,14 @@ def daemon_error_info(exc) -> dict:
             break
     info = {"code": exc.code, "message": message}
     if isinstance(exc, DaemonReplyError):
-        info["daemon_class"] = exc.daemon_class
-        info["daemon_message"] = exc.daemon_message
+        if exc.daemon_class == "gpio":
+            info["message"] = GPIO_TEXT.get(exc.cause, GPIO_UNKNOWN_TEXT)
+            info["daemon_class"] = exc.daemon_class
+            if exc.cause in GPIO_TEXT:
+                info["cause"] = exc.cause
+        else:
+            info["daemon_class"] = exc.daemon_class
+            info["daemon_message"] = exc.daemon_message
     return info
 
 

@@ -410,19 +410,20 @@ class RealDaemon:
         self.proc.stderr.close()
 
 
-@pytest.fixture
-def real_daemon():
-    """The x86_64 build of rsswitchd, started on a port of its own.
+def _start_daemon(*extra):
+    """Start the x86_64 build of rsswitchd and return it once it is ready.
 
-    The binary is the one named in RSSWITCHD_BIN. The caller vouches
-    that it is a build for the x86_64 stub board, as tests/Makefile
-    makes one on any host. Without RSSWITCHD_BIN it is
-    examples/network/rsswitchd, which only an x86_64 host runs: a build
-    for a board must never be started by a test.
+    extra are further command line arguments. The binary is the one
+    named in RSSWITCHD_BIN. The caller vouches that it is a build for
+    the x86_64 stub board, as tests/Makefile makes one on any host.
+    Without RSSWITCHD_BIN it is examples/network/rsswitchd, which only
+    an x86_64 host runs: a build for a board must never be started by a
+    test.
 
     The test is skipped when the binary is missing or cannot run. With
     RSSWITCH_REQUIRE_DAEMON=1 it fails instead, so that a test run that
-    is meant to cover the daemon cannot quietly leave it out.
+    is meant to cover the daemon cannot quietly leave it out. A daemon
+    that does not become ready is stopped again.
     """
     give_up = (pytest.fail if os.environ.get("RSSWITCH_REQUIRE_DAEMON") == "1"
                else pytest.skip)
@@ -439,7 +440,8 @@ def real_daemon():
         give_up("%s: %s" % (binary, hint))
     try:
         proc = subprocess.Popen(
-            [str(binary), "--bind", "127.0.0.1", "--port", "0"],
+            [str(binary), "--bind", "127.0.0.1", "--port", "0"]
+            + list(extra),
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True)
     except OSError as e:
@@ -447,8 +449,42 @@ def real_daemon():
     daemon = RealDaemon(proc)
     try:
         daemon.wait_ready(5)
+    except BaseException:
+        daemon.stop()
+        raise
+    return daemon
+
+
+@pytest.fixture
+def real_daemon():
+    """The x86_64 build of rsswitchd, started on a port of its own.
+
+    See _start_daemon() for the binary and for when the test is skipped.
+    """
+    daemon = _start_daemon()
+    try:
         yield daemon
     finally:
+        daemon.stop()
+
+
+@pytest.fixture
+def gpio_daemon():
+    """Return a factory: start(config) -> RealDaemon run with --gpio config.
+
+    It needs the x86_64 build, whose stub board fails every send with
+    the cause that a chip name of the form fail<word> names, for
+    example failbusy:0. Every daemon it started is stopped at teardown.
+    """
+    started = []
+
+    def start(config):
+        daemon = _start_daemon("--gpio", config)
+        started.append(daemon)
+        return daemon
+
+    yield start
+    for daemon in started:
         daemon.stop()
 
 
