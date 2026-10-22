@@ -92,7 +92,8 @@ x86_64:
 # that make install has just written. Within the start-limit interval
 # after failed starts, systemd refuses a restart, so reset-failed
 # clears that first. It may fail, because a unit that never failed
-# makes it complain; the other systemctl calls report their status.
+# makes it complain; every other command of the block stops the
+# install when it fails.
 install:
 	@if [ ! -x rsswitchd ]; then \
 		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
@@ -101,8 +102,9 @@ install:
 	install -D -m 0755 rsswitchd $(DESTDIR)$(PREFIX)/bin/rsswitchd
 	install -D -m 0644 rsswitchd.service $(DESTDIR)$(SYSTEMD_UNIT_DIR)/rsswitchd.service
 	@if [ -z "$(DESTDIR)" ]; then \
-		getent group gpio > /dev/null || groupadd --system gpio || exit 1; \
-		getent passwd rsswitchd > /dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd || exit 1; \
+		set -e; \
+		getent group gpio > /dev/null || groupadd --system gpio; \
+		getent passwd rsswitchd > /dev/null || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --groups gpio rsswitchd; \
 		systemctl daemon-reload; \
 		systemctl enable rsswitchd; \
 		systemctl reset-failed rsswitchd 2>/dev/null || true; \

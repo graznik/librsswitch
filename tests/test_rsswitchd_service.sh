@@ -189,7 +189,9 @@ check "[Service] has no Nice=" \
 
 # The install checks. The tools of the recipe that manage accounts and
 # the service are stand-ins in $S/bin, first in PATH: systemctl, getent,
-# groupadd and useradd only log their call to $S/calls.log. install is
+# groupadd and useradd log their call to $S/calls.log. systemctl also
+# exits 1 for daemon-reload while $S/fail-daemon-reload exists and for
+# reset-failed while $S/fail-reset-failed exists. install is
 # a wrapper that refuses an absolute argument outside $S, a
 # target-directory option (-t, also inside a bundle of short options
 # such as -Dt, and --target-directory) and a path with "..", and logs
@@ -207,7 +209,7 @@ mkdir "$S/bin" "$S/build"
 REAL_INSTALL=$(command -v install)
 : > "$S/calls.log"
 
-for tool in groupadd useradd systemctl; do
+for tool in groupadd useradd; do
 cat > "$S/bin/$tool" <<EOF
 #!/bin/sh
 echo "$tool \$*" >> "$S/calls.log"
@@ -215,6 +217,15 @@ exit 0
 EOF
 chmod +x "$S/bin/$tool"
 done
+
+cat > "$S/bin/systemctl" <<EOF
+#!/bin/sh
+echo "systemctl \$*" >> "$S/calls.log"
+[ "\$1" != daemon-reload ] || [ ! -e "$S/fail-daemon-reload" ] || exit 1
+[ "\$1" != reset-failed ] || [ ! -e "$S/fail-reset-failed" ] || exit 1
+exit 0
+EOF
+chmod +x "$S/bin/systemctl"
 
 # getent logs its call like the others. While $S/no-accounts exists it
 # exits 2, as the real getent does for a name that is not there, so the
@@ -371,6 +382,21 @@ unstaged_rc=1
 upgrade_rc=1
 fresh_rc=1
 staged_rc=1
+reload_rc=0
+reset_rc=1
+
+# reload_calls_only: the only systemctl call so far is daemon-reload.
+reload_calls_only()
+{
+	[ "$(systemctl_calls)" = "systemctl daemon-reload" ]
+}
+
+# reset_failed_tolerated: the install ended with status 0 although
+# reset-failed failed, and still ran all four calls in order.
+reset_failed_tolerated()
+{
+	[ "$reset_rc" -eq 0 ] && restarts_service
+}
 
 check "the five tools resolve into the stand-in directory" shims_first
 
@@ -419,6 +445,28 @@ check "staged install places the binary and the unit under DESTDIR" \
 	staged_files_placed
 check "staged install calls none of the stand-ins" \
 	staged_calls_none
+
+# A failing daemon-reload stops the install: nothing is enabled, reset
+# or restarted after it.
+: > "$S/fail-daemon-reload"
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
+reload_rc=$?
+rm -f "$S/fail-daemon-reload"
+check "install exits non-zero when daemon-reload fails" \
+	test "$reload_rc" -ne 0
+check "install calls nothing after a failing daemon-reload" \
+	reload_calls_only
+
+# reset-failed is the one command allowed to fail: for a unit that never
+# failed it complains, and the restart still has to run.
+: > "$S/fail-reset-failed"
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
+reset_rc=$?
+rm -f "$S/fail-reset-failed"
+check "a failing reset-failed does not stop the install" \
+	reset_failed_tolerated
 
 # wrapper_refuses ARG: the install wrapper, run by its full path with
 # ARG and a source that does not exist, exits non-zero and logs
