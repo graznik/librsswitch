@@ -940,9 +940,69 @@ static void test_err_names(void)
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_RANGE), "range"), 0);
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_TOOLONG), "toolong"), 0);
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_SEND), "send"), 0);
+	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_GPIO), "gpio"), 0);
 
 	/* The parser never opens a board. */
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+}
+
+/*
+ * Every cause the protocol knows has its own fixed word and text, made
+ * of printable ASCII without digits and without "/", and the whole
+ * "ERR gpio <word> <text>\n" line fits the daemon's 96-byte reply
+ * buffer. Every other value, in the enum or outside it, has none.
+ */
+static void test_gpio_causes(void)
+{
+	static const struct {
+		enum socket_err cause;
+		const char *word;
+		const char *text;
+	} known[] = {
+		{SOCKET_ERR_NOCHIP, "nochip", "GPIO chip not found"},
+		{SOCKET_ERR_BUSY, "busy",
+		 "GPIO line in use by another program"},
+		{SOCKET_ERR_DENIED, "denied",
+		 "no permission on the GPIO chip"},
+		{SOCKET_ERR_BADLINE, "badline",
+		 "GPIO line not valid for this chip"},
+		{SOCKET_ERR_IO, "io", "writing to the GPIO line failed"},
+	};
+	static const enum socket_err unknown[] = {
+		SOCKET_ERR_NONE, SOCKET_ERR_OTHER, SOCKET_ERR_ARG,
+		(enum socket_err)8, (enum socket_err)99,
+		(enum socket_err)-1
+	};
+	size_t i, j;
+
+	for (i = 0; i < ARRAY_SIZE(known); i++) {
+		const struct proto_gpio_cause *c =
+			proto_gpio_cause(known[i].cause);
+		const char *w;
+
+		CHECK(c != NULL);
+		if (c == NULL)
+			continue;
+
+		CHECK_EQ(strcmp(c->word, known[i].word), 0);
+		CHECK_EQ(strcmp(c->text, known[i].text), 0);
+
+		for (w = c->word; *w != '\0'; w++)
+			CHECK(*w >= 'a' && *w <= 'z');
+		for (w = c->text; *w != '\0'; w++) {
+			CHECK(*w >= ' ' && *w <= '~');
+			CHECK(*w < '0' || *w > '9');
+			CHECK(*w != '/');
+		}
+		CHECK(strlen("ERR gpio ") + strlen(c->word) + 1 +
+		      strlen(c->text) + 1 < 96);
+
+		for (j = i + 1; j < ARRAY_SIZE(known); j++)
+			CHECK(strcmp(c->word, known[j].word) != 0);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(unknown); i++)
+		CHECK(proto_gpio_cause(unknown[i]) == NULL);
 }
 
 int main(void)
@@ -960,6 +1020,7 @@ int main(void)
 	test_independent_state();
 	test_texts_are_clean();
 	test_err_names();
+	test_gpio_causes();
 
 	return MT_REPORT();
 }

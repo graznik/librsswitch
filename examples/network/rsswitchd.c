@@ -26,6 +26,7 @@ static int handle_command(int connfd, const char *ip,
 			   const struct proto_cmd *cmd);
 static void log_err(const char *ip, enum proto_err err, const char *text);
 static int send_reply(int connfd, const char *ip, const char *reply);
+static int reply_send_failure(int connfd, const char *ip);
 
 #define DEFAULT_PORT 5000
 #define DEFAULT_BIND "0.0.0.0"
@@ -669,8 +670,7 @@ static int handle_command(int connfd, const char *ip,
 			       cmd->data);
 			return send_reply(connfd, ip, "OK\n");
 		}
-		log_err(ip, PROTO_ERR_SEND, "transmission failed");
-		return send_reply(connfd, ip, "ERR send transmission failed\n");
+		return reply_send_failure(connfd, ip);
 	case PROTO_RAW:
 		if (socket_send_codeword(cmd->tristate, cmd->pulse_len) == 0) {
 			syslog(LOG_NOTICE,
@@ -678,11 +678,40 @@ static int handle_command(int connfd, const char *ip,
 			       ip, cmd->tristate, cmd->pulse_len);
 			return send_reply(connfd, ip, "OK\n");
 		}
+		return reply_send_failure(connfd, ip);
+	}
+
+	return 0;
+}
+
+/*
+ * Answers a switch or raw command whose library call just failed.
+ * A cause the protocol knows gets "ERR gpio" with its fixed word and
+ * text; every other failure gets "ERR send transmission failed".
+ *
+ * Must run right after the failed call, in the same thread and before
+ * any other library call: the cause is kept per thread and the next
+ * send replaces it. The reply holds only fixed words, never OS error
+ * text or the configured chip name.
+ */
+static int reply_send_failure(int connfd, const char *ip)
+{
+	enum socket_err cause = socket_last_error();
+	const struct proto_gpio_cause *known = proto_gpio_cause(cause);
+	char text[PROTO_TEXT_LEN];
+	char reply[96];
+
+	if (known == NULL) {
 		log_err(ip, PROTO_ERR_SEND, "transmission failed");
 		return send_reply(connfd, ip, "ERR send transmission failed\n");
 	}
 
-	return 0;
+	snprintf(text, sizeof(text), "%s %s", known->word, known->text);
+	log_err(ip, PROTO_ERR_GPIO, text);
+	snprintf(reply, sizeof(reply), "ERR %s %s\n",
+		 proto_err_name(PROTO_ERR_GPIO), text);
+
+	return send_reply(connfd, ip, reply);
 }
 
 /*

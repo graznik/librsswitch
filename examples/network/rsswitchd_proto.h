@@ -114,17 +114,29 @@ enum proto_kind {
 };
 
 /*
- * The four error classes a reply's first word after "ERR " names.
- * PROTO_ERR_SEND is never produced by this parser -- it has
- * no socket_send() call to fail -- rsswitchd.c sets it after a
- * library call returns -1. proto_err_name() maps each class to its
- * wire/log word.
+ * The five error classes a reply's first word after "ERR " names.
+ * PROTO_ERR_SEND and PROTO_ERR_GPIO are never produced by this parser
+ * -- it has no socket_send() call to fail -- rsswitchd.c sets them
+ * after a library call returns -1: PROTO_ERR_GPIO when
+ * socket_last_error() names a cause the protocol knows (see
+ * proto_gpio_cause()), PROTO_ERR_SEND for every other failure.
+ * proto_err_name() maps each class to its wire/log word.
  */
 enum proto_err {
 	PROTO_ERR_SYNTAX,
 	PROTO_ERR_RANGE,
 	PROTO_ERR_TOOLONG,
-	PROTO_ERR_SEND
+	PROTO_ERR_SEND,
+	PROTO_ERR_GPIO
+};
+
+/*
+ * The fixed word and text that follow "ERR gpio " in a reply for one
+ * failure cause, as listed in the Replies section of README.md.
+ */
+struct proto_gpio_cause {
+	const char *word;
+	const char *text;
 };
 
 /*
@@ -203,9 +215,19 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 
 /*
  * Maps a proto_err to its fixed wire/log word: "syntax", "range",
- * "toolong" or "send". Used for both the ERR reply's first word and
- * the syslog error line.
+ * "toolong", "send" or "gpio". Used for both the ERR reply's first
+ * word and the syslog error line.
  */
 const char *proto_err_name(enum proto_err err);
+
+/*
+ * Returns the fixed cause word and text for SOCKET_ERR_NOCHIP,
+ * SOCKET_ERR_BUSY, SOCKET_ERR_DENIED, SOCKET_ERR_BADLINE and
+ * SOCKET_ERR_IO, and NULL for every other value, including one outside
+ * enum socket_err. The words and texts are part of the protocol: fixed
+ * ASCII without digits or "/", never OS error text, never part of the
+ * configured chip name. The result points to static storage.
+ */
+const struct proto_gpio_cause *proto_gpio_cause(enum socket_err cause);
 
 #endif /* RSSWITCHD_PROTO_H */

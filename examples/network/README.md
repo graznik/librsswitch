@@ -120,10 +120,35 @@ word is fixed; the text after it may change.
           "tristate longer than 12",
           "pulse_len 49 not in 50-2000"
  toolong  line longer than 128 bytes
+ gpio     the GPIO failed with a cause the library could
+          tell, e.g. "ERR gpio busy GPIO line in use by
+          another program"
  send     transmission failed -- the daemon's own checks
-          passed, but the library reported a board error,
-          e.g. "ERR send transmission failed"
+          passed, but the library reported a board error it
+          could not classify: "ERR send transmission failed"
 ```
+
+For `gpio` the word after the class is fixed too, and it names the
+cause. The text after the word may change, so a client should match
+on the class and the word only:
+
+```
+ ERR gpio nochip GPIO chip not found
+ ERR gpio busy GPIO line in use by another program
+ ERR gpio denied no permission on the GPIO chip
+ ERR gpio badline GPIO line not valid for this chip
+ ERR gpio io writing to the GPIO line failed
+```
+
+nochip: the chip named by --gpio does not exist. busy: another
+program holds the line. denied: the daemon may not open the chip.
+badline: the chip has no such line. io: the line was found, but
+driving it failed. The reply never carries the chip name, a device
+path or the system's error text; those are in the syslog.
+
+On the x86_64 host build, which has no GPIO, `--gpio` can name a
+chip such as `failbusy:0` to make every command fail with that
+cause, for tests; the top-level README lists the names.
 
 The connection stays open after every reply, including an ERR.
 A command that was never fully read when the connection ends
@@ -257,8 +282,8 @@ as a bare GPIO number, makes the daemon refuse to start: it prints
 fails after the start limit below, instead of running with a GPIO line
 it cannot use. Only the format is checked: a well-formed `chip:line`
 that names a missing chip still starts, and each switching command is
-answered with `ERR send transmission failed` until the ExecStart line
-is fixed.
+answered with `ERR gpio nochip GPIO chip not found` until the ExecStart
+line is fixed.
 
 When the daemon cannot start, for example because another program
 holds port 5000, systemd starts it at most 5 times within 60

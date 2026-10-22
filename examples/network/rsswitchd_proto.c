@@ -373,7 +373,52 @@ const char *proto_err_name(enum proto_err err)
 		return "toolong";
 	case PROTO_ERR_SEND:
 		return "send";
+	case PROTO_ERR_GPIO:
+		return "gpio";
 	default:
 		return "unknown";
+	}
+}
+
+/*
+ * The closed set of causes a reply may name. Words and texts are
+ * fixed ASCII without digits or "/": a client sees nothing of the
+ * chip name it was configured with or of the OS error behind the
+ * cause, which only the syslog line of the library carries.
+ */
+static const struct proto_gpio_cause cause_nochip = {
+	"nochip", "GPIO chip not found"
+};
+static const struct proto_gpio_cause cause_busy = {
+	"busy", "GPIO line in use by another program"
+};
+static const struct proto_gpio_cause cause_denied = {
+	"denied", "no permission on the GPIO chip"
+};
+static const struct proto_gpio_cause cause_badline = {
+	"badline", "GPIO line not valid for this chip"
+};
+static const struct proto_gpio_cause cause_io = {
+	"io", "writing to the GPIO line failed"
+};
+
+const struct proto_gpio_cause *proto_gpio_cause(enum socket_err cause)
+{
+	switch (cause) {
+	case SOCKET_ERR_NOCHIP:
+		return &cause_nochip;
+	case SOCKET_ERR_BUSY:
+		return &cause_busy;
+	case SOCKET_ERR_DENIED:
+		return &cause_denied;
+	case SOCKET_ERR_BADLINE:
+		return &cause_badline;
+	case SOCKET_ERR_IO:
+		return &cause_io;
+	case SOCKET_ERR_NONE:
+	case SOCKET_ERR_OTHER:
+	case SOCKET_ERR_ARG:
+	default:
+		return NULL;
 	}
 }

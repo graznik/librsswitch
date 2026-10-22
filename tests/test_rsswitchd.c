@@ -2066,6 +2066,137 @@ static void test_raw_err_send(void)
 	daemon_stop_clean(&d);
 }
 
+/* A reply that names a GPIO cause holds only fixed words: no device
+ * path, no number and no part of the chip name the daemon was given.
+ */
+static int gpio_reply_is_clean(const char *reply, const char *chip)
+{
+	const char *p;
+
+	for (p = reply; *p != '\0'; p++) {
+		if (*p == '/' || (*p >= '0' && *p <= '9'))
+			return 0;
+	}
+
+	return strstr(reply, "gpiochip") == NULL &&
+	       strstr(reply, chip) == NULL;
+}
+
+/* A command sent twice on one connection gets the same reply each
+ * time, the connection stays open and the reply holds only fixed words.
+ */
+static void expect_gpio_reply(int fd, const char *cmd, const char *chip,
+			      const char *expected)
+{
+	int round;
+
+	for (round = 0; round < 2; round++) {
+		char reply[128];
+
+		CHECK_EQ(client_send(fd, cmd, strlen(cmd)), 0);
+		CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000), 1);
+		CHECK_EQ(strcmp(reply, expected), 0);
+		CHECK(gpio_reply_is_clean(reply, chip));
+	}
+}
+
+/* A switch or raw command that fails with a cause the library
+ * classified is answered with that cause's fixed word and text, the
+ * connection stays open, and nothing but the io failure (which
+ * happens after the first pulse) has printed a codeword.
+ */
+static void test_err_gpio(void)
+{
+	static const struct {
+		const char *chip;
+		const char *gpio;
+		const char *reply;
+		int prints;
+	} causes[] = {
+		{"failnochip", "failnochip:0",
+		 "ERR gpio nochip GPIO chip not found", 0},
+		{"failbusy", "failbusy:0",
+		 "ERR gpio busy GPIO line in use by another program", 0},
+		{"faildenied", "faildenied:0",
+		 "ERR gpio denied no permission on the GPIO chip", 0},
+		{"failbadline", "failbadline:0",
+		 "ERR gpio badline GPIO line not valid for this chip", 0},
+		{"failio", "failio:0",
+		 "ERR gpio io writing to the GPIO line failed", 1},
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(causes); i++) {
+		const char *extra[] = {"--gpio", causes[i].gpio, NULL};
+		struct daemon d;
+		char line[64];
+		int fd;
+
+		CHECK_EQ(daemon_start(&d, extra), 0);
+
+		fd = client_connect("127.0.0.1", d.port);
+		CHECK(fd >= 0);
+		if (fd >= 0) {
+			expect_gpio_reply(fd, "1 17 23 1\n", causes[i].chip,
+					  causes[i].reply);
+			expect_gpio_reply(fd, "raw 0FFF0000F00F 350\n",
+					  causes[i].chip, causes[i].reply);
+			close(fd);
+		}
+
+		if (causes[i].prints) {
+			int n;
+
+			for (n = 0; n < 4; n++) {
+				CHECK(daemon_stdout_line(&d, line, sizeof(line),
+							 2000));
+				CHECK_EQ(strcmp(line, "0FFF0000F00F"), 0);
+			}
+		}
+		CHECK(daemon_stdout_line(&d, line, sizeof(line), 300) == 0);
+
+		daemon_stop_clean(&d);
+	}
+}
+
+/* A failure the library cannot classify keeps the generic reply. */
+static void test_err_gpio_other(void)
+{
+	static const char *const extra[] = {"--gpio", "failother:0", NULL};
+	struct daemon d;
+	char line[64];
+	int fd;
+
+	CHECK_EQ(daemon_start(&d, extra), 0);
+
+	fd = client_connect("127.0.0.1", d.port);
+	CHECK(fd >= 0);
+	if (fd >= 0) {
+		char reply[128];
+		int round;
+
+		for (round = 0; round < 2; round++) {
+			CHECK_EQ(client_send(fd, "1 17 23 1\n", 10), 0);
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply, "ERR send transmission failed"),
+				 0);
+
+			CHECK_EQ(client_send(fd, "raw 0FFF0000F00F 350\n",
+					     21), 0);
+			CHECK_EQ(client_line(fd, reply, sizeof(reply), 2000),
+				 1);
+			CHECK_EQ(strcmp(reply, "ERR send transmission failed"),
+				 0);
+		}
+		close(fd);
+	}
+
+	CHECK(daemon_stdout_line(&d, line, sizeof(line), 300) == 0);
+
+	daemon_stop_clean(&d);
+}
+
 /* --timeout is validated with the same strict rules as --port, and a
  * valid value is accepted and shown in --help.
  */
@@ -2508,6 +2639,8 @@ int main(int argc, char *argv[])
 	test_raw_command();
 	test_raw_back_to_back();
 	test_raw_err_send();
+	test_err_gpio();
+	test_err_gpio_other();
 	test_no_echo();
 	test_serialized_replies();
 	test_early_disconnect();
