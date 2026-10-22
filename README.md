@@ -147,7 +147,7 @@ make -C examples/network x86_64
 
 ## Usage
 
-Five public functions, declared in librsswitch.h.
+Six public functions, declared in librsswitch.h.
 
 ```c
 socket_gpio_config(const char *config);
@@ -180,9 +180,9 @@ socket_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
 - data: 1 = On, 0 = Off
 
 Returns 0 on success, -1 for an out-of-range group/socket/data, an
-unknown dev, or a board error. Arguments are fully validated before
-board_init() or any GPIO access, so an invalid address never touches
-the board and nothing is sent.
+unknown dev, or a board error; socket_last_error() then tells why.
+Arguments are fully validated before board_init() or any GPIO access,
+so an invalid address never touches the board and nothing is sent.
 
 ```c
 socket_send_codeword(const char *tristate, uint32_t pulse_len);
@@ -202,7 +202,34 @@ tristate is sent 10 times, each repetition followed by a sync pulse --
 the same repeat count socket_send() uses. On the x86_64 build, the
 codeword is printed to stdout, exactly like socket_send() does.
 
-Returns 0 on success, -1 on error (invalid input, or a board error).
+Returns 0 on success, -1 on error (invalid input, or a board error);
+socket_last_error() then tells why.
+
+```c
+socket_last_error(void);
+```
+
+Returns the cause of the calling thread's last socket_send() or
+socket_send_codeword() call as an `enum socket_err`:
+
+- SOCKET_ERR_NONE (0): no failure
+- SOCKET_ERR_OTHER (1): a failure the library cannot classify,
+  including every board that only reports a plain -1
+- SOCKET_ERR_NOCHIP (2): the GPIO chip does not exist
+- SOCKET_ERR_BUSY (3): the line is in use by another program or
+  process
+- SOCKET_ERR_DENIED (4): no permission to open the chip
+- SOCKET_ERR_BADLINE (5): the line offset is not valid for the chip
+- SOCKET_ERR_IO (6): driving the line failed during the send
+- SOCKET_ERR_ARG (7): the call was rejected before the board was
+  touched (an invalid dev, group, socket, data, codeword or pulse_len)
+
+Every send call sets the cause, so it is SOCKET_ERR_NONE after a
+success. The cause is kept per thread: a send in another thread never
+changes it. The other functions leave it unchanged. The values never
+change; a later cause is only added after SOCKET_ERR_ARG. Which
+causes a failure can have besides OTHER depends on the board; the
+libgpiod boards are described in "GPIO configuration" below.
 
 ```c
 socket_addr_limits(uint32_t dev, uint32_t *ngroups, uint32_t *nsockets,
@@ -223,19 +250,20 @@ unknown dev or a NULL pointer, leaving the outputs untouched.
 ## Thread safety
 
 socket_send(), socket_send_codeword(), socket_addr_limits(),
-socket_gpio_config_check() and socket_gpio_config() are safe to call
-concurrently from multiple threads of the same process. Every send
-session -- board_init(), all repetitions, board_exit() -- is
-serialized by one library-wide lock, so concurrent sends never
-interleave their pulses; a calling thread simply blocks until the
-previous send session completes.
+socket_gpio_config_check(), socket_gpio_config() and
+socket_last_error() are safe to call concurrently from multiple
+threads of the same process. Every send session -- board_init(), all
+repetitions, board_exit() -- is serialized by one library-wide lock,
+so concurrent sends never interleave their pulses; a calling thread
+simply blocks until the previous send session completes.
 socket_gpio_config() takes the same lock around its store, so a config
 change is ordered against sends that start after it returns (it does
 not affect a session already in progress). socket_addr_limits() and
 socket_gpio_config_check() take no lock at all: the first only reads
 constant tables, the second only parses the string it is given, and
 neither touches gpio_config or opens the board, so they never block
-and never wait behind a send in progress.
+and never wait behind a send in progress. socket_last_error() takes no
+lock either: it reads state that belongs to the calling thread only.
 
 This guarantee is process-local only: two separate processes driving
 the same GPIO line (for example rsssend run once while rsswitchd is

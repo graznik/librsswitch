@@ -1,8 +1,8 @@
 CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
 INCLUDES = -I..
 
-TESTS = test_socket_send test_codewords test_concurrency test_codeword_api \
-	test_logging test_rsswitchd test_proto
+TESTS = test_last_error test_socket_send test_codewords test_concurrency \
+	test_codeword_api test_logging test_rsswitchd test_proto
 LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c \
 	   ../boards/gpiod/gpiod_config.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
@@ -130,6 +130,12 @@ test_concurrency: test_concurrency.c $(TEST_DEPS)
 
 test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c ../boards/gpiod/gpiod_config.c
+
+# Includes ../librsswitch.c directly and defines its own board, so the
+# cause a board returns can be chosen per test: it links no board
+# source, not even the x86_64 stub.
+test_last_error: test_last_error.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_last_error test_last_error.c
 
 # Builds ../examples/basic/rsssend.c against the x86_64 board, so
 # test_rsssend.sh can drive the real CLI (argument parsing, exit

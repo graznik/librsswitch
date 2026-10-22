@@ -55,8 +55,17 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata);
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len);
+static int32_t fail(enum socket_err err);
+static enum socket_err cause_from_board(int32_t ret);
 
 static const char *gpio_config;
+
+/*
+ * The cause of the calling thread's last send, returned by
+ * socket_last_error(). The GNU storage class is used because the C11
+ * keyword is rejected by -pedantic under -std=c99.
+ */
+static __thread enum socket_err last_error;
 
 /*
  * Serializes every send session (board_init() through board_exit(),
@@ -182,17 +191,43 @@ static int32_t tristate_check(const char *codeword)
 	return 0;
 }
 
+/*
+ * Records err as the cause of the calling thread's failed send and
+ * returns -1, the value both public send functions return on failure.
+ */
+static int32_t fail(enum socket_err err)
+{
+	last_error = err;
+	return -1;
+}
+
+/*
+ * Turns the value a board returned into a cause. A board returns 0, -1
+ * or -(int32_t)SOCKET_ERR_x for a failure it can name; -1 is
+ * SOCKET_ERR_OTHER. A value outside that range is SOCKET_ERR_OTHER too.
+ * The range is tested before ret is negated, so INT32_MIN is never
+ * negated.
+ */
+static enum socket_err cause_from_board(int32_t ret)
+{
+	if (ret >= 0)
+		return SOCKET_ERR_NONE;
+	if (ret < -(int32_t)SOCKET_ERR_IO)
+		return SOCKET_ERR_OTHER;
+	return (enum socket_err)-ret;
+}
+
 /**
  * Sends a tri-state code word NTIMES times, each repetition followed
  * by a sync pulse.
  * @param codeword     NUL-terminated string of '0', '1' and 'F'
  * @param pulse_len    Pulse length in microseconds
- * @return 0 on success, -1 for an invalid codeword or a failing
- *         transmit()
+ * @return 0 on success, -1 or a negative board cause on failure
  */
 static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 {
 	size_t n;
+	int32_t ret;
 
 	if (tristate_check(codeword) < 0)
 		return -1;
@@ -201,8 +236,6 @@ static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 		int i = 0;
 
 		while (codeword[i] != '\0') {
-			int32_t ret;
-
 			switch (codeword[i]) {
 			case '0':
 				ret = send_0(pulse_len);
@@ -217,11 +250,12 @@ static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 				return -1;
 			}
 			if (ret < 0)
-				return -1;
+				return ret;
 			i++;
 		}
-		if (send_sync(pulse_len) < 0)
-			return -1;
+		ret = send_sync(pulse_len);
+		if (ret < 0)
+			return ret;
 	}
 	return 0;
 }
@@ -233,8 +267,11 @@ static int32_t send_tris(const char *codeword, uint32_t pulse_len)
  */
 static int32_t send_0(uint32_t pulse_len)
 {
-	if (transmit(1, 3, pulse_len) < 0)
-		return -1;
+	int32_t ret;
+
+	ret = transmit(1, 3, pulse_len);
+	if (ret < 0)
+		return ret;
 	return transmit(1, 3, pulse_len);
 }
 
@@ -245,8 +282,11 @@ static int32_t send_0(uint32_t pulse_len)
  */
 static int32_t send_1(uint32_t pulse_len)
 {
-	if (transmit(3, 1, pulse_len) < 0)
-		return -1;
+	int32_t ret;
+
+	ret = transmit(3, 1, pulse_len);
+	if (ret < 0)
+		return ret;
 	return transmit(3, 1, pulse_len);
 }
 
@@ -257,8 +297,11 @@ static int32_t send_1(uint32_t pulse_len)
  */
 static int32_t send_f(uint32_t pulse_len)
 {
-	if (transmit(1, 3, pulse_len) < 0)
-		return -1;
+	int32_t ret;
+
+	ret = transmit(1, 3, pulse_len);
+	if (ret < 0)
+		return ret;
 	return transmit(3, 1, pulse_len);
 }
 
@@ -277,7 +320,7 @@ static int32_t send_sync(uint32_t pulse_len)
  * @param igroup    Socket group, valid range 0-3
  * @param isocket   Socket within the group, valid range 0-2
  * @param idata     0 = off, 1 = on
- * @return 0 on success, -1 for a failing socket_ctrl()/send_tris()
+ * @return 0 on success, -1 or a negative board cause on failure
  *
  * igroup, isocket and idata are already checked by address_check()
  * before socket_send() reaches this function -- it indexes the
@@ -298,7 +341,7 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
  * @param igroup    Socket group, valid range 0-31
  * @param isocket   Socket within the group, valid range 0-31
  * @param idata     0 = off, 1 = on
- * @return 0 on success, -1 for a failing socket_ctrl()/send_tris()
+ * @return 0 on success, -1 or a negative board cause on failure
  *
  * igroup, isocket and idata are already checked by address_check()
  * before socket_send() reaches this function -- it indexes the
@@ -320,8 +363,7 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
  * @param socket     Socket-within-group code-word part
  * @param data       On/off code-word part
  * @param pulse_len  Pulse length in microseconds
- * @return 0 on success, -1 if the assembled codeword does not fit or
- *         a failing send_tris()
+ * @return 0 on success, -1 or a negative board cause on failure
  */
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len)
@@ -380,19 +422,21 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 	       ", data: %" PRIu32, dev, group, socket, data);
 #endif
 
+	last_error = SOCKET_ERR_NONE;
+
 	if (address_check(dev, group, socket, data) < 0)
-		return -1;
+		return fail(SOCKET_ERR_ARG);
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
-		return -1;
+		return fail(SOCKET_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config);
 	if (ret < 0) {
 		syslog(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);
-		return ret;
+		return fail(cause_from_board(ret));
 	}
 
 	switch (dev) {
@@ -415,7 +459,7 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 		syslog(LOG_ERR, "[-] board_exit");
 
 	pthread_mutex_unlock(&send_lock);
-	return ret;
+	return ret < 0 ? fail(cause_from_board(ret)) : 0;
 }
 
 int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
@@ -440,38 +484,40 @@ int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)
 	size_t len;
 	int32_t ret;
 
+	last_error = SOCKET_ERR_NONE;
+
 	if (!tristate) {
 		syslog(LOG_ERR, "[-] Invalid tristate codeword");
-		return -1;
+		return fail(SOCKET_ERR_ARG);
 	}
 
 	len = strnlen(tristate, SOCKET_CODEWORD_MAX_LEN + 1);
 	if (len < SOCKET_CODEWORD_MIN_LEN || len > SOCKET_CODEWORD_MAX_LEN) {
 		syslog(LOG_ERR, "[-] Invalid tristate codeword length %zu",
 		       len);
-		return -1;
+		return fail(SOCKET_ERR_ARG);
 	}
 
 	if (tristate_check(tristate) < 0)
-		return -1;
+		return fail(SOCKET_ERR_ARG);
 
 	if (pulse_len < SOCKET_PULSE_LEN_MIN_US ||
 	    pulse_len > SOCKET_PULSE_LEN_MAX_US) {
 		syslog(LOG_ERR, "[-] pulse_len %" PRIu32 " out of range",
 		       pulse_len);
-		return -1;
+		return fail(SOCKET_ERR_ARG);
 	}
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
-		return -1;
+		return fail(SOCKET_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config);
 	if (ret < 0) {
 		syslog(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);
-		return ret;
+		return fail(cause_from_board(ret));
 	}
 
 #ifdef X86_64
@@ -484,5 +530,10 @@ int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)
 		syslog(LOG_ERR, "[-] board_exit");
 
 	pthread_mutex_unlock(&send_lock);
-	return ret;
+	return ret < 0 ? fail(cause_from_board(ret)) : 0;
+}
+
+enum socket_err socket_last_error(void)
+{
+	return last_error;
 }

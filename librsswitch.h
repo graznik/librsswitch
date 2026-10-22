@@ -46,6 +46,10 @@
  * parses the string it is given, and neither touches gpio_config or
  * opens the board. They are safe to call concurrently with any of the
  * functions above, from any thread.
+ *
+ * socket_last_error() takes no lock either: it reads state that is
+ * private to the calling thread, so it is safe from any thread and a
+ * send in another thread never changes what it returns.
  */
 
 /*
@@ -91,9 +95,10 @@ int32_t socket_gpio_config_check(const char *config);
  * repetition followed by a sync pulse. On the x86_64 build, the
  * codeword is printed to stdout.
  *
- * Returns 0 on success, -1 for an invalid argument or a board error.
- * Serialized with socket_send_codeword() by the same lock -- see
- * "Thread safety" above.
+ * Returns 0 on success, -1 for an invalid argument or a board error;
+ * socket_last_error() then tells why. Serialized with
+ * socket_send_codeword() by the same lock -- see "Thread safety"
+ * above.
  */
 int32_t socket_send(uint32_t dev, uint32_t group,
 		    uint32_t socket, uint32_t data);
@@ -154,10 +159,49 @@ int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
  * socket_send() does.
  *
  * Returns 0 on success, -1 on error (invalid input, or a board
- * error). Serialized with socket_send() by the same lock -- see
- * "Thread safety" above.
+ * error); socket_last_error() then tells why. Serialized with
+ * socket_send() by the same lock -- see "Thread safety" above.
  */
 int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len);
+
+/*
+ * Why a send failed. The values are part of the library's ABI: they
+ * never change, and a later cause is only ever added after
+ * SOCKET_ERR_ARG.
+ *
+ * SOCKET_ERR_NONE:    no failure.
+ * SOCKET_ERR_OTHER:   a failure the library cannot classify, including
+ *                     every board that only reports a plain -1.
+ * SOCKET_ERR_NOCHIP:  the GPIO chip does not exist.
+ * SOCKET_ERR_BUSY:    the line is in use by another program or process.
+ * SOCKET_ERR_DENIED:  no permission to open the chip.
+ * SOCKET_ERR_BADLINE: the line offset is not valid for the chip.
+ * SOCKET_ERR_IO:      driving the line failed during the send.
+ * SOCKET_ERR_ARG:     the call was rejected before the board was
+ *                     touched: an invalid dev, group, socket, data,
+ *                     codeword or pulse_len.
+ */
+enum socket_err {
+		 SOCKET_ERR_NONE = 0,
+		 SOCKET_ERR_OTHER = 1,
+		 SOCKET_ERR_NOCHIP = 2,
+		 SOCKET_ERR_BUSY = 3,
+		 SOCKET_ERR_DENIED = 4,
+		 SOCKET_ERR_BADLINE = 5,
+		 SOCKET_ERR_IO = 6,
+		 SOCKET_ERR_ARG = 7
+};
+
+/*
+ * Returns the cause of the calling thread's last socket_send() or
+ * socket_send_codeword() call: SOCKET_ERR_NONE after a success, the
+ * reason after a failure. Every send call sets it, so a success never
+ * leaves a stale cause behind; every other library function leaves it
+ * unchanged. Before the thread's first send it is SOCKET_ERR_NONE.
+ * It takes no lock and never blocks. The cause is per thread: a send
+ * in another thread never changes it.
+ */
+enum socket_err socket_last_error(void);
 
 enum socket_type {
 		  REV_008345,
