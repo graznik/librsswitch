@@ -296,6 +296,16 @@ example programs) is board-specific:
   BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
   chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
   package and pass it as "chip:line".
+
+  After a failed send, socket_last_error() reports on these boards:
+  SOCKET_ERR_NOCHIP when the chip does not exist, SOCKET_ERR_BUSY when
+  the line is in use by another program, SOCKET_ERR_DENIED when the
+  process may not open the chip, SOCKET_ERR_BADLINE when the line
+  offset is not valid for the chip, and SOCKET_ERR_IO when a write to
+  the line failed. Every other failure is SOCKET_ERR_OTHER: a
+  malformed config, an allocation failure and, on libgpiod 1.x, a
+  device that exists but is not a GPIO chip. The last one stays
+  "other" on purpose, because a wrong cause is worse than none.
 - x86_64: the host build checks the string with the same "chip:line"
   rules, so the programs refuse the same values, and its stub board
   drives no GPIO. The stub ignores the string stored with

@@ -32,7 +32,17 @@
 
 #include <stdint.h>
 
+/* The causes a board returns are the SOCKET_ERR_ values declared there. */
+#include "../librsswitch.h"
+
 /*
+ * A board reports a failure with a negative value. -1 means "other"
+ * (-(int32_t)SOCKET_ERR_OTHER); a board that can name the cause returns
+ * -(int32_t)SOCKET_ERR_x for it instead. A board never returns
+ * SOCKET_ERR_NONE or SOCKET_ERR_ARG as a negative value, and the
+ * library reads any other negative value as SOCKET_ERR_OTHER. Each
+ * function below says which causes it can return.
+ *
  * config: board-specific, opaque to the library's callers. NULL means
  * "use this board's compiled-in default". Each board documents and
  * parses its own format. The libgpiod boards share the "chip:line"
@@ -47,6 +57,10 @@
  * bounded to "until the next board_init()" regardless of how it got
  * that way. The x86_64 stub has no real line, so it has nothing to
  * drive; its board_init()/board_exit()/transmit() are no-ops.
+ *
+ * Returns 0, or -(int32_t)SOCKET_ERR_x for a failure the board can
+ * name (SOCKET_ERR_NOCHIP, SOCKET_ERR_BUSY, SOCKET_ERR_DENIED or
+ * SOCKET_ERR_BADLINE), or -1 for any other failure.
  */
 int32_t board_init(const char *config);
 
@@ -65,17 +79,19 @@ int32_t board_config_check(const char *config);
  * the line. If the line may still be high (a transmit() failed after
  * driving it high), board_exit() first drives it low, so no session
  * ends with the 433 MHz transmitter keyed. A failure to
- * drive it low is logged and makes board_exit() return -1, but the
- * line is closed or released regardless.
+ * drive it low is logged and makes board_exit() return
+ * -(int32_t)SOCKET_ERR_IO, but the line is closed or released
+ * regardless. Returns 0 otherwise.
  */
 int32_t board_exit(void);
 
 /*
- * Drives one high/low pulse pair. Returns 0 on success, -1 on error,
- * in which case the caller abandons the rest of the codeword (no
- * further transmit() call is made for that send) -- the line may be
- * left high by such a failure, and the caller's board_exit() then
- * drives it low again.
+ * Drives one high/low pulse pair. Returns 0 on success, or a negative
+ * cause on error -- normally -(int32_t)SOCKET_ERR_IO, or -1 for a
+ * failure the board cannot name -- in which case the caller abandons
+ * the rest of the codeword (no further transmit() call is made for
+ * that send) -- the line may be left high by such a failure, and the
+ * caller's board_exit() then drives it low again.
  */
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
 

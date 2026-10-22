@@ -79,20 +79,30 @@ struct captured_message {
 static struct captured_message captured[CAPTURE_MAX_MESSAGES];
 static size_t captured_n;
 
+/*
+ * While set, capture_syslog() and the chip-close wrap overwrite errno
+ * with EACCES before they return, the way a real syslog() or
+ * gpiod_chip_close() may. It proves the board copies errno at the
+ * failing call, before it logs or closes anything.
+ */
+static int mock_clobber_errno;
+
 static void capture_syslog(int priority, const char *fmt, ...)
 {
 	va_list ap;
 
-	if (captured_n >= CAPTURE_MAX_MESSAGES)
-		return;
+	if (captured_n < CAPTURE_MAX_MESSAGES) {
+		va_start(ap, fmt);
+		vsnprintf(captured[captured_n].text,
+			  sizeof(captured[captured_n].text), fmt, ap);
+		va_end(ap);
 
-	va_start(ap, fmt);
-	vsnprintf(captured[captured_n].text, sizeof(captured[captured_n].text),
-		  fmt, ap);
-	va_end(ap);
+		captured[captured_n].priority = priority;
+		captured_n++;
+	}
 
-	captured[captured_n].priority = priority;
-	captured_n++;
+	if (mock_clobber_errno)
+		errno = EACCES;
 }
 
 static void captured_reset(void)
@@ -169,6 +179,7 @@ static int mock_fail_settings_new;
 static int mock_fail_line_cfg_new;
 static int mock_fail_req_cfg_new;
 static int mock_fail_add_settings;
+static int mock_add_settings_errno = ENOMEM;
 static int mock_fail_request_lines;
 static int mock_settings_live;
 static int mock_line_cfg_live;
@@ -350,7 +361,7 @@ int __wrap_gpiod_line_config_add_line_settings(
 	size_t num_offsets, struct gpiod_line_settings *settings)
 {
 	if (mock_fail_add_settings) {
-		errno = ENOMEM;
+		errno = mock_add_settings_errno;
 		return -1;
 	}
 
@@ -476,10 +487,13 @@ void __wrap_gpiod_chip_close(struct gpiod_chip *chip)
 	}
 
 	mock_close_count++;
+	if (mock_clobber_errno)
+		errno = EACCES;
 }
 
 static void mock_reset(void)
 {
+	mock_clobber_errno = 0;
 	mock_level = -1;
 	mock_set_calls = 0;
 	mock_fail_low_writes = 0;
@@ -503,6 +517,7 @@ static void mock_reset(void)
 	mock_fail_line_cfg_new = 0;
 	mock_fail_req_cfg_new = 0;
 	mock_fail_add_settings = 0;
+	mock_add_settings_errno = ENOMEM;
 	mock_fail_request_lines = 0;
 	mock_settings_live = 0;
 	mock_line_cfg_live = 0;
@@ -594,7 +609,7 @@ static void test_missing_chip_logs_to_syslog(void)
 	stderr_bytes = call_board_init_capturing_stderr(
 		"librsswitch-test-nonexistent:17", &ret);
 
-	CHECK_EQ(ret, -1);
+	CHECK_EQ(ret, -(int32_t)SOCKET_ERR_NOCHIP);
 	CHECK_EQ(stderr_bytes, 0);
 	CHECK(captured_count() > 0);
 	CHECK(captured_find("[-]"));
@@ -611,7 +626,7 @@ static void test_exit_without_open_chip(void)
 	captured_reset();
 	(void)call_board_init_capturing_stderr(
 		"librsswitch-test-nonexistent:17", &ret);
-	CHECK_EQ(ret, -1);
+	CHECK_EQ(ret, -(int32_t)SOCKET_ERR_NOCHIP);
 
 	CHECK_EQ(board_exit(), 0);
 	CHECK_EQ(board_exit(), 0);
@@ -768,9 +783,11 @@ static void test_failed_low_write_driven_low_at_release(void)
 	mock_session_open();
 	mock_fail_low_writes = 1;
 
+	captured_reset();
 	transmit_ret = transmit(1, 1, 1);
-	CHECK_EQ(transmit_ret, -1);
+	CHECK_EQ(transmit_ret, -(int32_t)SOCKET_ERR_IO);
 	CHECK_EQ(mock_level, 1);
+	CHECK(captured_find(strerror(EIO)));
 
 	captured_reset();
 	exit_ret = board_exit();
@@ -828,13 +845,14 @@ static void test_failed_drive_low_still_releases(void)
 	mock_fail_low_writes = 2;
 
 	transmit_ret = transmit(1, 1, 1);
-	CHECK_EQ(transmit_ret, -1);
+	CHECK_EQ(transmit_ret, -(int32_t)SOCKET_ERR_IO);
 
 	captured_reset();
 	exit_ret = board_exit();
 
-	CHECK_EQ(exit_ret, -1);
+	CHECK_EQ(exit_ret, -(int32_t)SOCKET_ERR_IO);
 	CHECK(captured_find("[-] Failed to drive GPIO line low"));
+	CHECK(captured_find(strerror(EIO)));
 	CHECK_EQ(mock_release_count, 1);
 	CHECK_EQ(mock_close_count, 1);
 	CHECK(chip == NULL);
@@ -982,7 +1000,7 @@ static void test_board_init_get_line_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_get_line = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BADLINE);
 	CHECK(captured_find("[-] Failed to get GPIO line 3"));
 	check_board_init_failed_cleanly();
 
@@ -1000,7 +1018,7 @@ static void test_board_init_request_output_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_output = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
 	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
 	CHECK(line == NULL);
 	check_board_init_failed_cleanly();
@@ -1053,7 +1071,7 @@ static void test_board_init_request_lines_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_lines = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -1);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
 	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
 	CHECK(request == NULL);
 	check_board_init_failed_cleanly();
@@ -1064,26 +1082,113 @@ static void test_board_init_request_lines_fails(void)
 /*
  * gpiod_line_config_add_line_settings() fails: board_init() returns -1,
  * closes the chip once, frees the line settings, the line config and
- * the request config and logs the error. libgpiod fails this call here
- * only when it runs out of memory, and the line config must still be
- * freed.
+ * the request config and logs the error. libgpiod fails this call with
+ * ENOMEM when it runs out of memory and with EINVAL for bad arguments.
+ * Neither says anything about the line, so both stay -1 and EINVAL does
+ * not read as an invalid line. The line config must be freed in both
+ * cases.
  */
 static void test_board_init_frees_line_config_on_add_failure(void)
 {
-	mock_reset();
-	captured_reset();
-	mock_fake_chip_open = 1;
-	mock_fail_add_settings = 1;
+	static const int errnos[] = {ENOMEM, EINVAL};
+	size_t i;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -1);
-	CHECK(captured_find("[-] Failed to add GPIO line 3 settings"));
-	CHECK(request == NULL);
-	check_board_init_failed_cleanly();
+	for (i = 0; i < ARRAY_SIZE(errnos); i++) {
+		mock_reset();
+		captured_reset();
+		mock_fake_chip_open = 1;
+		mock_fail_add_settings = 1;
+		mock_add_settings_errno = errnos[i];
 
-	mock_reset();
+		CHECK_EQ(board_init("gpiochip9:3"), -1);
+		CHECK(captured_find("[-] Failed to add GPIO line 3 settings"));
+		CHECK(request == NULL);
+		check_board_init_failed_cleanly();
+
+		mock_reset();
+	}
 }
 
 #endif /* LIBRSSWITCH_GPIOD_VERSION */
+
+/*
+ * The classifier maps only the errno values of a failed chip open, line
+ * lookup or line request, and everything else, including 0 and ENOTTY,
+ * to -1.
+ */
+static void test_cause_from_errno(void)
+{
+	static const struct {
+		int err;
+		int32_t expected;
+	} table[] = {
+		{ENOENT, -(int32_t)SOCKET_ERR_NOCHIP},
+		{ENODEV, -(int32_t)SOCKET_ERR_NOCHIP},
+		{ENXIO, -(int32_t)SOCKET_ERR_NOCHIP},
+		{EACCES, -(int32_t)SOCKET_ERR_DENIED},
+		{EPERM, -(int32_t)SOCKET_ERR_DENIED},
+		{EBUSY, -(int32_t)SOCKET_ERR_BUSY},
+		{EINVAL, -(int32_t)SOCKET_ERR_BADLINE},
+		{0, -1},
+		{ENOTTY, -1},
+		{ENOMEM, -1},
+		{EIO, -1},
+		{EAGAIN, -1},
+	};
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(table); i++)
+		CHECK_EQ(cause_from_errno(table[i].err), table[i].expected);
+}
+
+/*
+ * With errno overwritten by every syslog() call and every chip close,
+ * each hardware failure still returns the class of the errno of the
+ * failing libgpiod call. A board that read errno after logging or
+ * closing would see EACCES and report "denied" instead.
+ */
+static void test_errno_copied_before_logging(void)
+{
+	/* A chip that cannot exist: the real open fails with ENOENT. */
+	mock_reset();
+	captured_reset();
+	mock_clobber_errno = 1;
+	CHECK_EQ(board_init("librsswitch-test-nonexistent:17"),
+		 -(int32_t)SOCKET_ERR_NOCHIP);
+	CHECK(captured_count() > 0);
+	CHECK_EQ(board_exit(), 0);
+
+#if LIBRSSWITCH_GPIOD_VERSION == 1
+	/* The line lookup fails with EINVAL, and the chip is closed. */
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_get_line = 1;
+	mock_clobber_errno = 1;
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BADLINE);
+	CHECK_EQ(mock_close_count, 1);
+
+	/* The line request fails with EBUSY, and the chip is closed. */
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_request_output = 1;
+	mock_clobber_errno = 1;
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(mock_close_count, 1);
+#else
+	/* The line request fails with EBUSY, and the chip is closed. */
+	mock_reset();
+	captured_reset();
+	mock_fake_chip_open = 1;
+	mock_fail_request_lines = 1;
+	mock_clobber_errno = 1;
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(mock_close_count, 1);
+#endif
+
+	mock_reset();
+}
 
 int main(void)
 {
@@ -1098,6 +1203,8 @@ int main(void)
 	test_board_init_success();
 	test_board_init_malformed_opens_no_chip();
 	test_board_init_null_config_opens_default();
+	test_cause_from_errno();
+	test_errno_copied_before_logging();
 #if LIBRSSWITCH_GPIOD_VERSION == 1
 	test_board_init_get_line_fails();
 	test_board_init_request_output_fails();
