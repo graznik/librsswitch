@@ -17,14 +17,13 @@
 /*
  * Drives boards/gpiod/gpiod_board.c's error paths and, through
  * boards/gpiod/gpiod_config.c, its config parser on any Linux host,
- * without a Raspberry Pi or a real GPIO chip. syslog is captured the
- * same way tests/test_logging.c captures it -- #undef/#define syslog
- * before including the sources -- so error messages can be asserted on
- * directly. Both files are included, not linked, so this file can also
- * reach parse_config(), board_init(), board_exit() and their static
- * state.
+ * without a Raspberry Pi or a real GPIO chip. The sources log through
+ * board_log(), which this file defines itself to capture the messages,
+ * so error messages can be asserted on directly. Both files are
+ * included, not linked, so this file can also reach parse_config(),
+ * board_init(), board_exit() and their static state.
  *
- * test_missing_chip_logs_to_syslog(), test_exit_without_open_chip()
+ * test_missing_chip_is_logged(), test_exit_without_open_chip()
  * and test_parse_config() only ever name a GPIO chip that cannot
  * exist on any host, so they can never open a real line. The
  * transmit()/board_exit() tests below run only against dummy chip and
@@ -44,14 +43,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
-#include <syslog.h>
 #include <unistd.h>
-
-#undef syslog
-#define syslog capture_syslog
-
-static void capture_syslog(int priority, const char *fmt, ...)
-	__attribute__((format(printf, 2, 3)));
 
 #include "minitest.h"
 #include "../boards/gpiod/gpiod_config.c"
@@ -77,14 +69,18 @@ static struct captured_message captured[CAPTURE_MAX_MESSAGES];
 static size_t captured_n;
 
 /*
- * While set, capture_syslog() and the chip-close wrap overwrite errno
+ * While set, board_log() and the chip-close wrap overwrite errno
  * with EACCES before they return, the way a real syslog() or
  * gpiod_chip_close() may. It proves the board copies errno at the
  * failing call, before it logs or closes anything.
  */
 static int mock_clobber_errno;
 
-static void capture_syslog(int priority, const char *fmt, ...)
+/*
+ * Stands in for the library's board_log(): stores the formatted
+ * message instead of handing it to a handler.
+ */
+void board_log(int priority, const char *fmt, ...)
 {
 	va_list ap;
 
@@ -550,7 +546,7 @@ static void mock_session_open(void)
  * of a board_init() call, then restores it, and reports whether
  * anything was written. Used to prove the board no longer uses the
  * stdio error printer (perror()), which writes to stderr, now that
- * every error path logs through syslog instead.
+ * every error path logs through board_log() instead.
  */
 static off_t call_board_init_capturing_stderr(const char *config,
 					       int32_t *ret_out)
@@ -594,10 +590,10 @@ static off_t call_board_init_capturing_stderr(const char *config,
 
 /*
  * A chip name that cannot exist fails board_init(), the failure is
- * reported only through syslog with a "[-]" prefix, and nothing is
+ * reported only through board_log() with a "[-]" prefix, and nothing is
  * written to stderr.
  */
-static void test_missing_chip_logs_to_syslog(void)
+static void test_missing_chip_is_logged(void)
 {
 	int32_t ret;
 	off_t stderr_bytes;
@@ -1118,7 +1114,7 @@ static void test_cause_from_errno(void)
 }
 
 /*
- * With errno overwritten by every syslog() call and every chip close,
+ * With errno overwritten by every board_log() call and every chip close,
  * each hardware failure still returns the class of the errno of the
  * failing libgpiod call. A board that read errno after logging or
  * closing would see EACCES and report "denied" instead.
@@ -1168,7 +1164,7 @@ static void test_errno_copied_before_logging(void)
 
 int main(void)
 {
-	test_missing_chip_logs_to_syslog();
+	test_missing_chip_is_logged();
 	test_exit_without_open_chip();
 	test_parse_config();
 	test_board_config_check();

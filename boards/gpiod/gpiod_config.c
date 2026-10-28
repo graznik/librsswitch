@@ -20,6 +20,7 @@
 #include <string.h>
 #include <syslog.h>
 
+#include "../board.h"
 #include "gpiod_config.h"
 
 /*
@@ -46,9 +47,9 @@ int32_t gpiod_config_parse(const char *config, char *chipname_out,
 
 	sep = strchr(config, ':');
 	if (!sep) {
-		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (expected chip:line)",
-		       config);
+		board_log(LOG_ERR,
+			  "[-] Malformed GPIO config '%s' (expected chip:line)",
+			  config);
 		return -1;
 	}
 
@@ -56,9 +57,9 @@ int32_t gpiod_config_parse(const char *config, char *chipname_out,
 	if (chiplen == 0 || chiplen >= chipname_out_len ||
 	    !is_alnum_ascii(config[0]) ||
 	    memchr(config, '/', chiplen) != NULL) {
-		syslog(LOG_ERR,
-		       "[-] Malformed GPIO config '%s' (bad chip name)",
-		       config);
+		board_log(LOG_ERR,
+			  "[-] Malformed GPIO config '%s' (bad chip name)",
+			  config);
 		return -1;
 	}
 
@@ -85,8 +86,8 @@ int32_t gpiod_config_parse(const char *config, char *chipname_out,
 	return 0;
 
 bad_line:
-	syslog(LOG_ERR,
-	       "[-] Malformed GPIO config '%s' (bad line number)",
-	       config);
+	board_log(LOG_ERR,
+		  "[-] Malformed GPIO config '%s' (bad line number)",
+		  config);
 	return -1;
 }

@@ -137,8 +137,8 @@ RSS_API int32_t rss_gpio_config_check(const char *config);
  * REV 008345 and 0-31 for Pollin 2605. data is 0 for off, 1 for on.
  *
  * Arguments are fully validated before board_init() or any GPIO
- * access: an invalid dev, group, socket or data is logged via
- * syslog and never touches the board.
+ * access: an invalid dev, group, socket or data is logged and never
+ * touches the board.
  *
  * On success, the device's codeword is sent NTIMES (10) times, each
  * repetition followed by a sync pulse. The stub board prints the
@@ -268,6 +268,34 @@ enum rss_type {
  * never touches the board.
  */
 RSS_API const char *rss_version(void);
+
+/*
+ * Sets the function that receives the library's log messages, which
+ * the library and its boards otherwise write to the system log with
+ * syslog(). The messages are errors and, in a build made with DEBUG,
+ * notices. fn is called as fn(priority, msg, ctx) with the ctx given
+ * here:
+ *
+ * - priority is a syslog value, LOG_ERR or LOG_NOTICE.
+ * - msg is finished text, never a format string, of at most 255 bytes
+ *   plus its NUL; a longer message is cut. It is valid only during
+ *   the call, so a handler that wants to keep it copies it.
+ *
+ * fn == NULL restores the default, which passes msg to syslog().
+ *
+ * Calling rules. Set the handler once, before the first send, and
+ * before other threads use the library; the pair {fn, ctx} is stored
+ * and read atomically, so changing it later never mixes the function
+ * of one call with the context of another, but a message already on
+ * its way still goes to the handler it started with. The handler
+ * runs synchronously in the thread that called into the library, so
+ * it can block that thread, and it may run with the library's send
+ * lock held and from several threads at once (rss_gpio_config_check()
+ * logs without any lock). The handler must therefore be thread-safe
+ * and must not call any librsswitch function.
+ */
+RSS_API void rss_set_log_handler(void (*fn)(int priority, const char *msg, void *ctx),
+				 void *ctx);
 
 #ifdef __cplusplus
 }

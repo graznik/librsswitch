@@ -70,7 +70,7 @@ int32_t board_init(const char *config);
  * Reports whether board_init() could use config, without opening,
  * storing or changing anything. Returns 0 for NULL and for a
  * well-formed config, -1 for a malformed one, after the cause has been
- * logged via syslog. It checks the format only, so a well-formed
+ * logged with board_log(). It checks the format only, so a well-formed
  * config may still name a chip that is missing; the first
  * board_init() reports that. Callable at any time from any thread.
  */
@@ -104,5 +104,18 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
  * nothing. It cannot fail.
  */
 void board_codeword(const char *codeword);
+
+/*
+ * The one logging function of the library and its boards. Formats the
+ * message like printf(), cuts it to 255 bytes and passes the finished
+ * text to the handler the program set with rss_set_log_handler(), or
+ * to the system log if it set none. priority is a syslog value,
+ * LOG_ERR or LOG_NOTICE. It may be called from any thread, with the
+ * library's send lock held, and must never be called from inside a
+ * handler. It has no rss_ prefix on purpose: the version script
+ * exports every rss_ function, and this one is internal.
+ */
+void board_log(int priority, const char *fmt, ...)
+	__attribute__((format(printf, 2, 3)));
 
 #endif /* BOARD_H */

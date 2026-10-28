@@ -58,7 +58,7 @@ make clean. Any other BOARD stops make with an error. The version in
 the file names and in the SONAME comes from the LIBRSSWITCH_VERSION_*
 lines of librsswitch.h.
 
-The shared library exports the seven functions of librsswitch.h and
+The shared library exports the eight functions of librsswitch.h and
 nothing else; the names of the board code, such as transmit() and
 board_init(), are not visible to a program that links it. The static
 library has no export list, so it keeps those names.
@@ -301,7 +301,7 @@ LD_LIBRARY_PATH=build/stub examples/network/rsswitchd --bind 127.0.0.1 --port 0
 
 ## Usage
 
-Seven public functions, declared in librsswitch.h. The header can be
+Eight public functions, declared in librsswitch.h. The header can be
 included from C++ as well: its declarations have C linkage there.
 
 ```c
@@ -328,7 +328,7 @@ rss_gpio_config_check(const char *config);
 Checks a GPIO configuration string without storing it and without
 touching the GPIO. Returns 0 for NULL and for a string the board can
 parse, and -1 for a malformed one, after the board has logged the
-cause via syslog. Only the format is checked, so a well-formed string
+cause. Only the format is checked, so a well-formed string
 may still name a chip that does not exist; the first send reports
 that. rss_gpio_config() makes the same check when it stores the
 string; this function is for a caller that only wants to know.
@@ -425,6 +425,15 @@ SONAME and changes only for an incompatible ABI change, MINOR grows
 with new API, PATCH with fixes. The version is the library's own and
 independent of the tags of the project.
 
+```c
+void rss_set_log_handler(void (*fn)(int priority, const char *msg,
+void *ctx), void *ctx);
+```
+
+Redirects the library's log messages from the system log to fn, which
+gets the syslog priority, the finished message text and the ctx given
+here. See "Logging" below.
+
 rsswitchd --version and rsssend --version print this string and a
 newline to stdout and exit 0, so they report the library the loader
 picked for them, not the one they were built with.
@@ -457,6 +466,39 @@ active) are not serialized against each other.
 The library is not async-signal-safe -- never call any of these
 functions from a signal handler. Cancelling a thread while it is
 inside a send is not supported; doing so may leave the lock held.
+
+rss_set_log_handler() takes only its own short lock, never held while
+a handler runs. Set the handler once, before the first send; see
+"Logging" for what a handler may do.
+
+
+## Logging
+
+The library and its boards log errors, and with DEBUG=1 notices, as
+finished lines of text, formatted once inside the library. By default
+each line goes to the system log with syslog(), at the priority LOG_ERR
+or LOG_NOTICE, and the lines of the libgpiod board and of the
+"chip:line" parser are included. A program that wants them elsewhere,
+on stderr, in a file of its own or in a test, installs a handler
+before its first send:
+
+```c
+static void on_log(int priority, const char *msg, void *ctx)
+{
+	fprintf((FILE *)ctx, "<%d> %s\n", priority, msg);
+}
+
+rss_set_log_handler(on_log, stderr);
+```
+
+msg is plain text, never a format string, at most 255 bytes (a longer
+message is cut) and valid only during the call. Passing NULL as the
+function restores the system log. The handler runs in the thread that
+called into the library, while the library's send lock may be held and
+possibly in several threads at once, so it must be thread-safe, should
+return quickly and must not call any librsswitch function. rsswitchd
+still writes its own messages to the system log; they are not library
+messages.
 
 
 ## GPIO configuration

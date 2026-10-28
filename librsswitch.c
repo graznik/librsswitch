@@ -16,6 +16,7 @@
 
 #include <inttypes.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +30,12 @@
 
 #define NTIMES 10
 #define MAX_LEN 100
+
+/*
+ * Size of the buffer one log message is formatted into, with its
+ * terminating NUL. A longer message is cut to LOG_MSG_LEN - 1 bytes.
+ */
+#define LOG_MSG_LEN 256
 
 
 static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
@@ -79,6 +86,31 @@ static __thread enum rss_err last_error;
  * "Thread safety" comment in librsswitch.h.
  */
 static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * The default log handler, used until the program sets its own: hands
+ * the finished message to the system logger. It is the only place in
+ * the library and its boards that calls the system logger, and it
+ * lives in this file so that a test which includes this file can
+ * replace the logger by a macro.
+ */
+static void default_log(int priority, const char *msg, void *ctx)
+{
+	(void)ctx;
+	syslog(priority, "%s", msg);
+}
+
+/*
+ * The handler and its context, set by rss_set_log_handler(). log_lock
+ * is a leaf lock: it protects only the copy of the pair and is never
+ * held while a handler runs, so a handler cannot deadlock on it and
+ * nothing is locked behind it. A lock is used rather than atomics
+ * because a pair of pointers is not lock-free on every supported CPU.
+ */
+static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+static void (*log_fn)(int priority, const char *msg, void *ctx) =
+	default_log;
+static void *log_ctx;
 
 /*
  * Tri-state code parts of the two supported devices, indexed by
@@ -149,21 +181,21 @@ static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
 	size_t ngroups, nsockets, ndata;
 
 	if (dev_limits(dev, &ngroups, &nsockets, &ndata) < 0) {
-		syslog(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
+		board_log(LOG_ERR, "[-] Unknown socket type %" PRIu32, dev);
 		return -1;
 	}
 
 	if (group >= ngroups) {
-		syslog(LOG_ERR, "[-] Unknown socket group %" PRIu32, group);
+		board_log(LOG_ERR, "[-] Unknown socket group %" PRIu32, group);
 		return -1;
 	}
 	if (socket >= nsockets) {
-		syslog(LOG_ERR, "[-] Unknown socket %" PRIu32, socket);
+		board_log(LOG_ERR, "[-] Unknown socket %" PRIu32, socket);
 		return -1;
 	}
 	if (data >= ndata) {
-		syslog(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
-		       data);
+		board_log(LOG_ERR, "[-] Unknown switch parameter %" PRIu32,
+			  data);
 		return -1;
 	}
 
@@ -181,19 +213,64 @@ static int32_t tristate_check(const char *codeword)
 	size_t i;
 
 	if (!codeword || codeword[0] == '\0') {
-		syslog(LOG_ERR, "[-] Invalid tristate codeword");
+		board_log(LOG_ERR, "[-] Invalid tristate codeword");
 		return -1;
 	}
 
 	for (i = 0; codeword[i] != '\0'; i++) {
 		if (codeword[i] != '0' && codeword[i] != '1' &&
 		    codeword[i] != 'F') {
-			syslog(LOG_ERR, "[-] Invalid tristate codeword");
+			board_log(LOG_ERR, "[-] Invalid tristate codeword");
 			return -1;
 		}
 	}
 
 	return 0;
+}
+
+void board_log(int priority, const char *fmt, ...)
+{
+	void (*fn)(int priority, const char *msg, void *ctx);
+	void *ctx;
+	char msg[LOG_MSG_LEN];
+	va_list ap;
+
+	va_start(ap, fmt);
+	if (vsnprintf(msg, sizeof(msg), fmt, ap) < 0)
+		msg[0] = '\0';
+	va_end(ap);
+
+	/* A failed lock must not lose the message: use the default. */
+	if (pthread_mutex_lock(&log_lock) != 0) {
+		fn = default_log;
+		ctx = NULL;
+	} else {
+		fn = log_fn;
+		ctx = log_ctx;
+		pthread_mutex_unlock(&log_lock);
+	}
+
+	fn(priority, msg, ctx);
+}
+
+void rss_set_log_handler(void (*fn)(int priority, const char *msg, void *ctx),
+			 void *ctx)
+{
+	/*
+	 * There is nothing to report a failure to: logging it would
+	 * come back here. A handler that was not stored stays as it was.
+	 */
+	if (pthread_mutex_lock(&log_lock) != 0)
+		return;
+
+	if (fn) {
+		log_fn = fn;
+		log_ctx = ctx;
+	} else {
+		log_fn = default_log;
+		log_ctx = NULL;
+	}
+	pthread_mutex_unlock(&log_lock);
 }
 
 /*
@@ -383,17 +460,17 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 	n = snprintf(codeword, sizeof(codeword), "%s%s%s", group, socket,
 		     data);
 	if (n < 0) {
-		syslog(LOG_ERR, "[-] snprintf() failed");
+		board_log(LOG_ERR, "[-] snprintf() failed");
 		return -1;
 	}
 	if ((size_t)n >= sizeof(codeword)) {
-		syslog(LOG_ERR, "[-] Codeword too long (%zu characters)",
-		       (size_t)n);
+		board_log(LOG_ERR, "[-] Codeword too long (%zu characters)",
+			  (size_t)n);
 		return -1;
 	}
 
 #ifdef DEBUG
-	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
+	board_log(LOG_NOTICE, "codeword: %s\n", codeword);
 #endif
 
 	/* Send the codeword */
@@ -412,9 +489,9 @@ int32_t rss_gpio_config(const char *config)
 	if (config) {
 		len = strnlen(config, GPIO_CONFIG_BUF);
 		if (len >= GPIO_CONFIG_BUF) {
-			syslog(LOG_ERR,
-			       "[-] GPIO config longer than %d characters",
-			       GPIO_CONFIG_BUF - 1);
+			board_log(LOG_ERR,
+				  "[-] GPIO config longer than %d characters",
+				  GPIO_CONFIG_BUF - 1);
 			return fail(RSS_ERR_ARG);
 		}
 		if (board_config_check(config) < 0)
@@ -422,7 +499,7 @@ int32_t rss_gpio_config(const char *config)
 	}
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
-		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		board_log(LOG_ERR, "[-] pthread_mutex_lock");
 		return fail(RSS_ERR_OTHER);
 	}
 	if (config)
@@ -446,9 +523,9 @@ int32_t rss_send(uint32_t dev, uint32_t group,
 	int32_t ret;
 
 #ifdef DEBUG
-	syslog(LOG_NOTICE,
-	       "dev: %" PRIu32 ", group: %" PRIu32 ", socket: %" PRIu32
-	       ", data: %" PRIu32, dev, group, socket, data);
+	board_log(LOG_NOTICE,
+		  "dev: %" PRIu32 ", group: %" PRIu32 ", socket: %" PRIu32
+		  ", data: %" PRIu32, dev, group, socket, data);
 #endif
 
 	last_error = RSS_ERR_NONE;
@@ -457,13 +534,13 @@ int32_t rss_send(uint32_t dev, uint32_t group,
 		return fail(RSS_ERR_ARG);
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
-		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		board_log(LOG_ERR, "[-] pthread_mutex_lock");
 		return fail(RSS_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config[0] ? gpio_config : NULL);
 	if (ret < 0) {
-		syslog(LOG_ERR, "[-] board_init");
+		board_log(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);
 		return fail(cause_from_board(ret));
 	}
@@ -472,12 +549,12 @@ int32_t rss_send(uint32_t dev, uint32_t group,
 	case RSS_REV_008345:
 		ret = rev_008345_send(group, socket, data);
 		if (ret < 0)
-			syslog(LOG_ERR, "[-] rev_008345_send()");
+			board_log(LOG_ERR, "[-] rev_008345_send()");
 		break;
 	case RSS_POLLIN_2605:
 		ret = pollin_2605_send(group, socket, data);
 		if (ret < 0)
-			syslog(LOG_ERR, "[-] pollin_2605_send()");
+			board_log(LOG_ERR, "[-] pollin_2605_send()");
 		break;
 	default:
 		/* dev was already checked above; never reached. */
@@ -485,7 +562,7 @@ int32_t rss_send(uint32_t dev, uint32_t group,
 	}
 
 	if (board_exit() < 0)
-		syslog(LOG_ERR, "[-] board_exit");
+		board_log(LOG_ERR, "[-] board_exit");
 
 	pthread_mutex_unlock(&send_lock);
 	return ret < 0 ? fail(cause_from_board(ret)) : 0;
@@ -516,14 +593,14 @@ int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 	last_error = RSS_ERR_NONE;
 
 	if (!tristate) {
-		syslog(LOG_ERR, "[-] Invalid tristate codeword");
+		board_log(LOG_ERR, "[-] Invalid tristate codeword");
 		return fail(RSS_ERR_ARG);
 	}
 
 	len = strnlen(tristate, RSS_CODEWORD_MAX_LEN + 1);
 	if (len < RSS_CODEWORD_MIN_LEN || len > RSS_CODEWORD_MAX_LEN) {
-		syslog(LOG_ERR, "[-] Invalid tristate codeword length %zu",
-		       len);
+		board_log(LOG_ERR, "[-] Invalid tristate codeword length %zu",
+			  len);
 		return fail(RSS_ERR_ARG);
 	}
 
@@ -532,19 +609,19 @@ int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 
 	if (pulse_len < RSS_PULSE_LEN_MIN_US ||
 	    pulse_len > RSS_PULSE_LEN_MAX_US) {
-		syslog(LOG_ERR, "[-] pulse_len %" PRIu32 " out of range",
-		       pulse_len);
+		board_log(LOG_ERR, "[-] pulse_len %" PRIu32 " out of range",
+			  pulse_len);
 		return fail(RSS_ERR_ARG);
 	}
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
-		syslog(LOG_ERR, "[-] pthread_mutex_lock");
+		board_log(LOG_ERR, "[-] pthread_mutex_lock");
 		return fail(RSS_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config[0] ? gpio_config : NULL);
 	if (ret < 0) {
-		syslog(LOG_ERR, "[-] board_init");
+		board_log(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);
 		return fail(cause_from_board(ret));
 	}
@@ -552,7 +629,7 @@ int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 	ret = send_tris(tristate, pulse_len);
 
 	if (board_exit() < 0)
-		syslog(LOG_ERR, "[-] board_exit");
+		board_log(LOG_ERR, "[-] board_exit");
 
 	pthread_mutex_unlock(&send_lock);
 	return ret < 0 ? fail(cause_from_board(ret)) : 0;

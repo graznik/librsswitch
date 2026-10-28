@@ -3,7 +3,7 @@ INCLUDES = -I..
 
 TESTS = test_last_error test_socket_send test_codewords test_concurrency \
 	test_codeword_api test_logging test_rsswitchd test_proto test_version \
-	test_config
+	test_config test_log_handler
 # The sources of the stub library. Only the ThreadSanitizer run compiles
 # them into its binary, so that the library is instrumented; every other
 # test links the library that the top-level Makefile builds.
@@ -167,6 +167,13 @@ test_version: test_version.c $(TEST_DEPS) $(STUBLIB)
 
 test_config: test_config.c $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_config test_config.c $(STUBLIB)
+
+# Built with -DDEBUG like test_logging, so the notice that rss_send()
+# logs for every call is among the messages. Includes ../librsswitch.c
+# directly, so the library member of the archive is never pulled in a
+# second time.
+test_log_handler: test_log_handler.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_log_handler test_log_handler.c $(STUBLIB)
 
 test_codewords: test_codewords.c $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codewords test_codewords.c $(STUBLIB)

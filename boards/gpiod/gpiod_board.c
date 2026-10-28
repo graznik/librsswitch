@@ -133,8 +133,8 @@ int32_t board_init(const char *config)
 	if (!chip) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] Failed to open GPIO chip %s: %s",
-		       chipname, strerror(e));
+		board_log(LOG_ERR, "[-] Failed to open GPIO chip %s: %s",
+			  chipname, strerror(e));
 		return cause_from_errno(e);
 	}
 
@@ -142,8 +142,8 @@ int32_t board_init(const char *config)
 	if (!line) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] Failed to get GPIO line %u: %s",
-		       line_offset, strerror(e));
+		board_log(LOG_ERR, "[-] Failed to get GPIO line %u: %s",
+			  line_offset, strerror(e));
 		gpiod_chip_close(chip);
 		chip = NULL;
 		return cause_from_errno(e);
@@ -152,9 +152,9 @@ int32_t board_init(const char *config)
 	if (gpiod_line_request_output(line, "librsswitch", 0) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR,
-		       "[-] Failed to request GPIO line %u as output: %s",
-		       line_offset, strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to request GPIO line %u as output: %s",
+			  line_offset, strerror(e));
 		gpiod_chip_close(chip);
 		chip = NULL;
 		line = NULL;
@@ -184,9 +184,9 @@ int32_t board_exit(void)
 		if (gpiod_line_set_value(line, 0) < 0) {
 			int e = errno;
 
-			syslog(LOG_ERR,
-			       "[-] Failed to drive GPIO line low: %s",
-			       strerror(e));
+			board_log(LOG_ERR,
+				  "[-] Failed to drive GPIO line low: %s",
+				  strerror(e));
 			ret = -(int32_t)RSS_ERR_IO;
 		}
 		line_high = 0;
@@ -238,8 +238,8 @@ int32_t board_init(const char *config)
 	if (!chip) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] Failed to open GPIO chip %s: %s",
-		       chippath, strerror(e));
+		board_log(LOG_ERR, "[-] Failed to open GPIO chip %s: %s",
+			  chippath, strerror(e));
 		return cause_from_errno(e);
 	}
 
@@ -253,9 +253,9 @@ int32_t board_init(const char *config)
 	if (!settings) {
 		int e = errno;
 
-		syslog(LOG_ERR,
-		       "[-] Failed to allocate GPIO line settings: %s",
-		       strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to allocate GPIO line settings: %s",
+			  strerror(e));
 		gpiod_chip_close(chip);
 		chip = NULL;
 		return -1;
@@ -269,17 +269,18 @@ int32_t board_init(const char *config)
 	if (!line_cfg) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] Failed to allocate GPIO line config: %s",
-		       strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to allocate GPIO line config: %s",
+			  strerror(e));
 		goto out;
 	}
 	if (gpiod_line_config_add_line_settings(line_cfg, &line_offset, 1,
 						 settings) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR,
-		       "[-] Failed to add GPIO line %u settings: %s",
-		       line_offset, strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to add GPIO line %u settings: %s",
+			  line_offset, strerror(e));
 		gpiod_line_config_free(line_cfg);
 		goto out;
 	}
@@ -288,9 +289,9 @@ int32_t board_init(const char *config)
 	if (!req_cfg) {
 		int e = errno;
 
-		syslog(LOG_ERR,
-		       "[-] Failed to allocate GPIO request config: %s",
-		       strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to allocate GPIO request config: %s",
+			  strerror(e));
 		gpiod_line_config_free(line_cfg);
 		goto out;
 	}
@@ -300,9 +301,9 @@ int32_t board_init(const char *config)
 	if (!request) {
 		int e = errno;
 
-		syslog(LOG_ERR,
-		       "[-] Failed to request GPIO line %u as output: %s",
-		       line_offset, strerror(e));
+		board_log(LOG_ERR,
+			  "[-] Failed to request GPIO line %u as output: %s",
+			  line_offset, strerror(e));
 		ret = cause_from_errno(e);
 	} else {
 		ret = 0;
@@ -343,9 +344,9 @@ int32_t board_exit(void)
 						  GPIOD_LINE_VALUE_INACTIVE) < 0) {
 			int e = errno;
 
-			syslog(LOG_ERR,
-			       "[-] Failed to drive GPIO line low: %s",
-			       strerror(e));
+			board_log(LOG_ERR,
+				  "[-] Failed to drive GPIO line low: %s",
+				  strerror(e));
 			ret = -(int32_t)RSS_ERR_IO;
 		}
 		line_high = 0;
@@ -404,7 +405,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	if (gpiod_line_set_value(line, 1) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
+		board_log(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
 		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 1;
@@ -412,7 +413,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	if (gpiod_line_set_value(line, 0) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
+		board_log(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
 		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 0;
@@ -429,8 +430,8 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 					  GPIOD_LINE_VALUE_ACTIVE) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
-		       strerror(e));
+		board_log(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
+			  strerror(e));
 		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 1;
@@ -439,8 +440,8 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 					  GPIOD_LINE_VALUE_INACTIVE) < 0) {
 		int e = errno;
 
-		syslog(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
-		       strerror(e));
+		board_log(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
+			  strerror(e));
 		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 0;
