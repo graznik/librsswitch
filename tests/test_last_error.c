@@ -20,13 +20,15 @@
  * clears it, and that it is kept per thread.
  *
  * Includes ../librsswitch.c directly, instead of linking it, so it can
- * reach the static cause_from_board(). It defines the four board
+ * reach the static cause_from_board(). It defines the five board
  * functions itself as a settable test board, so the cause a board
  * returns can be chosen per test without the x86_64 stub, and links no
  * board source.
  */
 #include <pthread.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "minitest.h"
 #include "../librsswitch.c"
@@ -42,6 +44,14 @@ static size_t test_board_init_calls;
 static int32_t test_board_transmit_ret;
 static size_t test_board_transmit_fail_at;
 static size_t test_board_transmit_calls;
+
+/*
+ * What board_codeword() saw: how often it was called, how many
+ * transmit() calls had happened by then, and the codeword.
+ */
+static size_t test_board_codeword_calls;
+static size_t test_board_codeword_transmits;
+static char test_board_codeword_last[MAX_LEN];
 
 int32_t board_init(const char *config)
 {
@@ -71,6 +81,14 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	return test_board_transmit_ret;
 }
 
+void board_codeword(const char *codeword)
+{
+	test_board_codeword_calls++;
+	test_board_codeword_transmits = test_board_transmit_calls;
+	snprintf(test_board_codeword_last, sizeof(test_board_codeword_last),
+		 "%s", codeword);
+}
+
 static void reset_board(void)
 {
 	test_board_init_ret = 0;
@@ -78,6 +96,9 @@ static void reset_board(void)
 	test_board_transmit_ret = 0;
 	test_board_transmit_fail_at = 0;
 	test_board_transmit_calls = 0;
+	test_board_codeword_calls = 0;
+	test_board_codeword_transmits = 0;
+	test_board_codeword_last[0] = '\0';
 }
 
 /* One send through each public entry point, with a valid address. */
@@ -199,6 +220,7 @@ static void check_rejected(int32_t ret)
 	CHECK_EQ(ret, -1);
 	CHECK_EQ(rss_last_error(), RSS_ERR_ARG);
 	CHECK_EQ(test_board_init_calls, (size_t)0);
+	CHECK_EQ(test_board_codeword_calls, (size_t)0);
 }
 
 static void test_rejected_arguments_are_arg(void)
@@ -238,6 +260,48 @@ static void test_rejected_arguments_are_arg(void)
 	prime_cause(-(int32_t)RSS_ERR_BUSY);
 	check_rejected(rss_send_codeword("0F1",
 					 RSS_PULSE_LEN_MAX_US + 1));
+}
+
+/*
+ * A send whose board_init() succeeded hands the board its codeword
+ * once, before the first transmit(); a send that fails earlier does
+ * not.
+ */
+static void test_board_gets_codeword_once(void)
+{
+	reset_board();
+	CHECK_EQ(send_valid_codeword(), 0);
+	CHECK_EQ(test_board_codeword_calls, (size_t)1);
+	CHECK_EQ(test_board_codeword_transmits, (size_t)0);
+	CHECK_EQ(strcmp(test_board_codeword_last, "1F0"), 0);
+	CHECK(test_board_transmit_calls > 0);
+
+	reset_board();
+	CHECK_EQ(send_valid(), 0);
+	CHECK_EQ(test_board_codeword_calls, (size_t)1);
+	CHECK_EQ(test_board_codeword_transmits, (size_t)0);
+	CHECK_EQ(tristate_check(test_board_codeword_last), 0);
+	CHECK(test_board_transmit_calls > 0);
+
+	/* A failing transmit() does not repeat or withdraw it. */
+	reset_board();
+	test_board_transmit_ret = -(int32_t)RSS_ERR_IO;
+	CHECK_EQ(send_valid_codeword(), -1);
+	CHECK_EQ(test_board_codeword_calls, (size_t)1);
+	CHECK_EQ(test_board_codeword_transmits, (size_t)0);
+
+	reset_board();
+	test_board_transmit_ret = -(int32_t)RSS_ERR_IO;
+	CHECK_EQ(send_valid(), -1);
+	CHECK_EQ(test_board_codeword_calls, (size_t)1);
+	CHECK_EQ(test_board_codeword_transmits, (size_t)0);
+
+	/* A failing board_init() sends nothing to announce. */
+	reset_board();
+	test_board_init_ret = -(int32_t)RSS_ERR_BUSY;
+	CHECK_EQ(send_valid_codeword(), -1);
+	CHECK_EQ(send_valid(), -1);
+	CHECK_EQ(test_board_codeword_calls, (size_t)0);
 }
 
 /* What a worker thread saw: its send result and its own cause. */
@@ -318,6 +382,7 @@ int main(void)
 	test_transmit_cause_reaches_caller();
 	test_success_clears_cause();
 	test_rejected_arguments_are_arg();
+	test_board_gets_codeword_once();
 	test_cause_is_per_thread();
 	test_other_calls_keep_cause();
 

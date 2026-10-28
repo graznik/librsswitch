@@ -21,16 +21,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <syslog.h>
-#ifdef RASPBERRY_PI
-#include "boards/rpi/rpi.h"
-#endif
-#ifdef BEAGLEBONE_BLACK
-#include "boards/bbb/bbb.h"
-#endif
-#ifdef X86_64
-#include "boards/x86_64/x86_64.h"
-#endif
 
+#include "boards/board.h"
 #include "librsswitch.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -232,6 +224,8 @@ static int32_t send_tris(const char *codeword, uint32_t pulse_len)
 	if (tristate_check(codeword) < 0)
 		return -1;
 
+	board_codeword(codeword);
+
 	for (n = 0; n < NTIMES; n++) {
 		int i = 0;
 
@@ -388,10 +382,6 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 	syslog(LOG_NOTICE, "codeword: %s\n", codeword);
 #endif
 
-#ifdef X86_64
-	fprintf(stdout, "%s\n", codeword);
-#endif
-
 	/* Send the codeword */
 	return send_tris(codeword, pulse_len);
 }
@@ -519,10 +509,6 @@ int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 		pthread_mutex_unlock(&send_lock);
 		return fail(cause_from_board(ret));
 	}
-
-#ifdef X86_64
-	fprintf(stdout, "%s\n", tristate);
-#endif
 
 	ret = send_tris(tristate, pulse_len);
 

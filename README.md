@@ -199,8 +199,8 @@ device tables above.
 Input is fully validated before board_init() or any GPIO access, so an
 invalid tristate or pulse_len never touches the board. On success,
 tristate is sent 10 times, each repetition followed by a sync pulse --
-the same repeat count rss_send() uses. On the x86_64 build, the
-codeword is printed to stdout, exactly like rss_send() does.
+the same repeat count rss_send() uses. The stub board prints the
+codeword to stdout, exactly as it does for rss_send().
 
 Returns 0 on success, -1 on error (invalid input, or a board error);
 rss_last_error() then tells why.

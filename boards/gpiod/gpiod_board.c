@@ -391,6 +391,12 @@ void delayMicroseconds(unsigned int howLong)
 	}
 }
 
+/* Nothing to do: a hardware board never writes codewords to stdout. */
+void board_codeword(const char *codeword)
+{
+	(void)codeword;
+}
+
 #if LIBRSSWITCH_GPIOD_VERSION == 1
 
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)

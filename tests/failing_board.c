@@ -42,6 +42,11 @@ int32_t board_exit(void)
 	return 0;
 }
 
+void board_codeword(const char *codeword)
+{
+	(void)codeword;
+}
+
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	(void)nhigh;

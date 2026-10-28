@@ -20,7 +20,7 @@
  * same signatures, instead of each board header re-declaring them by
  * convention (a mismatch here was previously only caught by chance).
  *
- * Adding a new platform: implement these four functions in a new
+ * Adding a new platform: implement these five functions in a new
  * boards/<platform>/<platform>.c + .h, add a Makefile target. Nothing
  * outside boards/<platform>/ needs to change. A board that drives its
  * line through libgpiod implements none of these functions itself: it
@@ -96,5 +96,13 @@ int32_t board_exit(void);
  * caller's board_exit() then drives it low again.
  */
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
+
+/*
+ * Called once per send, after board_init() succeeded and before the
+ * first transmit(), with the NUL-terminated codeword about to be sent.
+ * The x86_64 stub prints it to stdout; the libgpiod board does
+ * nothing. It cannot fail.
+ */
+void board_codeword(const char *codeword);
 
 #endif /* BOARD_H */

@@ -16,6 +16,7 @@
 
 #include <sched.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "x86_64.h"
@@ -125,6 +126,16 @@ int32_t board_exit(void)
 		open_sessions--;
 	exit_count++;
 	return 0;
+}
+
+/*
+ * Prints the codeword to stdout, so the tests and the example
+ * programs can read what a send is about to transmit. A failio chip
+ * still gets it printed: that failure only hits the first transmit().
+ */
+void board_codeword(const char *codeword)
+{
+	fprintf(stdout, "%s\n", codeword);
 }
 
 int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)

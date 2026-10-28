@@ -92,8 +92,8 @@ int32_t rss_gpio_config_check(const char *config);
  * syslog and never touches the board.
  *
  * On success, the device's codeword is sent NTIMES (10) times, each
- * repetition followed by a sync pulse. On the x86_64 build, the
- * codeword is printed to stdout.
+ * repetition followed by a sync pulse. The stub board prints the
+ * codeword to stdout.
  *
  * Returns 0 on success, -1 for an invalid argument or a board error;
  * rss_last_error() then tells why. Serialized with
@@ -154,9 +154,9 @@ int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
  * On success, tristate is sent NTIMES (10 -- the same repeat count
  * rss_send() uses), each repetition followed by a sync pulse.
  * Input is fully validated before board_init() or any GPIO access;
- * an invalid tristate or pulse_len never touches the board. On the
- * x86_64 build, the codeword is printed to stdout, exactly like
- * rss_send() does.
+ * an invalid tristate or pulse_len never touches the board. The stub
+ * board prints the codeword to stdout, exactly as it does for
+ * rss_send().
  *
  * Returns 0 on success, -1 on error (invalid input, or a board
  * error); rss_last_error() then tells why. Serialized with
