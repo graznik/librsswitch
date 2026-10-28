@@ -23,9 +23,9 @@
  * Adding a new platform: implement these five functions in a new
  * boards/<platform>/<platform>.c + .h, add a Makefile target. Nothing
  * outside boards/<platform>/ needs to change. A board that drives its
- * line through libgpiod implements none of these functions itself: it
- * defines its default chip and line in boards/<platform>/<platform>.h,
- * and its Makefile target builds boards/gpiod/gpiod_board.c.
+ * line through libgpiod implements none of these functions itself: its
+ * Makefile target builds boards/gpiod/gpiod_board.c, which holds the
+ * default chip and line in boards/gpiod/gpiod_board.h.
  */
 #ifndef BOARD_H
 #define BOARD_H

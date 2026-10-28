@@ -11,8 +11,8 @@
 
 /*
  * Board code for every board that drives its line through libgpiod.
- * Each such board supplies only its default chip and line, in
- * boards/<board>/<board>.h; gpiod_board.h picks them by board macro.
+ * The default chip and line, used without a config, are in
+ * gpiod_board.h.
  */
 
 /*

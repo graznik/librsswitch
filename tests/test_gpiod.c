@@ -24,9 +24,6 @@
  * reach parse_config(), board_init(), board_exit() and their static
  * state.
  *
- * The file is built once per libgpiod board, as test_gpiod_rpi and
- * test_gpiod_bbb, so each build also checks that board's defaults.
- *
  * test_missing_chip_logs_to_syslog(), test_exit_without_open_chip()
  * and test_parse_config() only ever name a GPIO chip that cannot
  * exist on any host, so they can never open a real line. The
@@ -737,35 +734,14 @@ static void test_board_config_check(void)
 }
 
 /*
- * Both libgpiod boards default to gpiochip0 line 17: the Raspberry Pi
- * to GPIO17 on the 40-pin header, the BeagleBone Black to P9_23 on
- * kernel 6.x. Each build must take its own board's values, and must
- * not see the other board's macros.
+ * Every board that drives its line through libgpiod defaults to
+ * gpiochip0 line 17: the Raspberry Pi to GPIO17 on the 40-pin header,
+ * the BeagleBone Black to P9_23 on kernel 6.x.
  */
 static void test_board_defaults(void)
 {
 	CHECK(strcmp(DEFAULT_CHIPNAME, "gpiochip0") == 0);
 	CHECK_EQ(DEFAULT_LINE_OFFSET, 17);
-
-#if defined(RASPBERRY_PI)
-	CHECK(strcmp(DEFAULT_CHIPNAME, RPI_DEFAULT_CHIPNAME) == 0);
-	CHECK_EQ(DEFAULT_LINE_OFFSET, RPI_DEFAULT_LINE_OFFSET);
-#ifdef BBB_DEFAULT_CHIPNAME
-	CHECK(0);
-#endif
-#ifdef BBB_DEFAULT_LINE_OFFSET
-	CHECK(0);
-#endif
-#elif defined(BEAGLEBONE_BLACK)
-	CHECK(strcmp(DEFAULT_CHIPNAME, BBB_DEFAULT_CHIPNAME) == 0);
-	CHECK_EQ(DEFAULT_LINE_OFFSET, BBB_DEFAULT_LINE_OFFSET);
-#ifdef RPI_DEFAULT_CHIPNAME
-	CHECK(0);
-#endif
-#ifdef RPI_DEFAULT_LINE_OFFSET
-	CHECK(0);
-#endif
-#endif
 }
 
 /*

@@ -56,8 +56,12 @@ Raspberry Pi OS and Debian 13 on the BeagleBone Black ship libgpiod
 rpi, rpi3 and bbb build the exact same board source,
 boards/gpiod/gpiod_board.c. rpi and rpi3 differ only in the cross
 toolchain (32-bit arm-linux-gnueabihf- vs. aarch64-linux-gnu- when
-cross compiling; both use the native gcc on a Pi), and bbb differs
-from rpi only in its default line, which boards/bbb/bbb.h sets.
+cross compiling; both use the native gcc on a Pi), and bbb is the same
+build again. All of them default to line 17 of gpiochip0, which is
+GPIO17 on the Raspberry Pi and pin P9_23 of the BeagleBone Black on
+kernel 6.x such as on Debian 13; boards/gpiod/gpiod_board.h sets it.
+On other kernels the chip of P9_23 can differ, so check it with
+gpioinfo and pass "chip:line" with --gpio instead.
 libgpiod 1.x and 2.x are both supported: the board picks its API from
 the installed gpiod.h at compile time (gpiod.h from 1.x defines
 GPIOD_LINE_BULK_MAX_LINES, the 2.x header does not), so a plain build
@@ -353,11 +357,10 @@ make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
 WEB_VENV=/path makes and uses a venv at that place instead, with
 `make -C tests venv test WEB_VENV=/path`.
 
-On a host where libgpiod cannot be linked, the two libgpiod tests
-(test_gpiod_rpi and test_gpiod_bbb) are skipped. Make warns about it
-at the start, and `make -C tests test` prints a line
-`SKIPPED: test_gpiod_rpi test_gpiod_bbb (libgpiod not linkable)` after
-the results. The exit status is not changed by the skip.
+On a host where libgpiod cannot be linked, the libgpiod test
+(test_gpiod) is skipped. Make warns about it at the start, and
+`make -C tests test` prints a line
+`SKIPPED: test_gpiod (libgpiod not linkable)` after the results. The exit status is not changed by the skip.
 GPIOD_EXPECT_VERSION (see below) turns the skip into an error.
 
 ### Against libgpiod 2.x

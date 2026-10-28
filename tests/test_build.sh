@@ -19,8 +19,8 @@
 # stand-ins for python3 and pip, and the order of venv and test. Takes
 # the root of the code repository as $1; run by `make test`. It also
 # checks the DEBUG opt-in and the .PHONY lines of the Makefiles, that
-# stale comments stay out of librsswitch.c, and that the old public
-# names stay gone.
+# stale comments stay out of librsswitch.c, that the old public names
+# and the per-board defines stay gone.
 
 if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 	echo "usage: $0 <code repository root>" >&2
@@ -201,7 +201,7 @@ dry_test()
 skip_named()
 {
 	dry_test GPIOD_AVAILABLE=no || return 1
-	grep -qF 'SKIPPED: test_gpiod_rpi test_gpiod_bbb (libgpiod not linkable)' \
+	grep -qF 'SKIPPED: test_gpiod (libgpiod not linkable)' \
 		"$S/dry.out"
 }
 check "test names the skipped libgpiod tests" skip_named
@@ -332,6 +332,27 @@ old_api_gone()
 	[ -z "$hits" ]
 }
 check "the old public names stay gone" old_api_gone
+
+# The compile-time board defines and the per-board directories were
+# replaced by one libgpiod board and the stub board, which the build
+# chooses by source file. The pattern brackets one letter of each define
+# so that this file does not match itself, and it has no word boundary,
+# so a define behind -D in a Makefile counts.
+board_defines_gone()
+{
+	def='RASPBERRY_P[I]|BEAGLEBONE_BLAC[K]|X86_6[4]'
+
+	hits=$(find "$ROOT" \( -path "$ROOT/.git" -o -path "$ROOT/build" \) \
+		-prune -o -type f \( -name '*.c' -o -name '*.h' \
+		-o -name '*.sh' -o -name 'Makefile' \) \
+		-exec grep -lE "$def" {} + ;
+		for d in rpi bbb x86_64; do
+			[ ! -e "$ROOT/boards/$d" ] || echo "$ROOT/boards/$d"
+		done)
+	[ -z "$hits" ] || echo "$hits" >&2
+	[ -z "$hits" ]
+}
+check "the per-board defines and directories stay gone" board_defines_gone
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

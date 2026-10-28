@@ -26,7 +26,7 @@ WEB_DIR := $(abspath ../examples/web)
 WEB_VENV ?= $(WEB_DIR)/venv
 WEB_PYTHON ?= $(WEB_VENV)/bin/python
 
-# test_gpiod_rpi and test_gpiod_bbb link against libgpiod, whose
+# test_gpiod links against libgpiod, whose
 # headers are not guaranteed to be installed on every host that runs
 # `make test`. GPIOD_CFLAGS/GPIOD_LIBS let a caller point at a
 # different libgpiod (see "Against libgpiod 2.x" in ../README.md);
@@ -56,13 +56,13 @@ GPIOD_AVAILABLE := $(shell t=$$(mktemp) && \
 	>/dev/null 2>&1 && echo yes; rm -f "$$t")
 
 ifeq ($(GPIOD_AVAILABLE),yes)
-TESTS += test_gpiod_rpi test_gpiod_bbb
+TESTS += test_gpiod
 else
 ifneq ($(GPIOD_EXPECT_VERSION),)
 $(error GPIOD_EXPECT_VERSION=$(GPIOD_EXPECT_VERSION) is set, but gpiod.h or libgpiod was not found with GPIOD_CFLAGS and GPIOD_LIBS)
 else
-$(warning SKIP test_gpiod_rpi test_gpiod_bbb: gpiod.h or libgpiod not found)
-GPIOD_SKIPPED := test_gpiod_rpi test_gpiod_bbb
+$(warning SKIP test_gpiod: gpiod.h or libgpiod not found)
+GPIOD_SKIPPED := test_gpiod
 endif
 endif
 
@@ -224,27 +224,21 @@ GPIOD_TEST_WRAPS = -Wl,--wrap=gpiod_line_set_value \
 
 GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 		  ../boards/gpiod/gpiod_board.h ../boards/gpiod/gpiod_config.c \
-		  ../boards/gpiod/gpiod_config.h ../boards/rpi/rpi.h \
-		  ../boards/bbb/bbb.h ../boards/board.h
+		  ../boards/gpiod/gpiod_config.h ../boards/board.h
 
-# test_gpiod_rpi and test_gpiod_bbb are built from the one test file
-# test_gpiod.c, once per board macro. The test includes
+# test_gpiod is one binary for every board that drives its line through
+# libgpiod, and needs no board macro. The test includes
 # ../boards/gpiod/gpiod_config.c and ../boards/gpiod/gpiod_board.c
 # directly (like test_logging includes ../librsswitch.c), so it can
 # capture the parser's log lines and drive board_init()/board_exit(),
-# transmit() and parse_config() and their static state. It needs a
-# board macro, because gpiod_board.h picks the default chip
-# and line by it. Only ever names a chip that cannot
-# exist for board_init(), and only ever touches dummy handles under
-# GPIOD_TEST_WRAPS interception for transmit()/board_exit(), so it
-# never opens a real GPIO line. Links no other source;
-# GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod headers and
-# library it builds and links against.
-test_gpiod_rpi: $(GPIOD_TEST_DEPS)
-	$(CC) $(CFLAGS) -DRASPBERRY_PI $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod_rpi test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
-
-test_gpiod_bbb: $(GPIOD_TEST_DEPS)
-	$(CC) $(CFLAGS) -DBEAGLEBONE_BLACK $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod_bbb test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
+# transmit() and parse_config() and their static state. It only ever
+# names a chip that cannot exist for board_init(), and only ever touches
+# dummy handles under GPIOD_TEST_WRAPS interception for
+# transmit()/board_exit(), so it never opens a real GPIO line. Links no
+# other source; GPIOD_CFLAGS/GPIOD_LIBS above select which libgpiod
+# headers and library it builds and links against.
+test_gpiod: $(GPIOD_TEST_DEPS)
+	$(CC) $(CFLAGS) $(GPIOD_CFLAGS) $(if $(GPIOD_EXPECT_VERSION),-DEXPECT_GPIOD_VERSION=$(GPIOD_EXPECT_VERSION)) $(INCLUDES) -o test_gpiod test_gpiod.c $(GPIOD_TEST_WRAPS) $(GPIOD_LIBS)
 
 # Optional ThreadSanitizer target. `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into

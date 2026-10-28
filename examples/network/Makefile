@@ -35,13 +35,10 @@ endif
 endif
 
 ifeq ($(MAKECMDGOALS), rpi)
-CFLAGS += -DRASPBERRY_PI
 LFLAGS = -l rt -l gpiod
 else ifeq ($(MAKECMDGOALS), rpi3)
-CFLAGS += -DRASPBERRY_PI
 LFLAGS = -l rt -l gpiod
 else ifeq ($(MAKECMDGOALS), bbb)
-CFLAGS += -DBEAGLEBONE_BLACK
 LFLAGS = -l rt -l gpiod
 endif
 

@@ -20,21 +20,14 @@
 #include "../board.h"
 
 /*
- * Each libgpiod board provides its defaults with its own prefix
- * (RPI_DEFAULT_*, ...) in its header, so both headers can be read side
- * by side; the board macro picks the ones used here.
+ * The default chip and line, used when no "chip:line" is configured.
+ * It is line 17 of gpiochip0: GPIO17, pin 11 of the 40-pin header, on
+ * the Raspberry Pi boards and, on kernel 6.x such as on Debian 13, pin
+ * P9_23 of the BeagleBone Black. On other kernels the chip can differ,
+ * so check it with gpioinfo and pass "chip:line" with --gpio instead.
  */
-#if defined(RASPBERRY_PI)
-#include "../rpi/rpi.h"
-#define DEFAULT_CHIPNAME RPI_DEFAULT_CHIPNAME
-#define DEFAULT_LINE_OFFSET RPI_DEFAULT_LINE_OFFSET
-#elif defined(BEAGLEBONE_BLACK)
-#include "../bbb/bbb.h"
-#define DEFAULT_CHIPNAME BBB_DEFAULT_CHIPNAME
-#define DEFAULT_LINE_OFFSET BBB_DEFAULT_LINE_OFFSET
-#else
-#error "boards/gpiod/gpiod_board.c needs -DRASPBERRY_PI or -DBEAGLEBONE_BLACK"
-#endif
+#define DEFAULT_CHIPNAME "gpiochip0"
+#define DEFAULT_LINE_OFFSET 17
 
 void delayMicrosecondsHard(unsigned int howLong);
 void delayMicroseconds(unsigned int howLong);
