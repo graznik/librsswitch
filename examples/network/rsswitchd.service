@@ -31,7 +31,7 @@ StartLimitBurst=5
 # --bind 127.0.0.1 below or give another address -- the program's
 # own default, when no --bind is given, is 0.0.0.0.
 # --gpio chip:line selects another GPIO line, e.g. --gpio gpiochip0:17;
-# without it the daemon uses the default line of its board.
+# without it the daemon uses the default of the library, gpiochip0:17.
 ExecStart=/usr/local/bin/rsswitchd --bind 127.0.0.1
 Type=simple
 # Runs as the unprivileged system user make install creates.

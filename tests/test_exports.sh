@@ -20,6 +20,9 @@
 # marked RSS_API in librsswitch.h, all at the symbol version of the
 # SONAME, and nothing of the board contract, and that neither the
 # library nor a program linked against it carries an RPATH or RUNPATH.
+# The two programs of the repository are built against each board and
+# must need the SONAME of the library, no libgpiod of their own and
+# carry no RPATH or RUNPATH; rsssend is run against the stub library.
 # It then builds a small program against the stub library, runs it
 # through the dynamic loader and checks its output. Takes the root of
 # the code repository as $1; run by `make test`. The libgpiod board is
@@ -65,6 +68,13 @@ TREE="$S/tree"
 mkdir "$TREE" || exit 1
 cp -R "$ROOT/Makefile" "$ROOT/librsswitch.c" "$ROOT/librsswitch.h" \
 	"$ROOT/librsswitch.map" "$ROOT/boards" "$TREE" || exit 1
+mkdir -p "$TREE/examples/basic" "$TREE/examples/network" || exit 1
+cp "$ROOT/examples/basic/Makefile" "$ROOT/examples/basic/rsssend.c" \
+	"$TREE/examples/basic" || exit 1
+cp "$ROOT/examples/network/Makefile" "$ROOT/examples/network/rsswitchd.c" \
+	"$ROOT/examples/network/rsswitchd_proto.c" \
+	"$ROOT/examples/network/rsswitchd_proto.h" \
+	"$TREE/examples/network" || exit 1
 
 # The version, read from the header the way the Makefile reads it.
 header_number()
@@ -275,6 +285,59 @@ for b in $BOARDS; do
 	check "$b: the archive defines only known global names" \
 		archive_globals_known "$b"
 done
+
+# build_programs BOARD: builds rsssend and rsswitchd against the library
+# of BOARD, which the Makefiles of the examples make first.
+build_programs()
+{
+	for d in basic network; do
+		(
+			unset MAKEFLAGS MFLAGS MAKELEVEL
+			make -s -C "$TREE/examples/$d" BOARD="$1" DEBUG= \
+				LIBGPIOD_VERSION= CROSS_COMPILE=
+		) > "$S/make-prog-$1.log" 2>&1 || {
+			sed 's/^/  /' "$S/make-prog-$1.log" >&2
+			return 1
+		}
+	done
+}
+
+# program_needs FILE: FILE needs the SONAME of the library and no
+# libgpiod of its own; the library brings libgpiod in, when it needs it.
+program_needs()
+{
+	[ -x "$1" ] || return 1
+	readelf -d "$1" |
+		grep -q "NEEDED.*\[librsswitch\.so\.$MAJOR\]" || return 1
+	! readelf -d "$1" | grep -q 'NEEDED.*libgpiod'
+}
+
+for b in $BOARDS; do
+	check "$b: the programs build against the library" \
+		build_programs "$b"
+	check "$b: rsssend needs the library and no libgpiod" \
+		program_needs "$TREE/examples/basic/rsssend"
+	check "$b: rsswitchd needs the library and no libgpiod" \
+		program_needs "$TREE/examples/network/rsswitchd"
+	check "$b: rsssend has no RPATH or RUNPATH" \
+		no_rpath "$TREE/examples/basic/rsssend"
+	check "$b: rsswitchd has no RPATH or RUNPATH" \
+		no_rpath "$TREE/examples/network/rsswitchd"
+done
+
+# The last program build above is the stub, but rebuild it so that the
+# check does not depend on the order of BOARDS.
+rsssend_runs()
+{
+	build_programs stub || return 1
+	LD_LIBRARY_PATH="$TREE/build/stub" \
+		"$TREE/examples/basic/rsssend" 1 17 23 1 \
+		> "$S/rsssend.out" || return 1
+	printf '%s\n' 0FFF0000F00F > "$S/rsssend.want"
+	cmp -s "$S/rsssend.out" "$S/rsssend.want"
+}
+check "rsssend sends through the stub library and prints the codeword" \
+	rsssend_runs
 
 # Both boards build side by side: the one built second does not remove
 # the first.

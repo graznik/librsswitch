@@ -224,38 +224,71 @@ check "an expected libgpiod version turns the skip into an error" \
 	skip_is_error
 
 # Release builds must not log the DEBUG lines. The example Makefiles add
-# -DDEBUG only on request: make DEBUG=1 <target>.
+# -DDEBUG only on request: make DEBUG=1. Their dry run also runs the
+# build of the library, which is dry as well, so the lines of the
+# library are counted too.
 
-# debug_defs DIR TARGET [VAR=VALUE]: how many times the dry run of
-# `make TARGET` in examples/DIR names -DDEBUG. The dry run executes no
-# recipe, so nothing is built.
+# debug_defs DIR [VAR=VALUE]: how many lines of the dry run of `make` in
+# examples/DIR for the stub board, with everything rebuilt, name
+# -DDEBUG. The dry run executes no recipe, so nothing is built.
 debug_defs()
 {
 	(
 		unset MAKEFLAGS MFLAGS MAKELEVEL
-		make -n -C "$ROOT/examples/$1" "$2" $3
+		make -nB -C "$ROOT/examples/$1" BOARD=stub $2
 	) 2> /dev/null | grep -c -- -DDEBUG
 }
 
-# debug_off DIR TARGET: a release build does not define DEBUG.
+# debug_off DIR: a release build does not define DEBUG.
 debug_off()
 {
-	[ "$(debug_defs "$1" "$2")" -eq 0 ]
+	[ "$(debug_defs "$1")" -eq 0 ]
 }
 
-# debug_on DIR TARGET: DEBUG=1 defines it, once.
+# debug_on DIR: DEBUG=1 defines it.
 debug_on()
 {
-	[ "$(debug_defs "$1" "$2" DEBUG=1)" -eq 1 ]
+	[ "$(debug_defs "$1" DEBUG=1)" -ge 1 ]
 }
 
 for dir in basic network; do
-	for target in x86_64 rpi; do
-		check "examples/$dir $target: no -DDEBUG by default" \
-			debug_off "$dir" "$target"
-		check "examples/$dir $target: DEBUG=1 adds -DDEBUG" \
-			debug_on "$dir" "$target"
-	done
+	check "examples/$dir: no -DDEBUG by default" debug_off "$dir"
+	check "examples/$dir: DEBUG=1 adds -DDEBUG" debug_on "$dir"
+done
+
+# The daemon calls clock_gettime(), which glibc before 2.17 keeps in
+# librt, so its link line keeps -lrt for every board. rsssend calls
+# nothing from librt.
+
+# link_line DIR BOARD: the line of the dry run in examples/DIR that
+# links against the library.
+link_line()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -nB -C "$ROOT/examples/$1" BOARD="$2"
+	) 2> /dev/null |
+		grep -E -- '(^|[[:space:]])-lrsswitch([[:space:]]|$)'
+}
+
+# has_librt DIR BOARD: that line names -lrt.
+has_librt()
+{
+	link_line "$1" "$2" |
+		grep -qE -- '(^|[[:space:]])-lrt([[:space:]]|$)'
+}
+
+# lacks_librt DIR BOARD: there is such a line, and it has no -lrt.
+lacks_librt()
+{
+	link_line "$1" "$2" | grep -q . && ! has_librt "$1" "$2"
+}
+
+for board in stub gpiod; do
+	check "examples/network: the $board link line keeps -lrt" \
+		has_librt network "$board"
+	check "examples/basic: the $board link line has no -lrt" \
+		lacks_librt basic "$board"
 done
 
 # top_lines [VAR=VALUE]...: the lines that a dry run of the top-level
@@ -329,11 +362,10 @@ for mk in examples/basic examples/network examples/web tests; do
 	check "$mk/Makefile: no comma in a .PHONY line" \
 		phony_without_comma "$ROOT/$mk/Makefile"
 done
-for dir in basic network; do
-	check "examples/$dir/Makefile: the board targets are phony" \
-		phony_names "$ROOT/examples/$dir/Makefile" \
-		rpi rpi3 bbb x86_64 clean
-done
+check "examples/basic/Makefile: the goals are phony" \
+	phony_names "$ROOT/examples/basic/Makefile" all clean
+check "examples/network/Makefile: the goals are phony" \
+	phony_names "$ROOT/examples/network/Makefile" all install clean
 check "Makefile: no comma in a .PHONY line" \
 	phony_without_comma "$ROOT/Makefile"
 check "Makefile: the goals are phony" \
@@ -374,6 +406,30 @@ old_api_gone()
 	[ -z "$hits" ]
 }
 check "the old public names stay gone" old_api_gone
+
+# The goals rpi, rpi3, bbb and x86_64 were replaced by the BOARD
+# variable, and the scripts that put a cross toolchain on PATH by
+# CROSS_COMPILE. None of them has an alias. The pattern brackets one
+# letter of each name so that this file does not match itself.
+old_goals_gone()
+{
+	rules=$(find "$ROOT" \( -path "$ROOT/.git" -o -path "$ROOT/build" \) \
+		-prune -o -type f -name Makefile \
+		-exec grep -lE '^(rp[i]3?|bb[b]|x86_6[4]):' {} +)
+	[ -z "$rules" ] || echo "$rules" >&2
+	[ -z "$rules" ] || return 1
+
+	for goal in rpi rpi3 bbb x86_64; do
+		(
+			unset MAKEFLAGS MFLAGS MAKELEVEL
+			make -n -C "$ROOT/examples/basic" "$goal"
+		) > "$S/goal.out" 2>&1 && return 1
+		grep -q 'No rule to make target' "$S/goal.out" || return 1
+	done
+
+	[ ! -e "$ROOT/setenv.sh" ] && [ ! -e "$ROOT/setenv64.sh" ]
+}
+check "the board goals and the cross scripts stay gone" old_goals_gone
 
 # The compile-time board defines and the per-board directories were
 # replaced by one libgpiod board and the stub board, which the build

@@ -2,38 +2,53 @@
 
 ## Usage (Raspberry Pi, BeagleBone Black)
 
+rsssend links the shared library of this repository, so build the
+library first. It carries no RPATH: from the tree it finds the library
+through LD_LIBRARY_PATH.
+
 ```bash
-cd librsswitch/examples/basic
-make rpi     # or: make rpi3 on a 64-bit Raspberry Pi OS
-             # or: make bbb on a BeagleBone Black
-./rsssend 0 0 0 1
+cd librsswitch
+make
+make -C examples/basic
+LD_LIBRARY_PATH=build/gpiod examples/basic/rsssend 0 0 0 1
 ```
+
+The same build serves the Raspberry Pi, the Raspberry Pi 3 and the
+BeagleBone Black. A program that was built against an installed library
+(see "Installing the library" in the main README) needs no
+LD_LIBRARY_PATH.
 
 ## Usage (cross compiling on x86_64)
 
 ```bash
-cd librsswitch/examples/basic
-make rpi
-file rsssend
+cd librsswitch
+make CROSS_COMPILE=aarch64-linux-gnu-
+make -C examples/basic CROSS_COMPILE=aarch64-linux-gnu-
+file examples/basic/rsssend
 ```
 
 ```
-  rsssend: ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV)
+  rsssend: ELF 64-bit LSB pie executable, ARM aarch64, version 1 (SYSV), dynamically linked
 ```
+
+arm-linux-gnueabihf- builds for 32-bit ARM (ARMv7) in the same way. The
+program needs librsswitch.so.1 on the board, so install the library
+there first (see the main README) and then copy the program:
 
 ```bash
-scp rsssend user@rpi:~/
+scp examples/basic/rsssend user@rpi:~/
 ssh user@rpi
 ./rsssend 0 0 0 1
 ```
 
 ## Usage (x86_64 host)
 
-From examples/basic:
+From the repository root:
 
 ```bash
-make x86_64
-./rsssend 1 17 23 1
+make BOARD=stub
+make -C examples/basic BOARD=stub
+LD_LIBRARY_PATH=build/stub examples/basic/rsssend 1 17 23 1
 ```
 
 ```

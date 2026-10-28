@@ -14,14 +14,16 @@ rsswitch-web, and starts at boot after rsswitchd. From examples/web:
 
 ```bash
 sudo apt install python3-venv
-make -C ../network rpi     # or: rpi3, bbb, x86_64
+make -C ../..              # the library; BOARD=stub on a host without a GPIO
+sudo make -C ../.. install
+make -C ../network
 sudo make -C ../network install
 sudo make install
 ```
 
-The second and third line build and install
-[rsswitchd](../network/README.md), which the app needs to switch
-anything. sudo make install in this directory then
+The first two lines build and install the library, the next two
+[rsswitchd](../network/README.md), which links it and which the app
+needs to switch anything. sudo make install in this directory then
 
 - creates the system user rsswitch-web when it is missing. It has no
   login shell and no home directory, and is in no group but its own:
@@ -187,12 +189,13 @@ the system Python (PEP 668). Never use sudo pip or
 --break-system-packages.
 
 
-## Installation (x86_64 host)
+## Installation (host with the stub board)
 
 From examples/web:
 
 ```bash
-make -C ../network x86_64
+make -C ../.. BOARD=stub
+make -C ../network BOARD=stub
 python3 -m venv venv
 venv/bin/pip install -r requirements.txt
 venv/bin/pip install -r requirements-dev.txt
@@ -200,7 +203,7 @@ venv/bin/python -m pytest
 ```
 
 requirements-dev.txt adds pytest. Python 3.9 or newer is required.
-The suite includes a smoke test against that x86_64 rsswitchd and
+The suite includes a smoke test against that stub-board rsswitchd and
 skips it when the binary is missing. See Tests below for the one
 command that runs everything.
 
@@ -225,7 +228,7 @@ path:
 make -C ../../tests test WEB_PYTHON=$PWD/venv/bin/python
 ```
 
-The command builds the x86_64 rsswitchd, starts it for the tests that
+The command builds the stub library and the stub-board rsswitchd, starts it for the tests that
 need the real daemon, and runs the end-to-end test: it starts the
 daemon and the app under waitress on ephemeral ports and drives the
 app over HTTP, down to the codeword that the daemon prints. The app
@@ -238,21 +241,22 @@ or the end-to-end test.
 The real-daemon and end-to-end tests are skipped then when
 examples/network/rsswitchd is missing. Two environment variables
 change that: RSSWITCHD_BIN names the rsswitchd binary to start, which
-must be a build for the x86_64 stub board, and RSSWITCH_REQUIRE_DAEMON=1
+must be a build for the stub board, and RSSWITCH_REQUIRE_DAEMON=1
 makes a missing or unstartable binary fail the tests instead of
 skipping them. make -C tests test sets both.
 
 
-## Trying the stack on an x86_64 host
+## Trying the stack on a host with the stub board
 
-This needs no root and no systemd. It runs the daemon of the x86_64
+This needs no root and no systemd. It runs the daemon of the stub
 build, which only prints the codeword it would send, and the app
 against it. After the steps of the installation above, from
 examples/web:
 
 ```bash
-make -C ../network x86_64
-../network/rsswitchd --bind 127.0.0.1 --port 5000 &
+make -C ../.. BOARD=stub
+make -C ../network BOARD=stub
+LD_LIBRARY_PATH=$PWD/../../build/stub ../network/rsswitchd --bind 127.0.0.1 --port 5000 &
 cat > /tmp/rsswitch-web-try.json <<'CONFIG'
 {
   "listen_address": "127.0.0.1",

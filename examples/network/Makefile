@@ -1,78 +1,71 @@
-CFLAGS += -Werror -Wall -W -pedantic
-CFLAGS += -pthread
-CFLAGS += -D_FORTIFY_SOURCE=2 -O2
-CFLAGS += -funsigned-char -Wpointer-arith
-CFLAGS += -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes
-CFLAGS += -Wpointer-arith -Wwrite-strings -Wcast-qual -Wcast-align
-CFLAGS += -Wbad-function-cast -Wformat-security -Wformat-nonliteral
-CFLAGS += -Wmissing-format-attribute -Winline
-CFLAGS += -Wformat -Werror=format-security -Werror=array-bounds
+# Builds rsswitchd against the library of this repository.
+#
+#   make                      against the libgpiod board
+#   make BOARD=stub           against the stub board
+#   make CROSS_COMPILE=aarch64-linux-gnu-
+#   make install              the daemon and its unit, after the library
+#
+# The library is built first, with the Makefile in the top directory,
+# and the daemon links its shared library, so BOARD, CROSS_COMPILE,
+# DEBUG and LIBGPIOD_VERSION mean here what they mean there. The
+# daemon carries no RPATH: from the tree it runs with the build
+# directory of its board on LD_LIBRARY_PATH, and an installed daemon
+# finds the installed library through the loader cache.
+
+# The root of the repository, whatever directory make runs in.
+TOP := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))../..)
+
+BOARD ?= gpiod
+
+# The prefix of the cross toolchain. Empty means a native build;
+# nothing here guesses the architecture.
+CROSS_COMPILE ?=
+
+CC := $(CROSS_COMPILE)gcc
+
+# Where the library of BOARD is built; the top Makefile uses the same
+# variable. A relative path is relative to this directory.
+BUILD ?= $(TOP)/build/$(BOARD)
+LIBBUILD := $(abspath $(BUILD))
+
+# The flags the daemon cannot be built without live in their own
+# variable, so that a CFLAGS given on the command line adds to them.
+RSS_CFLAGS := -Werror -Wall -W -pedantic
+RSS_CFLAGS += -pthread
+RSS_CFLAGS += -D_FORTIFY_SOURCE=2 -O2
+RSS_CFLAGS += -funsigned-char -Wpointer-arith
+RSS_CFLAGS += -Wmissing-prototypes -Wmissing-declarations -Wstrict-prototypes
+RSS_CFLAGS += -Wwrite-strings -Wcast-qual -Wcast-align
+RSS_CFLAGS += -Wbad-function-cast -Wformat-security -Wformat-nonliteral
+RSS_CFLAGS += -Wmissing-format-attribute -Winline
+RSS_CFLAGS += -Wformat -Werror=format-security -Werror=array-bounds
 
 ifeq ($(DEBUG),1)
-CFLAGS += -DDEBUG
+RSS_CFLAGS += -DDEBUG
 endif
 
-.PHONY: rpi rpi3 bbb x86_64 install clean
-
-ifeq ($(MAKECMDGOALS), )
-$(error No target given. Supported targets: rpi, rpi3, bbb, x86_64)
-endif
-
-ARCH := $(shell uname -m)
 PREFIX=/usr/local
 SYSTEMD_UNIT_DIR=/etc/systemd/system
 
-ifeq ($(ARCH),x86_64)
-ifeq ($(MAKECMDGOALS), x86_64)
-# The stub board is chosen by its source file alone, and built natively.
-else ifeq ($(MAKECMDGOALS), rpi3)
-ARCH:=aarch64
-CROSS_COMPILE=aarch64-linux-gnu-
-else
-ARCH:=arm
-CROSS_COMPILE=arm-linux-gnueabihf-
-endif
-endif
+.PHONY: all install clean FORCE
 
-ifeq ($(MAKECMDGOALS), rpi)
-LFLAGS = -l rt -l gpiod
-else ifeq ($(MAKECMDGOALS), rpi3)
-LFLAGS = -l rt -l gpiod
-else ifeq ($(MAKECMDGOALS), bbb)
-LFLAGS = -l rt -l gpiod
-endif
+all: rsswitchd
 
-# Forces boards/gpiod/gpiod_board.c's libgpiod API choice when its
-# header probe picks the wrong one (e.g. cross-compiling against a
-# sysroot whose gpiod.h can't be told apart from the probe alone).
-# 1 = libgpiod 1.x (gpiod_line_*), 2 = libgpiod 2.x
-# (gpiod_line_request_*). Unset (the default) leaves the probe in
-# charge.
-ifneq ($(LIBGPIOD_VERSION),)
-ifeq ($(filter $(LIBGPIOD_VERSION),1 2),)
-$(error LIBGPIOD_VERSION must be 1 or 2)
-endif
-CFLAGS += -DLIBRSSWITCH_GPIOD_VERSION=$(LIBGPIOD_VERSION)
-endif
+# The library is made by the top Makefile on every run, which only
+# rebuilds what changed. Variables given on the command line, such as
+# CROSS_COMPILE, DEBUG and LIBGPIOD_VERSION, reach it by themselves.
+$(LIBBUILD)/librsswitch.so: FORCE
+	$(MAKE) -C $(TOP) BOARD=$(BOARD) BUILD=$(LIBBUILD)
 
-CC=$(CROSS_COMPILE)gcc
-INCLUDES = -I/usr/include/
-INCLUDES += -I/usr/local/include/
-LIBS = -L/usr/local/lib
+FORCE:
 
-
-rpi:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
-
-rpi3:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
-
-bbb:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
-
-x86_64:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsswitchd rsswitchd.c rsswitchd_proto.c ../../librsswitch.c ../../boards/stub/stub.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
-
+# -lrt stays for every board: the daemon calls clock_gettime(), which
+# glibc before 2.17 keeps in librt.
+rsswitchd: rsswitchd.c rsswitchd_proto.c rsswitchd_proto.h \
+		$(TOP)/librsswitch.h $(LIBBUILD)/librsswitch.so
+	$(CC) $(RSS_CFLAGS) $(CFLAGS) $(CPPFLAGS) -I$(TOP) $(LDFLAGS) \
+		-o $@ rsswitchd.c rsswitchd_proto.c \
+		-L$(LIBBUILD) -lrsswitch -lrt
 
 # The daemon runs as the unprivileged system user rsswitchd, in the
 # gpio group for GPIO access. Both the group and the user are
@@ -93,7 +86,7 @@ x86_64:
 # install when it fails.
 install:
 	@if [ ! -x rsswitchd ]; then \
-		echo "rsswitchd has not been built, run make <rpi|rpi3|bbb|x86_64> first" >&2; \
+		echo "rsswitchd has not been built, run make in examples/network first" >&2; \
 		exit 1; \
 	fi
 	install -D -m 0755 rsswitchd $(DESTDIR)$(PREFIX)/bin/rsswitchd

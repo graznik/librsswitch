@@ -9,17 +9,21 @@ Pollin 2605 sockets on or off.
 
 ## Installation (Raspberry Pi, BeagleBone Black)
 
+rsswitchd links the shared library of this repository, so build the
+library first and then the daemon:
+
 ```bash
-cd librsswitch/examples/network/
-make rpi     # or: make rpi3 on a 64-bit Raspberry Pi OS
-             # or: make bbb on a BeagleBone Black
-sudo make install
+cd librsswitch
+make
+make -C examples/network
+sudo make -C examples/network install
 ```
 
-sudo make install creates the gpio group and the rsswitchd system
-user when either is missing, installs the binary and the unit, then
-enables the service and restarts it, so that it runs the binary that
-was just installed -- one step end to end.
+The same build serves the Raspberry Pi, the Raspberry Pi 3 and the
+BeagleBone Black. sudo make install creates the gpio group and the
+rsswitchd system user when either is missing, installs the binary and
+the unit, then enables the service and restarts it, so that it runs
+the binary that was just installed -- one step end to end.
 
 Running sudo make install again after a new build is the upgrade: the
 group and the user are kept, the binary and the unit are replaced, and
@@ -33,14 +37,16 @@ systemctl steps are skipped.
 
 ## Installation (x86_64 host)
 
-From examples/network:
+From the repository root:
 
 ```bash
-make x86_64
-./rsswitchd --help
-make install DESTDIR=/tmp/rsswitchd-stage
-ls /tmp/rsswitchd-stage/usr/local/bin/rsswitchd /tmp/rsswitchd-stage/etc/systemd/system/rsswitchd.service
+make BOARD=stub
+make -C examples/network BOARD=stub
+LD_LIBRARY_PATH=build/stub examples/network/rsswitchd --help
 ```
+
+The daemon carries no RPATH: from the tree it finds the library through
+LD_LIBRARY_PATH, and an installed daemon through the loader cache.
 
 
 ## Running

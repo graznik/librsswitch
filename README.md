@@ -94,10 +94,13 @@ make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib
 
 BUILD names the directory of the board instead of build/<board>/, for
 a build that must not write below the sources, or on a file system that
-cannot make symbolic links:
+cannot make symbolic links. The Makefiles of the examples take the
+library from the same variable, so give them the same value:
 
 ```bash
 make BOARD=stub BUILD=/tmp/rsswitch-build/stub
+make -C examples/network BOARD=stub BUILD=/tmp/rsswitch-build/stub
+LD_LIBRARY_PATH=/tmp/rsswitch-build/stub examples/network/rsswitchd --bind 127.0.0.1
 ```
 
 The goal test runs the tests of tests/, and clean removes build/ and
@@ -179,91 +182,97 @@ sudo apt install libgpiod-dev
 Raspberry Pi OS and Debian 13 on the BeagleBone Black ship libgpiod
 2.x, older images 1.x, and both work.
 
-rpi, rpi3 and bbb build the exact same board source,
-boards/gpiod/gpiod_board.c. rpi and rpi3 differ only in the cross
-toolchain (32-bit arm-linux-gnueabihf- vs. aarch64-linux-gnu- when
-cross compiling; both use the native gcc on a Pi), and bbb is the same
-build again. All of them default to line 17 of gpiochip0, which is
-GPIO17 on the Raspberry Pi and pin P9_23 of the BeagleBone Black on
-kernel 6.x such as on Debian 13; boards/gpiod/gpiod_board.h sets it.
-On other kernels the chip of P9_23 can differ, so check it with
-gpioinfo and pass "chip:line" with --gpio instead.
+One build covers the Raspberry Pi, the Raspberry Pi 3 and the
+BeagleBone Black: the board source is boards/gpiod/gpiod_board.c, and
+the GPIO line is chosen at run time with --gpio. Without it the
+library uses line 17 of gpiochip0, which is GPIO17 on the Raspberry Pi
+and pin P9_23 of the BeagleBone Black on kernel 6.x such as on Debian
+13; boards/gpiod/gpiod_board.h sets it. On other kernels the chip of
+P9_23 can differ, so check it with gpioinfo and pass "chip:line" with
+--gpio instead.
 libgpiod 1.x and 2.x are both supported: the board picks its API from
 the installed gpiod.h at compile time (gpiod.h from 1.x defines
 GPIOD_LINE_BULK_MAX_LINES, the 2.x header does not), so a plain build
 just works with whichever libgpiod-dev is installed. If the probe ever
-picks the wrong one, force it with LIBGPIOD_VERSION, for bbb as for
-rpi:
+picks the wrong one, force it with LIBGPIOD_VERSION:
 
 ```bash
-make LIBGPIOD_VERSION=1 rpi   # force the libgpiod 1.x (gpiod_line_*) API
-make LIBGPIOD_VERSION=2 rpi   # force the libgpiod 2.x (gpiod_line_request_*) API
+make LIBGPIOD_VERSION=1   # force the libgpiod 1.x (gpiod_line_*) API
+make LIBGPIOD_VERSION=2   # force the libgpiod 2.x (gpiod_line_request_*) API
 ```
 
 The "chip:line" config format (see "GPIO configuration" below) is the
 same for both versions.
 
-Build with the matching Makefile target from examples/basic/ or
-examples/network/; on the board itself, every target uses the
-native gcc (only the cross-compiling host below needs a cross
-toolchain):
+Build the library first, then the programs, which link it. The
+programs take BOARD, DEBUG, LIBGPIOD_VERSION and CROSS_COMPILE like the
+library does. On the board itself everything uses the native gcc
+(only the cross-compiling host below needs a cross toolchain):
 
 ```bash
-make rpi     # Raspberry Pi (32-bit ARM)
-make rpi3    # Raspberry Pi 3 (aarch64)
-make bbb     # BeagleBone Black (32-bit ARM)
-make x86_64  # host build, GPIO calls are stubbed out
+make                      # the library, in build/gpiod/
+make -C examples/basic    # rsssend
+make -C examples/network  # rsswitchd
 ```
 
-Any of these targets also accepts DEBUG=1 to turn on verbose syslog
-output (off by default, so a release build never logs every command):
+DEBUG=1 turns on verbose syslog output (off by default, so a release
+build never logs every command):
 
 ```bash
-make DEBUG=1 rpi
+make DEBUG=1
+make -C examples/network DEBUG=1
 ```
+
+The programs carry no RPATH. Run from the tree, they find the library
+through LD_LIBRARY_PATH:
+
+```bash
+LD_LIBRARY_PATH=build/gpiod examples/basic/rsssend 0 0 0 1
+LD_LIBRARY_PATH=build/gpiod examples/network/rsswitchd --bind 127.0.0.1
+```
+
+An installed daemon finds the installed library through the loader
+cache (see "Installing the library").
 
 
 ## Software setup (cross compiling on x86_64)
 
 Install an ARM/aarch64 cross toolchain (e.g. via your distro's
-gcc-arm-linux-gnueabihf / gcc-aarch64-linux-gnu packages), then build
-with the matching target from examples/basic/ or examples/network/ --
-the Makefile picks the cross compiler for you based on the target and
-picks up libgpiod headers from /usr/include and /usr/local/include:
+gcc-arm-linux-gnueabihf / gcc-aarch64-linux-gnu packages), then name
+its prefix in CROSS_COMPILE, for the library and for the programs.
+Nothing guesses the compiler from the host:
 
 ```bash
-cd examples/basic   # or examples/network
-make rpi     # arm-linux-gnueabihf-gcc
-make rpi3    # aarch64-linux-gnu-gcc
-make bbb     # arm-linux-gnueabihf-gcc
+make CROSS_COMPILE=aarch64-linux-gnu-
+make -C examples/basic CROSS_COMPILE=aarch64-linux-gnu-
+make -C examples/network CROSS_COMPILE=aarch64-linux-gnu-
 ```
 
-setenv.sh and setenv64.sh are only needed when your cross toolchain
-lives outside PATH (for example a Linaro tarball under /opt) -- they
-add its bin/ directory to PATH. A toolchain installed from your
-distro's packages needs neither script, since the Makefile already
-picks the right compiler for the target.
+arm-linux-gnueabihf- targets ARMv7 in the same way. A Raspberry Pi
+Zero (ARMv6) builds natively on the board instead. A toolchain that
+lives outside PATH (for example a Linaro tarball under /opt) needs its
+bin/ directory added to PATH in your shell first.
 
 libgpiod itself (headers + library) needs to be available for the
-target architecture of rpi, rpi3 and bbb in your cross sysroot --
-either cross-build it from source or install your distro's cross-dev
-variant if one exists.
+target architecture in your cross sysroot -- either cross-build it from
+source or install your distro's cross-dev variant if one exists.
 A libgpiod installed under its own prefix is picked up through the
-usual CPPFLAGS and LDFLAGS, which take precedence over the default
-/usr/include, /usr/local/include and /usr/local/lib paths:
+usual CPPFLAGS and LDFLAGS:
 
 ```bash
-make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib rpi
+make CROSS_COMPILE=aarch64-linux-gnu- CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib
 ```
 
 
 ## Host build (x86_64 host)
 
-From the repository root:
+The stub board needs no libgpiod and does not touch a GPIO. From the
+repository root:
 
 ```bash
-make -C examples/basic x86_64
-./examples/basic/rsssend 1 17 23 1
+make BOARD=stub
+make -C examples/basic BOARD=stub
+LD_LIBRARY_PATH=build/stub examples/basic/rsssend 1 17 23 1
 ```
 
 ```
@@ -271,7 +280,8 @@ make -C examples/basic x86_64
 ```
 
 ```bash
-make -C examples/network x86_64
+make -C examples/network BOARD=stub
+LD_LIBRARY_PATH=build/stub examples/network/rsswitchd --bind 127.0.0.1 --port 0
 ```
 
 

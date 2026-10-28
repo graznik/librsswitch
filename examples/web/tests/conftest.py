@@ -336,7 +336,7 @@ class RealDaemon:
     """A running rsswitchd. Its output is collected by reader threads.
 
     port is the port the kernel picked. stdout holds the lines the
-    daemon printed there, which on the x86_64 build are the codewords.
+    daemon printed there, which on the stub build are the codewords.
     """
 
     def __init__(self, proc):
@@ -410,15 +410,34 @@ class RealDaemon:
         self.proc.stderr.close()
 
 
+def _stub_library_dir():
+    """The directory of the stub library that a started daemon loads.
+
+    It is build/stub of the code repository, or the directory that the
+    BUILD variable names, which is the variable the Makefiles use for
+    the place of the library. The path is absolute, so it does not
+    depend on the directory the tests run in.
+    """
+    named = os.environ.get("BUILD")
+    if named:
+        return Path(named).resolve()
+    return Path(__file__).resolve().parents[3] / "build" / "stub"
+
+
 def _start_daemon(*extra):
-    """Start the x86_64 build of rsswitchd and return it once it is ready.
+    """Start the stub build of rsswitchd and return it once it is ready.
 
     extra are further command line arguments. The binary is the one
     named in RSSWITCHD_BIN. The caller vouches that it is a build for
-    the x86_64 stub board, as tests/Makefile makes one on any host.
+    the stub board, as tests/Makefile makes one on any host.
     Without RSSWITCHD_BIN it is examples/network/rsswitchd, which only
     an x86_64 host runs: a build for a board must never be started by a
     test.
+
+    The daemon links the shared library, so the child gets the stub
+    library directory first on LD_LIBRARY_PATH, in front of any value
+    of the caller: a test-started daemon loads the stub library and
+    never a library built for a board.
 
     The test is skipped when the binary is missing or cannot run. With
     RSSWITCH_REQUIRE_DAEMON=1 it fails instead, so that a test run that
@@ -427,8 +446,10 @@ def _start_daemon(*extra):
     """
     give_up = (pytest.fail if os.environ.get("RSSWITCH_REQUIRE_DAEMON") == "1"
                else pytest.skip)
-    hint = ("rsswitchd not available: name an x86_64 build in "
-            "RSSWITCHD_BIN, or run make -C ../network x86_64")
+    hint = ("rsswitchd not available: name a stub build in RSSWITCHD_BIN, "
+            "or run make -C ../.. BOARD=stub and "
+            "make -C ../network BOARD=stub")
+    stub_dir = _stub_library_dir()
     named = os.environ.get("RSSWITCHD_BIN")
     if named:
         binary = Path(named)
@@ -436,14 +457,21 @@ def _start_daemon(*extra):
         binary = Path(__file__).resolve().parents[2] / "network" / "rsswitchd"
         if platform.machine() != "x86_64":
             give_up(hint)
+        if not (stub_dir / "librsswitch.so.1").exists():
+            give_up("%s is missing: %s" % (stub_dir / "librsswitch.so.1",
+                                           hint))
     if not (binary.is_file() and os.access(str(binary), os.X_OK)):
         give_up("%s: %s" % (binary, hint))
+    env = dict(os.environ)
+    env["LD_LIBRARY_PATH"] = os.pathsep.join(
+        [str(stub_dir)] + ([env["LD_LIBRARY_PATH"]]
+                           if env.get("LD_LIBRARY_PATH") else []))
     try:
         proc = subprocess.Popen(
             [str(binary), "--bind", "127.0.0.1", "--port", "0"]
             + list(extra),
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True)
+            stderr=subprocess.PIPE, text=True, env=env)
     except OSError as e:
         give_up("%s cannot be started (%s): %s" % (binary, e, hint))
     daemon = RealDaemon(proc)
@@ -457,7 +485,7 @@ def _start_daemon(*extra):
 
 @pytest.fixture
 def real_daemon():
-    """The x86_64 build of rsswitchd, started on a port of its own.
+    """The stub build of rsswitchd, started on a port of its own.
 
     See _start_daemon() for the binary and for when the test is skipped.
     """
@@ -472,7 +500,7 @@ def real_daemon():
 def gpio_daemon():
     """Return a factory: start(config) -> RealDaemon run with --gpio config.
 
-    It needs the x86_64 build, whose stub board fails every send with
+    It needs the stub build, whose stub board fails every send with
     the cause that a chip name of the form fail<word> names, for
     example failbusy:0. Every daemon it started is stopped at teardown.
     """
