@@ -210,9 +210,59 @@ check "test names the skipped libgpiod tests" skip_named
 skip_not_named()
 {
 	dry_test GPIOD_AVAILABLE=yes || return 1
-	! grep -q 'SKIPPED:' "$S/dry.out"
+	! grep -q 'SKIPPED: test_gpiod' "$S/dry.out"
 }
 check "test names nothing when libgpiod links" skip_not_named
+
+# The ABI check needs abidiff and a baseline for the machine. Without
+# either, the recipe of test names the skipped check once, after the
+# results, and neither the goal nor test_abi.sh is run. ABI_MACHINE is
+# named in the runs that look for the baseline, so that they give the
+# same answer on a host of another architecture.
+
+# abi_skip_lines: the lines of the last dry run that announce a skipped
+# ABI check.
+abi_skip_lines()
+{
+	grep -E 'SKIP[A-Z]*:? abicheck' "$S/dry.out"
+}
+
+# abi_skip_once REASON: the last dry run announces the skipped ABI
+# check once, with REASON, and runs neither the goal nor the script.
+abi_skip_once()
+{
+	[ "$(abi_skip_lines | wc -l)" -eq 1 ] &&
+		abi_skip_lines | grep -qF "SKIPPED: abicheck ($1)" &&
+		! grep -qF ' BOARD=stub abicheck' "$S/dry.out" &&
+		! grep -qF 'test_abi.sh' "$S/dry.out"
+}
+
+abi_skipped_without_tool()
+{
+	dry_test ABIDIFF_FOUND= || return 1
+	abi_skip_once 'abidiff not installed'
+}
+check "test names the skipped ABI check once" abi_skipped_without_tool
+
+abi_skipped_without_baseline()
+{
+	dry_test ABIDIFF_FOUND=/usr/bin/abidiff ABI_MACHINE=nomachine ||
+		return 1
+	abi_skip_once 'no ABI baseline for nomachine'
+}
+check "test skips the ABI check without a baseline" \
+	abi_skipped_without_baseline
+
+abi_runs_with_tool_and_baseline()
+{
+	dry_test ABIDIFF_FOUND=/usr/bin/abidiff ABI_MACHINE=x86_64 ||
+		return 1
+	grep -qF ' BOARD=stub abicheck' "$S/dry.out" &&
+		grep -qF 'test_abi.sh' "$S/dry.out" &&
+		! abi_skip_lines | grep -q .
+}
+check "test runs the ABI check when abidiff and a baseline exist" \
+	abi_runs_with_tool_and_baseline
 
 # GPIOD_EXPECT_VERSION turns the skip into an error.
 skip_is_error()
@@ -461,7 +511,8 @@ check "examples/network/Makefile: the goals are phony" \
 check "Makefile: no comma in a .PHONY line" \
 	phony_without_comma "$ROOT/Makefile"
 check "Makefile: the goals are phony" \
-	phony_names "$ROOT/Makefile" all test clean install uninstall
+	phony_names "$ROOT/Makefile" all test clean install uninstall \
+		abicheck abi-baseline
 
 # These comments of librsswitch.c described a parameter, a struct and a
 # protocol that do not exist. Each phrase names one of them. The name of

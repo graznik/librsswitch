@@ -7,6 +7,11 @@
 #   make BOARD=stub           the stub board, in build/stub/
 #   make install              the library of BOARD, its header and its
 #                             pkg-config file, under PREFIX
+#   make abicheck             compare the shared library with the
+#                             checked-in ABI baseline (optional, needs
+#                             abidiff)
+#   make abi-baseline         write a new baseline, only for an
+#                             intended change of the interface
 #
 # The two boards build into separate directories, so building one leaves
 # the other in place and switching needs no make clean. BUILD names the
@@ -119,7 +124,7 @@ SOLINKS := $(BUILD)/$(SONAME) $(BUILD)/librsswitch.so
 ARFILE := $(BUILD)/librsswitch.a
 LIBFILES := $(SOFILE) $(SOLINKS) $(ARFILE)
 
-.PHONY: all test clean install uninstall FORCE
+.PHONY: all test clean install uninstall abicheck abi-baseline FORCE
 
 all: $(LIBFILES)
 
@@ -223,6 +228,55 @@ endif
 
 test:
 	$(MAKE) -C tests test BUILD=$(TESTBUILD)
+
+# The binary interface of the shared library is compared with a
+# baseline written by abidw from an earlier build and checked in. The
+# check is optional: it needs abidiff from the abigail-tools package,
+# and without the tool, or without a baseline for the machine, it says
+# so in one line and succeeds. A baseline describes one architecture,
+# because sizes and alignments differ between them, so there is one file
+# per machine, named after the first field of the compiler's target.
+# The baseline is written only by make abi-baseline, when a change of
+# the interface is intended.
+ABIDW ?= abidw
+ABIDIFF ?= abidiff
+ABI_MACHINE := $(firstword $(subst -, ,$(shell $(CC) -dumpmachine)))
+ABI_BASELINE := abi/$(ABI_MACHINE).abi
+
+# abidiff compares only the symbols of a library without debug
+# information and reports no difference in a type or a parameter, so
+# such a library is refused. Bits 1 and 2 of the exit status of abidiff
+# mean that the tool itself failed or was called wrongly; every other
+# non-zero status is a difference of the interface.
+abicheck: $(SOFILE)
+	@if ! command -v $(ABIDIFF) > /dev/null 2>&1; then \
+		echo "SKIP abicheck: abidiff not found" >&2; \
+		exit 0; \
+	fi; \
+	if [ ! -f $(ABI_BASELINE) ]; then \
+		echo "SKIP abicheck: no ABI baseline for $(ABI_MACHINE) ($(ABI_BASELINE))" >&2; \
+		exit 0; \
+	fi; \
+	if ! $(CROSS_COMPILE)readelf -S $(SOFILE) | grep -q '\.debug_info'; then \
+		echo "abicheck: $(SOFILE) has no debug info; build it unstripped" >&2; \
+		exit 1; \
+	fi; \
+	$(ABIDIFF) --header-file2 librsswitch.h $(ABI_BASELINE) $(SOFILE); \
+	status=$$?; \
+	if [ $$status -eq 0 ]; then \
+		echo "abicheck: ABI unchanged against $(ABI_BASELINE)"; \
+	elif [ $$((status & 3)) -ne 0 ]; then \
+		echo "abicheck: abidiff failed with exit $$status (tool error, not an ABI change)" >&2; \
+		exit 1; \
+	else \
+		echo "abicheck: the ABI differs from $(ABI_BASELINE); if the change is intended, run make abi-baseline and commit the new baseline" >&2; \
+		exit 1; \
+	fi
+
+abi-baseline: $(SOFILE)
+	mkdir -p abi
+	$(ABIDW) --no-show-locs --no-comp-dir-path --no-corpus-path \
+		--header-file librsswitch.h --out-file $(ABI_BASELINE) $(SOFILE)
 
 # A BUILD outside the default is removed as well.
 clean:

@@ -183,6 +183,45 @@ was a shared one is upgraded, install the library first and restart
 the service afterwards: the new daemon cannot start without it.
 
 
+## ABI check
+
+Programs that were linked against librsswitch.so.1 keep running only
+while the binary interface of the library stays as it was. An optional
+check compares the built shared library with a baseline that is kept in
+the repository and fails on any difference:
+
+```bash
+make BOARD=stub abicheck
+```
+
+It needs abidiff and abidw from the abigail-tools package (on Debian
+and Raspberry Pi OS: `sudo apt install abigail-tools`). Without abidiff,
+or on a machine for which abi/ holds no baseline, the goal prints one
+line starting with SKIP and succeeds. Only a baseline for x86_64 is
+shipped, abi/x86_64.abi, made from the stub board; the libgpiod board
+has the same interface and passes against it. Other machines skip the
+check. `make -C tests test` runs it when it can and otherwise names it
+once after the results, as `SKIPPED: abicheck (abidiff not installed)`
+or `SKIPPED: abicheck (no ABI baseline for <machine>)`. The exit status
+is not changed by the skip.
+
+The check needs the debug information that the Makefile builds in with
+-g, and refuses a library that was stripped.
+
+When a change of the interface is intended, write the new baseline and
+commit it with the change:
+
+```bash
+make BOARD=stub abi-baseline
+```
+
+A new function that older programs do not use also needs a node of its
+own in librsswitch.map (LIBRSSWITCH_1.1) and a new MINOR in
+librsswitch.h. An incompatible change needs a new SONAME, which means a
+new MAJOR. Rewriting the baseline never makes a change compatible; it
+only records it.
+
+
 ## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
 
 GPIO access goes through
@@ -602,6 +641,10 @@ On a host where libgpiod cannot be linked, the libgpiod test
 `make -C tests test` prints a line
 `SKIPPED: test_gpiod (libgpiod not linkable)` after the results. The exit status is not changed by the skip.
 GPIOD_EXPECT_VERSION (see below) turns the skip into an error.
+
+The ABI check described above runs as part of the tests when abidiff
+is installed and abi/ has a baseline for the machine; otherwise the
+results end with one line naming it as skipped.
 
 ### Against libgpiod 2.x
 

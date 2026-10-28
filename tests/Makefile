@@ -85,6 +85,30 @@ GPIOD_SKIPPED := test_gpiod
 endif
 endif
 
+# The ABI check of the top-level Makefile needs abidiff and a baseline
+# for this machine, kept in ../abi. Without either, make test skips it
+# and says so once after the results, like the libgpiod tests; nothing
+# is announced while the makefile is read, and the exit status does not
+# change. ABI_MACHINE is the key of the baseline, taken the way the
+# top-level Makefile takes it.
+ABIDIFF_FOUND := $(shell command -v abidiff 2>/dev/null)
+ABI_MACHINE := $(firstword $(subst -, ,$(shell $(CC) -dumpmachine)))
+ABI_BASELINE_FOUND := $(wildcard ../abi/$(ABI_MACHINE).abi)
+ifeq ($(ABIDIFF_FOUND),)
+ABI_SKIPPED := abidiff not installed
+else ifeq ($(ABI_BASELINE_FOUND),)
+ABI_SKIPPED := no ABI baseline for $(ABI_MACHINE)
+else
+ABI_SKIPPED :=
+endif
+
+# The recipe of test is one shell line. GNU make runs a recipe line that
+# names its make variable directly even under make -n, also inside an
+# $(if) whose branch is not taken, and every dry run of test_build.sh
+# would then run the whole recipe, test_build.sh included, again and
+# again. Through another variable, a dry run only prints the line.
+ABI_MAKE := $(MAKE)
+
 .PHONY: test venv clean tsan FORCE
 
 # One sub-make builds the shared and the static library, so the two
@@ -113,6 +137,8 @@ FORCE:
 # checks their exports and SONAME. test_install.sh checks its install
 # and uninstall goals in a staged tree, with stand-ins for the tools
 # that write.
+# test_abi.sh and the abicheck goal run when abidiff and a baseline for
+# this machine exist, as the ABI_SKIPPED block above explains.
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
@@ -123,6 +149,8 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	sh ./test_build.sh .. > /dev/null || status=1; \
 	sh ./test_exports.sh .. > /dev/null || status=1; \
 	sh ./test_install.sh .. > /dev/null || status=1; \
+	$(if $(ABI_SKIPPED),,$(ABI_MAKE) -s -C .. BUILD=$(STUBDIR) BOARD=stub abicheck > /dev/null || status=1; \
+	LD_LIBRARY_PATH="$(STUBDIR)" sh ./test_abi.sh .. > /dev/null || status=1;) \
 	py="$(abspath $(WEB_PYTHON))"; \
 	if [ ! -x "$$py" ]; then \
 		echo "web tests: $$py not found; run make -C tests venv (see examples/web/README.md), or make test WEB_PYTHON=/path/to/venv/bin/python" >&2; \
@@ -137,6 +165,7 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 			"$$py" -m pytest -q -p no:cacheprovider) || status=1; \
 	fi; \
 	$(if $(GPIOD_SKIPPED),echo "SKIPPED: $(GPIOD_SKIPPED) (libgpiod not linkable)" >&2;) \
+	$(if $(ABI_SKIPPED),echo "SKIPPED: abicheck ($(ABI_SKIPPED))" >&2;) \
 	exit $$status
 
 # When both goals are given, test waits for venv, under -j as well. The
