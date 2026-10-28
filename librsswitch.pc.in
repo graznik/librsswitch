@@ -1,0 +1,11 @@
+prefix=@PREFIX@
+libdir=@LIBDIR@
+includedir=@INCLUDEDIR@
+
+Name: librsswitch
+Description: Switch 433 MHz radio power sockets over GPIO
+Version: @VERSION@
+Requires.private: libgpiod
+Libs: -L${libdir} -lrsswitch
+Libs.private: -pthread
+Cflags: -I${includedir}

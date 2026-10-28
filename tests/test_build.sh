@@ -337,7 +337,7 @@ done
 check "Makefile: no comma in a .PHONY line" \
 	phony_without_comma "$ROOT/Makefile"
 check "Makefile: the goals are phony" \
-	phony_names "$ROOT/Makefile" all test clean
+	phony_names "$ROOT/Makefile" all test clean install uninstall
 
 # These comments of librsswitch.c described a parameter, a struct and a
 # protocol that do not exist. Each phrase names one of them. The name of

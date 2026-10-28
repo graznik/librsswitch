@@ -5,6 +5,8 @@
 #
 #   make                      the libgpiod board, in build/gpiod/
 #   make BOARD=stub           the stub board, in build/stub/
+#   make install              the library of BOARD, its header and its
+#                             pkg-config file, under PREFIX
 #
 # The two boards build into separate directories, so building one leaves
 # the other in place and switching needs no make clean.
@@ -19,6 +21,16 @@ CROSS_COMPILE ?=
 
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
+
+# Where install puts the files. DESTDIR is prepended to every path and
+# is meant for staging a package: it is not part of the paths that
+# librsswitch.pc records. On Debian systems with PREFIX=/usr the library
+# belongs in the multiarch directory, so LIBDIR is set by the caller;
+# nothing here detects it.
+PREFIX ?= /usr/local
+LIBDIR ?= $(PREFIX)/lib
+INCLUDEDIR ?= $(PREFIX)/include
+PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 
 # The version of the library is kept once, in librsswitch.h, as three
 # numbers on lines of their own. The file names and the SONAME come
@@ -95,7 +107,7 @@ SOLINKS := $(BUILD)/$(SONAME) $(BUILD)/librsswitch.so
 ARFILE := $(BUILD)/librsswitch.a
 LIBFILES := $(SOFILE) $(SOLINKS) $(ARFILE)
 
-.PHONY: all test clean FORCE
+.PHONY: all test clean install uninstall FORCE
 
 all: $(LIBFILES)
 
@@ -136,6 +148,57 @@ $(BUILD)/librsswitch.so: $(BUILD)/$(SONAME)
 $(ARFILE): $(OBJS) $(BUILD)/.flags
 	rm -f $@
 	$(AR) rcs $@ $(OBJS)
+
+# install depends on the library files, so that one call builds what is
+# missing and installs it, and a call after make only copies. Run make
+# as the user first and then sudo make install: a bare sudo make install
+# in a tree that was not built leaves root-owned files in build/.
+#
+# The stub library installs under the same names as the libgpiod one, so
+# one replaces the other below the same PREFIX. Only the libgpiod
+# library has a dependency, which librsswitch.pc names in its
+# Requires.private line.
+#
+# The pkg-config file is made again on every install and the old one is
+# removed first, so it never keeps the settings of an earlier install.
+# The loader cache is refreshed only for a real install, not for a
+# staged one. That needs root, so a failure only warns: with a LIBDIR
+# outside the loader's search path the system needs a file in
+# /etc/ld.so.conf.d, because no program carries an RPATH.
+PC_FILTER :=
+ifeq ($(BOARD),stub)
+PC_FILTER := -e '/^Requires\.private:/d'
+endif
+
+LDCONFIG_WARNING := warning: ldconfig failed, run ldconfig as root so that $(LIBDIR) is searched for libraries
+
+install: $(LIBFILES)
+	install -D -m 0644 librsswitch.h "$(DESTDIR)$(INCLUDEDIR)/librsswitch.h"
+	install -D -m 0755 $(SOFILE) "$(DESTDIR)$(LIBDIR)/librsswitch.so.$(VERSION)"
+	ln -sf librsswitch.so.$(VERSION) "$(DESTDIR)$(LIBDIR)/$(SONAME)"
+	ln -sf $(SONAME) "$(DESTDIR)$(LIBDIR)/librsswitch.so"
+	install -D -m 0644 $(ARFILE) "$(DESTDIR)$(LIBDIR)/librsswitch.a"
+	rm -f $(BUILD)/librsswitch.pc
+	sed -e 's|@PREFIX@|$(PREFIX)|g' -e 's|@LIBDIR@|$(LIBDIR)|g' \
+		-e 's|@INCLUDEDIR@|$(INCLUDEDIR)|g' \
+		-e 's|@VERSION@|$(VERSION)|g' $(PC_FILTER) \
+		librsswitch.pc.in > $(BUILD)/librsswitch.pc
+	install -D -m 0644 $(BUILD)/librsswitch.pc "$(DESTDIR)$(PKGCONFIGDIR)/librsswitch.pc"
+	@if [ -z "$(DESTDIR)" ]; then \
+		ldconfig || echo "$(LDCONFIG_WARNING)" >&2; \
+	fi
+
+# Removes the six paths that install writes and nothing else.
+uninstall:
+	rm -f "$(DESTDIR)$(INCLUDEDIR)/librsswitch.h" \
+		"$(DESTDIR)$(LIBDIR)/librsswitch.so.$(VERSION)" \
+		"$(DESTDIR)$(LIBDIR)/$(SONAME)" \
+		"$(DESTDIR)$(LIBDIR)/librsswitch.so" \
+		"$(DESTDIR)$(LIBDIR)/librsswitch.a" \
+		"$(DESTDIR)$(PKGCONFIGDIR)/librsswitch.pc"
+	@if [ -z "$(DESTDIR)" ]; then \
+		ldconfig || echo "$(LDCONFIG_WARNING)" >&2; \
+	fi
 
 # The tests build their own copy of the sources, whatever BOARD is.
 test:

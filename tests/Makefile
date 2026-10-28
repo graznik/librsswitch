@@ -77,7 +77,9 @@ endif
 # from examples/network, and needs no root and no system manager.
 # test_build.sh checks the plumbing of this Makefile offline.
 # test_exports.sh builds the libraries of the top-level Makefile and
-# checks their exports and SONAME.
+# checks their exports and SONAME. test_install.sh checks its install
+# and uninstall goals in a staged tree, with stand-ins for the tools
+# that write.
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
@@ -87,6 +89,7 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	sh ./test_rsswitchd_service.sh ../examples/network > /dev/null || status=1; \
 	sh ./test_build.sh .. > /dev/null || status=1; \
 	sh ./test_exports.sh .. > /dev/null || status=1; \
+	sh ./test_install.sh .. > /dev/null || status=1; \
 	py="$(abspath $(WEB_PYTHON))"; \
 	if [ ! -x "$$py" ]; then \
 		echo "web tests: $$py not found; run make -C tests venv (see examples/web/README.md), or make test WEB_PYTHON=/path/to/venv/bin/python" >&2; \

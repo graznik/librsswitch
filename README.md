@@ -95,6 +95,68 @@ make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib
 The goal test runs the tests of tests/, and clean removes build/.
 
 
+## Installing the library
+
+make install puts the library of one board, its header and a
+pkg-config file under PREFIX, which is /usr/local by default:
+
+```bash
+make
+sudo make install
+```
+
+Build as yourself first and install as root afterwards. make install
+builds whatever is missing, so a bare sudo make install in a tree that
+was not built leaves root-owned files in build/. After a make it only
+copies, provided it gets the same variables (CPPFLAGS, LDFLAGS, BOARD
+and so on) as the make before it.
+
+It installs these six paths and nothing else:
+
+| Path | Content |
+|------|---------|
+| INCLUDEDIR/librsswitch.h | the header |
+| LIBDIR/librsswitch.so.1.0.0 | the shared library |
+| LIBDIR/librsswitch.so.1 | link to it, named by the SONAME |
+| LIBDIR/librsswitch.so | link for the linker, -lrsswitch |
+| LIBDIR/librsswitch.a | the static library |
+| PKGCONFIGDIR/librsswitch.pc | the pkg-config file |
+
+The directories follow from PREFIX: LIBDIR is PREFIX/lib, INCLUDEDIR is
+PREFIX/include and PKGCONFIGDIR is LIBDIR/pkgconfig, and each can be set
+on its own. DESTDIR is put in front of every path, to stage the files
+for a package, and the paths in librsswitch.pc do not contain it. The
+Debian multiarch directory is not detected; for PREFIX=/usr give it:
+
+```bash
+sudo make install PREFIX=/usr LIBDIR=/usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH)
+```
+
+Without DESTDIR the install runs ldconfig, so the loader finds the new
+library; as a normal user that fails with a warning, which is harmless.
+No program carries an RPATH, so a LIBDIR outside the standard library
+directories needs a file in /etc/ld.so.conf.d that names it, followed by
+ldconfig. make uninstall removes the six paths again.
+
+A program finds the header and the library through pkg-config:
+
+```bash
+cc -o myprog myprog.c $(pkg-config --cflags --libs librsswitch)
+```
+
+For the libgpiod board the pkg-config file requires libgpiod. The stub
+board installs under the same names, so the whole stack (the library,
+the daemon and the web app) can be tried on a host without a GPIO line:
+
+```bash
+make BOARD=stub && sudo make BOARD=stub install
+```
+
+One call with make BOARD=stub install does the same, and also works
+with a DESTDIR. The stub library replaces a libgpiod install below the
+same PREFIX, and the other way round.
+
+
 ## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
 
 GPIO access goes through
