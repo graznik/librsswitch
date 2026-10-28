@@ -168,6 +168,20 @@ One call with make BOARD=stub install does the same, and also works
 with a DESTDIR. The stub library replaces a libgpiod install below the
 same PREFIX, and the other way round.
 
+The library goes in before the daemon. rsswitchd links librsswitch.so.1,
+so examples/network refuses to install it when that file is missing in
+LIBDIR, and says so:
+
+```bash
+make && sudo make install
+make -C examples/network && sudo make -C examples/network install
+```
+
+A library installed with another LIBDIR needs the same LIBDIR on the
+second command. When an rsswitchd that was built before the library
+was a shared one is upgraded, install the library first and restart
+the service afterwards: the new daemon cannot start without it.
+
 
 ## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
 

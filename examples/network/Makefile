@@ -47,6 +47,13 @@ endif
 PREFIX=/usr/local
 SYSTEMD_UNIT_DIR=/etc/systemd/system
 
+# Where the installed library is looked for. It is the default of the
+# top Makefile, so a library installed with another LIBDIR needs the
+# same LIBDIR here. The major version is read from the header with the
+# same awk line as there, so that it is kept in one place.
+LIBDIR ?= $(PREFIX)/lib
+MAJOR := $(shell awk '$$2 == "LIBRSSWITCH_VERSION_MAJOR" { print $$3 }' $(TOP)/librsswitch.h)
+
 .PHONY: all install clean FORCE
 
 all: rsswitchd
@@ -67,6 +74,13 @@ rsswitchd: rsswitchd.c rsswitchd_proto.c rsswitchd_proto.h \
 		-o $@ rsswitchd.c rsswitchd_proto.c \
 		-L$(LIBBUILD) -lrsswitch -lrt
 
+# The daemon links librsswitch.so, so a daemon installed on a system
+# without the library fails at every start. install checks first that
+# the library is installed, and stops with a hint if it is not. The
+# library is installed by the top Makefile; it is not installed here.
+# A library that was installed with another LIBDIR needs the same
+# LIBDIR on this command line.
+#
 # The daemon runs as the unprivileged system user rsswitchd, in the
 # gpio group for GPIO access. Both the group and the user are
 # created only when missing, so a second install keeps them.
@@ -87,6 +101,10 @@ rsswitchd: rsswitchd.c rsswitchd_proto.c rsswitchd_proto.h \
 install:
 	@if [ ! -x rsswitchd ]; then \
 		echo "rsswitchd has not been built, run make in examples/network first" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -e "$(DESTDIR)$(LIBDIR)/librsswitch.so.$(MAJOR)" ]; then \
+		echo "librsswitch.so.$(MAJOR) is not installed in $(DESTDIR)$(LIBDIR); install the library first: make -C $(TOP) && sudo make -C $(TOP) install" >&2; \
 		exit 1; \
 	fi
 	install -D -m 0755 rsswitchd $(DESTDIR)$(PREFIX)/bin/rsswitchd

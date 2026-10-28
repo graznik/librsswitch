@@ -15,9 +15,17 @@ library first and then the daemon:
 ```bash
 cd librsswitch
 make
+sudo make install
 make -C examples/network
 sudo make -C examples/network install
 ```
+
+The library goes in first (`make && sudo make install`, see
+"Installing the library" in the main README). sudo make -C
+examples/network install installs only the daemon and its unit, and
+stops with a hint, installing nothing, when librsswitch.so.1 is
+missing in LIBDIR. A library installed with another LIBDIR needs the
+same LIBDIR on the daemon's install command.
 
 The same build serves the Raspberry Pi, the Raspberry Pi 3 and the
 BeagleBone Black. sudo make install creates the gpio group and the
@@ -27,7 +35,10 @@ the binary that was just installed -- one step end to end.
 
 Running sudo make install again after a new build is the upgrade: the
 group and the user are kept, the binary and the unit are replaced, and
-the daemon is restarted.
+the daemon is restarted. An rsswitchd that was installed before the
+library was a shared one has the library code inside it. Upgrading it
+needs the library installed first, as above, or the new daemon cannot
+start and systemd gives up after the start limit.
 
 For a staged install (packaging, or checking the result without
 root), use `make install DESTDIR=<dir>`: the binary and unit file

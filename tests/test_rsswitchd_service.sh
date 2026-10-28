@@ -17,7 +17,8 @@
 # Checks how rsswitchd is run as a service from examples/network,
 # starting with the start limit of rsswitchd.service: a start that
 # always fails must end in the failed state instead of being retried
-# for ever. It also checks make install with stand-ins for systemctl
+# for ever, and that the unit hides nothing the dynamic loader needs.
+# It also checks make install with stand-ins for systemctl
 # and the account tools, and with an install wrapper that refuses
 # absolute destination arguments outside a temporary directory,
 # target-directory options and paths with "..". Other tools are not
@@ -186,6 +187,36 @@ check "[Service] has SupplementaryGroups=gpio" \
 	is_value Service SupplementaryGroups gpio
 check "[Service] has no Nice=" \
 	no_nice
+
+# The daemon links the shared library, which the loader finds through
+# the loader cache in /usr/local/lib. The unit must not point the loader
+# elsewhere, and must not hide that directory.
+
+# no_loader_env: no Environment= line names a variable that changes
+# which library the loader maps.
+no_loader_env()
+{
+	! unit_values Service Environment | grep -Eq 'LD_LIBRARY_PATH|LD_PRELOAD'
+}
+
+# nothing_hidden_below_usr: no option that hides a path or mounts over
+# it names /usr.
+nothing_hidden_below_usr()
+{
+	for key in InaccessiblePaths TemporaryFileSystem BindPaths \
+		BindReadOnlyPaths; do
+		! unit_values Service "$key" | grep -q /usr || return 1
+	done
+}
+
+check "[Service] sets no LD_LIBRARY_PATH or LD_PRELOAD" no_loader_env
+check "[Service] hides nothing below /usr" nothing_hidden_below_usr
+check "[Service] keeps ProtectSystem=strict" \
+	is_value Service ProtectSystem strict
+check "[Service] keeps ProtectHome=yes" \
+	is_value Service ProtectHome yes
+check "[Service] keeps NoNewPrivileges=yes" \
+	is_value Service NoNewPrivileges yes
 
 # The install checks. The tools of the recipe that manage accounts and
 # the service are stand-ins in $S/bin, first in PATH: systemctl, getent,
@@ -400,6 +431,15 @@ reset_failed_tolerated()
 
 check "the five tools resolve into the stand-in directory" shims_first
 
+# The install of the daemon refuses when the library is not installed.
+# The stand-in is an empty file named like the library of the SONAME,
+# in the library directory of each install form below.
+LIBMAJOR=$(awk '$2 == "LIBRSSWITCH_VERSION_MAJOR" { print $3 }' \
+	"$NET/../../librsswitch.h")
+mkdir -p "$S/prefix/lib" "$S/stage/usr/local/lib" || exit 1
+: > "$S/prefix/lib/librsswitch.so.$LIBMAJOR"
+: > "$S/stage/usr/local/lib/librsswitch.so.$LIBMAJOR"
+
 install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units"
 unstaged_rc=$?
 check "install exits 0" test "$unstaged_rc" -eq 0
@@ -467,6 +507,62 @@ reset_rc=$?
 rm -f "$S/fail-reset-failed"
 check "a failing reset-failed does not stop the install" \
 	reset_failed_tolerated
+
+# refused_cleanly WHERE: the install that just ran was refused for the
+# missing library: make failed, the hint is in its output, WHERE
+# holds no daemon and no service tool was called.
+refused_cleanly()
+{
+	[ "$refused_rc" -ne 0 ] &&
+		grep -q 'install the library first' "$S/make.log" &&
+		[ ! -e "$1/bin/rsswitchd" ] &&
+		[ ! -e "$1/usr/local/bin/rsswitchd" ] &&
+		[ -z "$(systemctl_calls)" ]
+}
+
+# Without the library the install stops before it installs anything.
+: > "$S/calls.log"
+install_run PREFIX="$S/bare" SYSTEMD_UNIT_DIR="$S/bare-units"
+refused_rc=$?
+check "install without the library refuses (PREFIX)" \
+	refused_cleanly "$S/bare"
+check "install without the library puts no unit in place (PREFIX)" \
+	test ! -e "$S/bare-units/rsswitchd.service"
+
+: > "$S/calls.log"
+install_run DESTDIR="$S/bare-stage"
+refused_rc=$?
+check "install without the library refuses (DESTDIR)" \
+	refused_cleanly "$S/bare-stage"
+check "install without the library puts no unit in place (DESTDIR)" \
+	test ! -e "$S/bare-stage/etc/systemd/system/rsswitchd.service"
+
+# A dangling link is not a library either.
+mkdir -p "$S/dangling/lib"
+ln -s no-such-library "$S/dangling/lib/librsswitch.so.$LIBMAJOR"
+: > "$S/calls.log"
+install_run PREFIX="$S/dangling" SYSTEMD_UNIT_DIR="$S/dangling-units"
+refused_rc=$?
+check "install refuses a dangling library link" \
+	refused_cleanly "$S/dangling"
+
+# LIBDIR on the command line moves the place that is checked: the
+# library of PREFIX does not count then, one in LIBDIR does.
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units" \
+	LIBDIR="$S/elsewhere"
+refused_rc=$?
+check "install looks for the library in LIBDIR" \
+	grep -q 'install the library first' "$S/make.log"
+check "install with a wrong LIBDIR exits non-zero" \
+	test "$refused_rc" -ne 0
+
+mkdir -p "$S/elsewhere"
+: > "$S/elsewhere/librsswitch.so.$LIBMAJOR"
+: > "$S/calls.log"
+install_run PREFIX="$S/prefix" SYSTEMD_UNIT_DIR="$S/units" \
+	LIBDIR="$S/elsewhere"
+check "install with the library in LIBDIR exits 0" test $? -eq 0
 
 # wrapper_refuses ARG: the install wrapper, run by its full path with
 # ARG and a source that does not exist, exits non-zero and logs
