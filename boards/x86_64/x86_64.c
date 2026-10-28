@@ -29,14 +29,14 @@
  */
 static const struct x86_64_inject {
 	const char *name;
-	enum socket_err cause;
+	enum rss_err cause;
 } inject_table[] = {
-	{ "failnochip", SOCKET_ERR_NOCHIP },
-	{ "failbusy", SOCKET_ERR_BUSY },
-	{ "faildenied", SOCKET_ERR_DENIED },
-	{ "failbadline", SOCKET_ERR_BADLINE },
-	{ "failio", SOCKET_ERR_IO },
-	{ "failother", SOCKET_ERR_OTHER },
+	{ "failnochip", RSS_ERR_NOCHIP },
+	{ "failbusy", RSS_ERR_BUSY },
+	{ "faildenied", RSS_ERR_DENIED },
+	{ "failbadline", RSS_ERR_BADLINE },
+	{ "failio", RSS_ERR_IO },
+	{ "failother", RSS_ERR_OTHER },
 };
 
 static struct x86_64_pulse recorder[X86_64_RECORDER_MAX_PULSES];
@@ -53,17 +53,17 @@ static int inject_io;
 
 /*
  * Returns the cause a config asks the stub to fail with, or
- * SOCKET_ERR_NONE. Only a table name directly followed by ':' counts.
+ * RSS_ERR_NONE. Only a table name directly followed by ':' counts.
  * This is a plain prefix match and does not use the shared chip:line
  * parser, which logs on malformed input, because the stub's
  * board_init() still accepts any string.
  */
-static enum socket_err injected_cause(const char *config)
+static enum rss_err injected_cause(const char *config)
 {
 	size_t i;
 
 	if (!config)
-		return SOCKET_ERR_NONE;
+		return RSS_ERR_NONE;
 
 	for (i = 0; i < ARRAY_SIZE(inject_table); i++) {
 		size_t len = strlen(inject_table[i].name);
@@ -73,7 +73,7 @@ static enum socket_err injected_cause(const char *config)
 			return inject_table[i].cause;
 	}
 
-	return SOCKET_ERR_NONE;
+	return RSS_ERR_NONE;
 }
 
 /*
@@ -86,11 +86,11 @@ static enum socket_err injected_cause(const char *config)
  */
 int32_t board_init(const char *config)
 {
-	enum socket_err cause = injected_cause(config);
+	enum rss_err cause = injected_cause(config);
 
 	init_count++;
-	inject_io = cause == SOCKET_ERR_IO;
-	if (cause != SOCKET_ERR_NONE && cause != SOCKET_ERR_IO) {
+	inject_io = cause == RSS_ERR_IO;
+	if (cause != RSS_ERR_NONE && cause != RSS_ERR_IO) {
 		sched_yield();
 		return -(int32_t)cause;
 	}
@@ -131,7 +131,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 {
 	if (inject_io) {
 		sched_yield();
-		return -(int32_t)SOCKET_ERR_IO;
+		return -(int32_t)RSS_ERR_IO;
 	}
 
 	if (recorder_count == fail_at_index) {

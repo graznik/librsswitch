@@ -22,13 +22,13 @@
 /*
  * Thread safety
  *
- * socket_send(), socket_send_codeword() and socket_gpio_config() are
+ * rss_send(), rss_send_codeword() and rss_gpio_config() are
  * safe to call concurrently from multiple threads of the same
  * process. Every send session -- board_init(),
  * all repetitions, board_exit() -- is serialized by one library-wide
  * lock, so concurrent sends never interleave their pulses; a calling
  * thread simply blocks until the previous send session completes.
- * socket_gpio_config() takes the same lock around its store, so a
+ * rss_gpio_config() takes the same lock around its store, so a
  * config change is ordered against sends that start after it returns
  * (it does not affect a session already in progress).
  *
@@ -40,50 +40,50 @@
  * functions from a signal handler. Cancelling a thread while it is
  * inside a send is not supported; doing so may leave the lock held.
  *
- * socket_addr_limits() and socket_gpio_config_check() take no lock at
+ * rss_addr_limits() and rss_gpio_config_check() take no lock at
  * all and read no shared state. The first only reads the same constant
- * tables socket_send() checks addresses against; the second only
+ * tables rss_send() checks addresses against; the second only
  * parses the string it is given, and neither touches gpio_config or
  * opens the board. They are safe to call concurrently with any of the
  * functions above, from any thread.
  *
- * socket_last_error() takes no lock either: it reads state that is
+ * rss_last_error() takes no lock either: it reads state that is
  * private to the calling thread, so it is safe from any thread and a
  * send in another thread never changes what it returns.
  */
 
 /*
  * Sets the GPIO config string passed to board_init() on every
- * subsequent socket_send() call. NULL (the default, if never called)
+ * subsequent rss_send() call. NULL (the default, if never called)
  * means "use this board's compiled-in default". On the libgpiod boards
  * a non-NULL config that cannot be parsed is not replaced by the
- * default: every following socket_send() and socket_send_codeword()
+ * default: every following rss_send() and rss_send_codeword()
  * call returns -1 without opening a GPIO chip, and the error is
  * logged. Format is board-specific -- see the README section "GPIO
  * configuration"; the libgpiod boards parse it in
  * boards/gpiod/gpiod_config.c. rsssend and rsswitchd call
- * socket_gpio_config_check() first and refuse a malformed config.
+ * rss_gpio_config_check() first and refuse a malformed config.
  * config is not copied; the pointer must stay valid for as long as
- * socket_send() may still be called.
+ * rss_send() may still be called.
  */
-void socket_gpio_config(const char *config);
+void rss_gpio_config(const char *config);
 
 /*
  * Checks a GPIO config string without storing it and without touching
  * the GPIO. Returns 0 for NULL (the board default) and for a config
  * the board can parse, and -1 for a malformed one, with the cause
  * logged via syslog by the board. Well-formed does not mean the chip
- * exists: only the format is checked, and the first socket_send()
- * still reports a missing chip. Call it before socket_gpio_config() to
+ * exists: only the format is checked, and the first rss_send()
+ * still reports a missing chip. Call it before rss_gpio_config() to
  * refuse a bad config at start-up. It takes no lock and never touches
  * the board.
  */
-int32_t socket_gpio_config_check(const char *config);
+int32_t rss_gpio_config_check(const char *config);
 
 /*
  * Sends a switch command for one of the two built-in device tables.
  *
- * dev is REV_008345 or POLLIN_2605 (see enum socket_type below). group
+ * dev is RSS_REV_008345 or RSS_POLLIN_2605 (see enum rss_type below). group
  * is 0-3 for REV 008345 and 0-31 for Pollin 2605. socket is 0-2 for
  * REV 008345 and 0-31 for Pollin 2605. data is 0 for off, 1 for on.
  *
@@ -96,52 +96,52 @@ int32_t socket_gpio_config_check(const char *config);
  * codeword is printed to stdout.
  *
  * Returns 0 on success, -1 for an invalid argument or a board error;
- * socket_last_error() then tells why. Serialized with
- * socket_send_codeword() by the same lock -- see "Thread safety"
+ * rss_last_error() then tells why. Serialized with
+ * rss_send_codeword() by the same lock -- see "Thread safety"
  * above.
  */
-int32_t socket_send(uint32_t dev, uint32_t group,
-		    uint32_t socket, uint32_t data);
+int32_t rss_send(uint32_t dev, uint32_t group,
+		 uint32_t socket, uint32_t data);
 
 /*
  * Reports the valid address range for dev: groups 0 to *ngroups - 1,
  * sockets 0 to *nsockets - 1, data 0 to *ndata - 1 -- the same bounds
- * socket_send() enforces internally, read from the same constant
+ * rss_send() enforces internally, read from the same constant
  * tables. Lets a caller such as rsswitchd validate an address itself
- * before calling socket_send(), without hand-copying the table sizes,
+ * before calling rss_send(), without hand-copying the table sizes,
  * so the two checks cannot drift apart.
  *
  * Returns 0 and fills *ngroups, *nsockets and *ndata, or -1 for an
  * unknown dev or a NULL pointer, leaving the outputs untouched. Takes
  * no lock and never touches the board -- see "Thread safety" above.
  */
-int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
-			   uint32_t *nsockets, uint32_t *ndata);
+int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
+			uint32_t *nsockets, uint32_t *ndata);
 
 /*
- * Bounds for socket_send_codeword()'s tristate argument: byte length
- * before the first NUL, in [SOCKET_CODEWORD_MIN_LEN,
- * SOCKET_CODEWORD_MAX_LEN]. 12 is the PT2260/PT2262 tri-state word
+ * Bounds for rss_send_codeword()'s tristate argument: byte length
+ * before the first NUL, in [RSS_CODEWORD_MIN_LEN,
+ * RSS_CODEWORD_MAX_LEN]. 12 is the PT2260/PT2262 tri-state word
  * length -- both supported chips use a 12-symbol codeword.
  */
-#define SOCKET_CODEWORD_MIN_LEN 1U
-#define SOCKET_CODEWORD_MAX_LEN 12U
+#define RSS_CODEWORD_MIN_LEN 1U
+#define RSS_CODEWORD_MAX_LEN 12U
 
 /*
- * Bounds for socket_send_codeword()'s pulse_len argument, in
+ * Bounds for rss_send_codeword()'s pulse_len argument, in
  * microseconds. Wide enough for both supported chips at their
  * documented 350us pulse, narrow enough that a typo cannot hold the
  * GPIO line high for more than a few milliseconds per pulse.
  */
-#define SOCKET_PULSE_LEN_MIN_US 50U
-#define SOCKET_PULSE_LEN_MAX_US 2000U
+#define RSS_PULSE_LEN_MIN_US 50U
+#define RSS_PULSE_LEN_MAX_US 2000U
 
 /*
  * Sends a raw tri-state codeword, instead of one of the two built-in
- * device tables socket_send() encodes.
+ * device tables rss_send() encodes.
  *
  * tristate's length (the number of bytes before its first NUL) must
- * be within [SOCKET_CODEWORD_MIN_LEN, SOCKET_CODEWORD_MAX_LEN]. Every
+ * be within [RSS_CODEWORD_MIN_LEN, RSS_CODEWORD_MAX_LEN]. Every
  * one of those bytes must be the ASCII character '0', '1' or
  * uppercase 'F' -- lowercase, whitespace, and any other byte
  * (including a multi-byte UTF-8 sequence) is rejected. tristate is
@@ -149,63 +149,63 @@ int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
  * rejected in full.
  *
  * pulse_len is in microseconds and must be within
- * [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US].
+ * [RSS_PULSE_LEN_MIN_US, RSS_PULSE_LEN_MAX_US].
  *
  * On success, tristate is sent NTIMES (10 -- the same repeat count
- * socket_send() uses), each repetition followed by a sync pulse.
+ * rss_send() uses), each repetition followed by a sync pulse.
  * Input is fully validated before board_init() or any GPIO access;
  * an invalid tristate or pulse_len never touches the board. On the
  * x86_64 build, the codeword is printed to stdout, exactly like
- * socket_send() does.
+ * rss_send() does.
  *
  * Returns 0 on success, -1 on error (invalid input, or a board
- * error); socket_last_error() then tells why. Serialized with
- * socket_send() by the same lock -- see "Thread safety" above.
+ * error); rss_last_error() then tells why. Serialized with
+ * rss_send() by the same lock -- see "Thread safety" above.
  */
-int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len);
+int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len);
 
 /*
  * Why a send failed. The values are part of the library's ABI: they
  * never change, and a later cause is only ever added after
- * SOCKET_ERR_ARG.
+ * RSS_ERR_ARG.
  *
- * SOCKET_ERR_NONE:    no failure.
- * SOCKET_ERR_OTHER:   a failure the library cannot classify, including
+ * RSS_ERR_NONE:    no failure.
+ * RSS_ERR_OTHER:   a failure the library cannot classify, including
  *                     every board that only reports a plain -1.
- * SOCKET_ERR_NOCHIP:  the GPIO chip does not exist.
- * SOCKET_ERR_BUSY:    the line is in use by another program or process.
- * SOCKET_ERR_DENIED:  no permission to open the chip.
- * SOCKET_ERR_BADLINE: the line offset is not valid for the chip.
- * SOCKET_ERR_IO:      driving the line failed during the send.
- * SOCKET_ERR_ARG:     the call was rejected before the board was
+ * RSS_ERR_NOCHIP:  the GPIO chip does not exist.
+ * RSS_ERR_BUSY:    the line is in use by another program or process.
+ * RSS_ERR_DENIED:  no permission to open the chip.
+ * RSS_ERR_BADLINE: the line offset is not valid for the chip.
+ * RSS_ERR_IO:      driving the line failed during the send.
+ * RSS_ERR_ARG:     the call was rejected before the board was
  *                     touched: an invalid dev, group, socket, data,
  *                     codeword or pulse_len.
  */
-enum socket_err {
-		 SOCKET_ERR_NONE = 0,
-		 SOCKET_ERR_OTHER = 1,
-		 SOCKET_ERR_NOCHIP = 2,
-		 SOCKET_ERR_BUSY = 3,
-		 SOCKET_ERR_DENIED = 4,
-		 SOCKET_ERR_BADLINE = 5,
-		 SOCKET_ERR_IO = 6,
-		 SOCKET_ERR_ARG = 7
+enum rss_err {
+		 RSS_ERR_NONE = 0,
+		 RSS_ERR_OTHER = 1,
+		 RSS_ERR_NOCHIP = 2,
+		 RSS_ERR_BUSY = 3,
+		 RSS_ERR_DENIED = 4,
+		 RSS_ERR_BADLINE = 5,
+		 RSS_ERR_IO = 6,
+		 RSS_ERR_ARG = 7
 };
 
 /*
- * Returns the cause of the calling thread's last socket_send() or
- * socket_send_codeword() call: SOCKET_ERR_NONE after a success, the
+ * Returns the cause of the calling thread's last rss_send() or
+ * rss_send_codeword() call: RSS_ERR_NONE after a success, the
  * reason after a failure. Every send call sets it, so a success never
  * leaves a stale cause behind; every other library function leaves it
- * unchanged. Before the thread's first send it is SOCKET_ERR_NONE.
+ * unchanged. Before the thread's first send it is RSS_ERR_NONE.
  * It takes no lock and never blocks. The cause is per thread: a send
  * in another thread never changes it.
  */
-enum socket_err socket_last_error(void);
+enum rss_err rss_last_error(void);
 
-enum socket_type {
-		  REV_008345,
-		  POLLIN_2605
+enum rss_type {
+		  RSS_REV_008345,
+		  RSS_POLLIN_2605
 };
 
 #endif /* LIBRSSWITCH_H */

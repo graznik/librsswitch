@@ -120,10 +120,10 @@ static int field_to_u32(const char *s, size_t len, uint32_t *out)
 
 /*
  * Checks dev, group, socket and data against librsswitch.h's
- * socket_addr_limits(), in that field order, and fills
+ * rss_addr_limits(), in that field order, and fills
  * *cmd accordingly: PROTO_SWITCH when every field is in range, or
  * PROTO_ERROR/PROTO_ERR_RANGE naming the first out-of-range field
- * otherwise. The check always happens before socket_send() is ever
+ * otherwise. The check always happens before rss_send() is ever
  * called -- which still checks again on its own.
  */
 static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
@@ -131,7 +131,7 @@ static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
 {
 	uint32_t ngroups, nsockets, ndata;
 
-	if (socket_addr_limits(dev, &ngroups, &nsockets, &ndata) < 0) {
+	if (rss_addr_limits(dev, &ngroups, &nsockets, &ndata) < 0) {
 		cmd->kind = PROTO_ERROR;
 		cmd->err = PROTO_ERR_RANGE;
 		snprintf(cmd->text, sizeof(cmd->text), "dev %" PRIu32
@@ -176,8 +176,8 @@ static void check_range(struct proto_cmd *cmd, uint32_t dev, uint32_t group,
  * syntax error, not a range error. pulse follows the same digit,
  * no-leading-zero and 10-digit rules as a v2 field (field_ok()).
  * Only once both pass syntax is either range-checked -- tristate's
- * length against SOCKET_CODEWORD_MAX_LEN, then pulse's converted
- * value against [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US] --
+ * length against RSS_CODEWORD_MAX_LEN, then pulse's converted
+ * value against [RSS_PULSE_LEN_MIN_US, RSS_PULSE_LEN_MAX_US] --
  * and only then is tristate copied into *cmd. Never builds an error
  * text from a byte of tristate or pulse.
  */
@@ -211,11 +211,11 @@ static void parse_raw(const char *tristate, size_t tlen, const char *pulse,
 		return;
 	}
 
-	if (tlen > SOCKET_CODEWORD_MAX_LEN) {
+	if (tlen > RSS_CODEWORD_MAX_LEN) {
 		cmd->kind = PROTO_ERROR;
 		cmd->err = PROTO_ERR_RANGE;
 		snprintf(cmd->text, sizeof(cmd->text),
-			 "tristate longer than %u", SOCKET_CODEWORD_MAX_LEN);
+			 "tristate longer than %u", RSS_CODEWORD_MAX_LEN);
 		return;
 	}
 
@@ -226,13 +226,13 @@ static void parse_raw(const char *tristate, size_t tlen, const char *pulse,
 		return;
 	}
 
-	if (pulse_len < SOCKET_PULSE_LEN_MIN_US ||
-	    pulse_len > SOCKET_PULSE_LEN_MAX_US) {
+	if (pulse_len < RSS_PULSE_LEN_MIN_US ||
+	    pulse_len > RSS_PULSE_LEN_MAX_US) {
 		cmd->kind = PROTO_ERROR;
 		cmd->err = PROTO_ERR_RANGE;
 		snprintf(cmd->text, sizeof(cmd->text), "pulse_len %" PRIu32
-			 " not in %u-%u", pulse_len, SOCKET_PULSE_LEN_MIN_US,
-			 SOCKET_PULSE_LEN_MAX_US);
+			 " not in %u-%u", pulse_len, RSS_PULSE_LEN_MIN_US,
+			 RSS_PULSE_LEN_MAX_US);
 		return;
 	}
 
@@ -402,22 +402,22 @@ static const struct proto_gpio_cause cause_io = {
 	"io", "writing to the GPIO line failed"
 };
 
-const struct proto_gpio_cause *proto_gpio_cause(enum socket_err cause)
+const struct proto_gpio_cause *proto_gpio_cause(enum rss_err cause)
 {
 	switch (cause) {
-	case SOCKET_ERR_NOCHIP:
+	case RSS_ERR_NOCHIP:
 		return &cause_nochip;
-	case SOCKET_ERR_BUSY:
+	case RSS_ERR_BUSY:
 		return &cause_busy;
-	case SOCKET_ERR_DENIED:
+	case RSS_ERR_DENIED:
 		return &cause_denied;
-	case SOCKET_ERR_BADLINE:
+	case RSS_ERR_BADLINE:
 		return &cause_badline;
-	case SOCKET_ERR_IO:
+	case RSS_ERR_IO:
 		return &cause_io;
-	case SOCKET_ERR_NONE:
-	case SOCKET_ERR_OTHER:
-	case SOCKET_ERR_ARG:
+	case RSS_ERR_NONE:
+	case RSS_ERR_OTHER:
+	case RSS_ERR_ARG:
 	default:
 		return NULL;
 	}

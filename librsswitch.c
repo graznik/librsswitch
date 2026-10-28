@@ -55,22 +55,22 @@ static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
 				uint32_t idata);
 static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len);
-static int32_t fail(enum socket_err err);
-static enum socket_err cause_from_board(int32_t ret);
+static int32_t fail(enum rss_err err);
+static enum rss_err cause_from_board(int32_t ret);
 
 static const char *gpio_config;
 
 /*
  * The cause of the calling thread's last send, returned by
- * socket_last_error(). The GNU storage class is used because the C11
+ * rss_last_error(). The GNU storage class is used because the C11
  * keyword is rejected by -pedantic under -std=c99.
  */
-static __thread enum socket_err last_error;
+static __thread enum rss_err last_error;
 
 /*
  * Serializes every send session (board_init() through board_exit(),
- * including all NTIMES repetitions) across socket_send() and
- * socket_send_codeword(), and also guards gpio_config -- see the
+ * including all NTIMES repetitions) across rss_send() and
+ * rss_send_codeword(), and also guards gpio_config -- see the
  * "Thread safety" comment in librsswitch.h.
  */
 static pthread_mutex_t send_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -110,7 +110,7 @@ static const char * const pollin_2605_data[] = {"F0", "0F"}; /* Off, On */
  * Fills ngroups, nsockets and ndata with dev's table sizes, the same
  * bounds address_check() enforces -- or returns -1 for an unknown dev
  * without logging. Both address_check() and the public
- * socket_addr_limits() call this, so the two can never see different
+ * rss_addr_limits() call this, so the two can never see different
  * bounds for the same dev: each decides for itself whether and what
  * to log about the result.
  */
@@ -118,12 +118,12 @@ static int32_t dev_limits(uint32_t dev, size_t *ngroups, size_t *nsockets,
 			  size_t *ndata)
 {
 	switch (dev) {
-	case REV_008345:
+	case RSS_REV_008345:
 		*ngroups = ARRAY_SIZE(rev_008345_groups);
 		*nsockets = ARRAY_SIZE(rev_008345_sockets);
 		*ndata = ARRAY_SIZE(rev_008345_data);
 		return 0;
-	case POLLIN_2605:
+	case RSS_POLLIN_2605:
 		*ngroups = ARRAY_SIZE(pollin_2605_groups);
 		*nsockets = ARRAY_SIZE(pollin_2605_sockets);
 		*ndata = ARRAY_SIZE(pollin_2605_data);
@@ -135,7 +135,7 @@ static int32_t dev_limits(uint32_t dev, size_t *ngroups, size_t *nsockets,
 
 /*
  * Rejects an unknown device or an out-of-range group, socket or data
- * for the given device. socket_send() calls this before send_lock and
+ * for the given device. rss_send() calls this before send_lock and
  * board_init(), so a rejected address never touches the board.
  */
 static int32_t address_check(uint32_t dev, uint32_t group, uint32_t socket,
@@ -195,7 +195,7 @@ static int32_t tristate_check(const char *codeword)
  * Records err as the cause of the calling thread's failed send and
  * returns -1, the value both public send functions return on failure.
  */
-static int32_t fail(enum socket_err err)
+static int32_t fail(enum rss_err err)
 {
 	last_error = err;
 	return -1;
@@ -204,17 +204,17 @@ static int32_t fail(enum socket_err err)
 /*
  * Turns the value a board returned into a cause. A board returns 0, -1
  * or -(int32_t)SOCKET_ERR_x for a failure it can name; -1 is
- * SOCKET_ERR_OTHER. A value outside that range is SOCKET_ERR_OTHER too.
+ * RSS_ERR_OTHER. A value outside that range is RSS_ERR_OTHER too.
  * The range is tested before ret is negated, so INT32_MIN is never
  * negated.
  */
-static enum socket_err cause_from_board(int32_t ret)
+static enum rss_err cause_from_board(int32_t ret)
 {
 	if (ret >= 0)
-		return SOCKET_ERR_NONE;
-	if (ret < -(int32_t)SOCKET_ERR_IO)
-		return SOCKET_ERR_OTHER;
-	return (enum socket_err)-ret;
+		return RSS_ERR_NONE;
+	if (ret < -(int32_t)RSS_ERR_IO)
+		return RSS_ERR_OTHER;
+	return (enum rss_err)-ret;
 }
 
 /**
@@ -323,7 +323,7 @@ static int32_t send_sync(uint32_t pulse_len)
  * @return 0 on success, -1 or a negative board cause on failure
  *
  * igroup, isocket and idata are already checked by address_check()
- * before socket_send() reaches this function -- it indexes the
+ * before rss_send() reaches this function -- it indexes the
  * file-scope tables directly.
  */
 static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
@@ -344,7 +344,7 @@ static int32_t rev_008345_send(uint32_t igroup, uint32_t isocket,
  * @return 0 on success, -1 or a negative board cause on failure
  *
  * igroup, isocket and idata are already checked by address_check()
- * before socket_send() reaches this function -- it indexes the
+ * before rss_send() reaches this function -- it indexes the
  * file-scope tables directly.
  */
 static int32_t pollin_2605_send(uint32_t igroup, uint32_t isocket,
@@ -369,7 +369,7 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 			   const char *data, uint32_t pulse_len)
 {
 	int n;
-	char codeword[SOCKET_CODEWORD_MAX_LEN + 1];
+	char codeword[RSS_CODEWORD_MAX_LEN + 1];
 
 	/* Generate the code word */
 	n = snprintf(codeword, sizeof(codeword), "%s%s%s", group, socket,
@@ -396,7 +396,7 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 	return send_tris(codeword, pulse_len);
 }
 
-void socket_gpio_config(const char *config)
+void rss_gpio_config(const char *config)
 {
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
@@ -406,13 +406,13 @@ void socket_gpio_config(const char *config)
 	pthread_mutex_unlock(&send_lock);
 }
 
-int32_t socket_gpio_config_check(const char *config)
+int32_t rss_gpio_config_check(const char *config)
 {
 	return board_config_check(config);
 }
 
-int32_t socket_send(uint32_t dev, uint32_t group,
-		    uint32_t socket, uint32_t data)
+int32_t rss_send(uint32_t dev, uint32_t group,
+		 uint32_t socket, uint32_t data)
 {
 	int32_t ret;
 
@@ -422,14 +422,14 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 	       ", data: %" PRIu32, dev, group, socket, data);
 #endif
 
-	last_error = SOCKET_ERR_NONE;
+	last_error = RSS_ERR_NONE;
 
 	if (address_check(dev, group, socket, data) < 0)
-		return fail(SOCKET_ERR_ARG);
+		return fail(RSS_ERR_ARG);
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
-		return fail(SOCKET_ERR_OTHER);
+		return fail(RSS_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config);
@@ -440,12 +440,12 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 	}
 
 	switch (dev) {
-	case REV_008345:
+	case RSS_REV_008345:
 		ret = rev_008345_send(group, socket, data);
 		if (ret < 0)
 			syslog(LOG_ERR, "[-] rev_008345_send()");
 		break;
-	case POLLIN_2605:
+	case RSS_POLLIN_2605:
 		ret = pollin_2605_send(group, socket, data);
 		if (ret < 0)
 			syslog(LOG_ERR, "[-] pollin_2605_send()");
@@ -462,8 +462,8 @@ int32_t socket_send(uint32_t dev, uint32_t group,
 	return ret < 0 ? fail(cause_from_board(ret)) : 0;
 }
 
-int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
-			   uint32_t *nsockets, uint32_t *ndata)
+int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
+			uint32_t *nsockets, uint32_t *ndata)
 {
 	size_t g, s, d;
 
@@ -479,38 +479,38 @@ int32_t socket_addr_limits(uint32_t dev, uint32_t *ngroups,
 	return 0;
 }
 
-int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)
+int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 {
 	size_t len;
 	int32_t ret;
 
-	last_error = SOCKET_ERR_NONE;
+	last_error = RSS_ERR_NONE;
 
 	if (!tristate) {
 		syslog(LOG_ERR, "[-] Invalid tristate codeword");
-		return fail(SOCKET_ERR_ARG);
+		return fail(RSS_ERR_ARG);
 	}
 
-	len = strnlen(tristate, SOCKET_CODEWORD_MAX_LEN + 1);
-	if (len < SOCKET_CODEWORD_MIN_LEN || len > SOCKET_CODEWORD_MAX_LEN) {
+	len = strnlen(tristate, RSS_CODEWORD_MAX_LEN + 1);
+	if (len < RSS_CODEWORD_MIN_LEN || len > RSS_CODEWORD_MAX_LEN) {
 		syslog(LOG_ERR, "[-] Invalid tristate codeword length %zu",
 		       len);
-		return fail(SOCKET_ERR_ARG);
+		return fail(RSS_ERR_ARG);
 	}
 
 	if (tristate_check(tristate) < 0)
-		return fail(SOCKET_ERR_ARG);
+		return fail(RSS_ERR_ARG);
 
-	if (pulse_len < SOCKET_PULSE_LEN_MIN_US ||
-	    pulse_len > SOCKET_PULSE_LEN_MAX_US) {
+	if (pulse_len < RSS_PULSE_LEN_MIN_US ||
+	    pulse_len > RSS_PULSE_LEN_MAX_US) {
 		syslog(LOG_ERR, "[-] pulse_len %" PRIu32 " out of range",
 		       pulse_len);
-		return fail(SOCKET_ERR_ARG);
+		return fail(RSS_ERR_ARG);
 	}
 
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
-		return fail(SOCKET_ERR_OTHER);
+		return fail(RSS_ERR_OTHER);
 	}
 
 	ret = board_init(gpio_config);
@@ -533,7 +533,7 @@ int32_t socket_send_codeword(const char *tristate, uint32_t pulse_len)
 	return ret < 0 ? fail(cause_from_board(ret)) : 0;
 }
 
-enum socket_err socket_last_error(void)
+enum rss_err rss_last_error(void)
 {
 	return last_error;
 }

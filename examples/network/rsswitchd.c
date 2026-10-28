@@ -296,13 +296,13 @@ int main(int argc, char *argv[])
 	 * every switching command with an error while systemd saw a
 	 * healthy unit. Refuse it here, before the port is opened.
 	 */
-	if (socket_gpio_config_check(gpio_config) < 0) {
+	if (rss_gpio_config_check(gpio_config) < 0) {
 		fprintf(stderr, "rsswitchd: malformed --gpio '%s'\n",
 			gpio_config);
 		exit(1);
 	}
 
-	socket_gpio_config(gpio_config);
+	rss_gpio_config(gpio_config);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (listenfd < 0)
@@ -661,7 +661,7 @@ static int handle_command(int connfd, const char *ip,
 		return send_reply(connfd, ip, reply);
 	}
 	case PROTO_SWITCH:
-		if (socket_send(cmd->dev, cmd->group, cmd->socket,
+		if (rss_send(cmd->dev, cmd->group, cmd->socket,
 				 cmd->data) == 0) {
 			syslog(LOG_NOTICE,
 			       "%s: sent dev %" PRIu32 " group %" PRIu32
@@ -672,7 +672,7 @@ static int handle_command(int connfd, const char *ip,
 		}
 		return reply_send_failure(connfd, ip);
 	case PROTO_RAW:
-		if (socket_send_codeword(cmd->tristate, cmd->pulse_len) == 0) {
+		if (rss_send_codeword(cmd->tristate, cmd->pulse_len) == 0) {
 			syslog(LOG_NOTICE,
 			       "%s: sent raw %s pulse_len %" PRIu32,
 			       ip, cmd->tristate, cmd->pulse_len);
@@ -696,7 +696,7 @@ static int handle_command(int connfd, const char *ip,
  */
 static int reply_send_failure(int connfd, const char *ip)
 {
-	enum socket_err cause = socket_last_error();
+	enum rss_err cause = rss_last_error();
 	const struct proto_gpio_cause *known = proto_gpio_cause(cause);
 	char text[PROTO_TEXT_LEN];
 	char reply[96];

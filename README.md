@@ -150,16 +150,16 @@ make -C examples/network x86_64
 Six public functions, declared in librsswitch.h.
 
 ```c
-socket_gpio_config(const char *config);
+rss_gpio_config(const char *config);
 ```
 
 Sets the GPIO configuration string used by every following
-socket_send()/socket_send_codeword() call. NULL (the default, if never
+rss_send()/rss_send_codeword() call. NULL (the default, if never
 called) means "use this board's compiled-in default". Format is
 per-board -- see "GPIO configuration" below.
 
 ```c
-socket_gpio_config_check(const char *config);
+rss_gpio_config_check(const char *config);
 ```
 
 Checks a GPIO configuration string without storing it and without
@@ -167,11 +167,11 @@ touching the GPIO. Returns 0 for NULL and for a string the board can
 parse, and -1 for a malformed one, after the board has logged the
 cause via syslog. Only the format is checked, so a well-formed string
 may still name a chip that does not exist; the first send reports
-that. Call it before socket_gpio_config() to refuse a bad
+that. Call it before rss_gpio_config() to refuse a bad
 configuration at start-up, as rsssend and rsswitchd do.
 
 ```c
-socket_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
+rss_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
 ```
 
 - dev: 0 = REV 008345, 1 = Pollin 2605
@@ -180,67 +180,67 @@ socket_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
 - data: 1 = On, 0 = Off
 
 Returns 0 on success, -1 for an out-of-range group/socket/data, an
-unknown dev, or a board error; socket_last_error() then tells why.
+unknown dev, or a board error; rss_last_error() then tells why.
 Arguments are fully validated before board_init() or any GPIO access,
 so an invalid address never touches the board and nothing is sent.
 
 ```c
-socket_send_codeword(const char *tristate, uint32_t pulse_len);
+rss_send_codeword(const char *tristate, uint32_t pulse_len);
 ```
 
 Sends a raw tri-state codeword instead of one of the two built-in
 device tables above.
 
-- tristate: 1 to SOCKET_CODEWORD_MAX_LEN (12) bytes of '0', '1' and
+- tristate: 1 to RSS_CODEWORD_MAX_LEN (12) bytes of '0', '1' and
   uppercase 'F'
-- pulse_len: microseconds, between SOCKET_PULSE_LEN_MIN_US (50) and
-  SOCKET_PULSE_LEN_MAX_US (2000)
+- pulse_len: microseconds, between RSS_PULSE_LEN_MIN_US (50) and
+  RSS_PULSE_LEN_MAX_US (2000)
 
 Input is fully validated before board_init() or any GPIO access, so an
 invalid tristate or pulse_len never touches the board. On success,
 tristate is sent 10 times, each repetition followed by a sync pulse --
-the same repeat count socket_send() uses. On the x86_64 build, the
-codeword is printed to stdout, exactly like socket_send() does.
+the same repeat count rss_send() uses. On the x86_64 build, the
+codeword is printed to stdout, exactly like rss_send() does.
 
 Returns 0 on success, -1 on error (invalid input, or a board error);
-socket_last_error() then tells why.
+rss_last_error() then tells why.
 
 ```c
-socket_last_error(void);
+rss_last_error(void);
 ```
 
-Returns the cause of the calling thread's last socket_send() or
-socket_send_codeword() call as an `enum socket_err`:
+Returns the cause of the calling thread's last rss_send() or
+rss_send_codeword() call as an `enum rss_err`:
 
-- SOCKET_ERR_NONE (0): no failure
-- SOCKET_ERR_OTHER (1): a failure the library cannot classify,
+- RSS_ERR_NONE (0): no failure
+- RSS_ERR_OTHER (1): a failure the library cannot classify,
   including every board that only reports a plain -1
-- SOCKET_ERR_NOCHIP (2): the GPIO chip does not exist
-- SOCKET_ERR_BUSY (3): the line is in use by another program or
+- RSS_ERR_NOCHIP (2): the GPIO chip does not exist
+- RSS_ERR_BUSY (3): the line is in use by another program or
   process
-- SOCKET_ERR_DENIED (4): no permission to open the chip
-- SOCKET_ERR_BADLINE (5): the line offset is not valid for the chip
-- SOCKET_ERR_IO (6): driving the line failed during the send
-- SOCKET_ERR_ARG (7): the call was rejected before the board was
+- RSS_ERR_DENIED (4): no permission to open the chip
+- RSS_ERR_BADLINE (5): the line offset is not valid for the chip
+- RSS_ERR_IO (6): driving the line failed during the send
+- RSS_ERR_ARG (7): the call was rejected before the board was
   touched (an invalid dev, group, socket, data, codeword or pulse_len)
 
-Every send call sets the cause, so it is SOCKET_ERR_NONE after a
+Every send call sets the cause, so it is RSS_ERR_NONE after a
 success. The cause is kept per thread: a send in another thread never
 changes it. The other functions leave it unchanged. The values never
-change; a later cause is only added after SOCKET_ERR_ARG. Which
+change; a later cause is only added after RSS_ERR_ARG. Which
 causes a failure can have besides OTHER depends on the board; the
 libgpiod boards are described in "GPIO configuration" below.
 
 ```c
-socket_addr_limits(uint32_t dev, uint32_t *ngroups, uint32_t *nsockets,
+rss_addr_limits(uint32_t dev, uint32_t *ngroups, uint32_t *nsockets,
 uint32_t *ndata);
 ```
 
-Reports the valid address range for dev, the same bounds socket_send()
+Reports the valid address range for dev, the same bounds rss_send()
 enforces: REV 008345 has 4 groups, 3 sockets and 2 data values; Pollin
 2605 has 32 groups, 32 sockets and 2 data values. Lets a caller (such
-as rsswitchd) validate an address itself before calling socket_send(),
-reading the same tables socket_send() does instead of copying the
+as rsswitchd) validate an address itself before calling rss_send(),
+reading the same tables rss_send() does instead of copying the
 sizes elsewhere.
 
 Returns 0 and fills `*ngroups`, `*nsockets` and `*ndata`, or -1 for an
@@ -249,20 +249,20 @@ unknown dev or a NULL pointer, leaving the outputs untouched.
 
 ## Thread safety
 
-socket_send(), socket_send_codeword(), socket_addr_limits(),
-socket_gpio_config_check(), socket_gpio_config() and
-socket_last_error() are safe to call concurrently from multiple
+rss_send(), rss_send_codeword(), rss_addr_limits(),
+rss_gpio_config_check(), rss_gpio_config() and
+rss_last_error() are safe to call concurrently from multiple
 threads of the same process. Every send session -- board_init(), all
 repetitions, board_exit() -- is serialized by one library-wide lock,
 so concurrent sends never interleave their pulses; a calling thread
 simply blocks until the previous send session completes.
-socket_gpio_config() takes the same lock around its store, so a config
+rss_gpio_config() takes the same lock around its store, so a config
 change is ordered against sends that start after it returns (it does
-not affect a session already in progress). socket_addr_limits() and
-socket_gpio_config_check() take no lock at all: the first only reads
+not affect a session already in progress). rss_addr_limits() and
+rss_gpio_config_check() take no lock at all: the first only reads
 constant tables, the second only parses the string it is given, and
 neither touches gpio_config or opens the board, so they never block
-and never wait behind a send in progress. socket_last_error() takes no
+and never wait behind a send in progress. rss_last_error() takes no
 lock either: it reads state that belongs to the calling thread only.
 
 This guarantee is process-local only: two separate processes driving
@@ -276,7 +276,7 @@ inside a send is not supported; doing so may leave the lock held.
 
 ## GPIO configuration
 
-The config string passed to socket_gpio_config() (or "--gpio" on the
+The config string passed to rss_gpio_config() (or "--gpio" on the
 example programs) is board-specific:
 
 - Raspberry Pi / Raspberry Pi 3 / BeagleBone Black: "chip:line", e.g.
@@ -285,40 +285,40 @@ example programs) is board-specific:
   such as "49", the BeagleBone Black's former format, a chip without
   a line, a chip name containing "/", or a chip name that does not
   start with a letter or digit, such as "..") is malformed. rsssend and
-  rsswitchd check the string with socket_gpio_config_check() and
+  rsswitchd check the string with rss_gpio_config_check() and
   refuse to start with exit status 1 and
   `<prog>: malformed --gpio '<value>'` on stderr, while the library
   logs "[-] Malformed GPIO config". On these libgpiod boards, a
-  program that stores such a string with socket_gpio_config() without
-  checking it still gets -1 from socket_send() and
-  socket_send_codeword(), and no GPIO chip is opened. The default is
+  program that stores such a string with rss_gpio_config() without
+  checking it still gets -1 from rss_send() and
+  rss_send_codeword(), and no GPIO chip is opened. The default is
   GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on a
   BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
   chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
   package and pass it as "chip:line".
 
-  After a failed send, socket_last_error() reports on these boards:
-  SOCKET_ERR_NOCHIP when the chip does not exist, SOCKET_ERR_BUSY when
-  the line is in use by another program, SOCKET_ERR_DENIED when the
-  process may not open the chip, SOCKET_ERR_BADLINE when the line
-  offset is not valid for the chip, and SOCKET_ERR_IO when a write to
-  the line failed. Every other failure is SOCKET_ERR_OTHER: a
+  After a failed send, rss_last_error() reports on these boards:
+  RSS_ERR_NOCHIP when the chip does not exist, RSS_ERR_BUSY when
+  the line is in use by another program, RSS_ERR_DENIED when the
+  process may not open the chip, RSS_ERR_BADLINE when the line
+  offset is not valid for the chip, and RSS_ERR_IO when a write to
+  the line failed. Every other failure is RSS_ERR_OTHER: a
   malformed config, an allocation failure and, on libgpiod 1.x, a
   device that exists but is not a GPIO chip. The last one stays
   "other" on purpose, because a wrong cause is worse than none.
 - x86_64: the host build checks the string with the same "chip:line"
   rules, so the programs refuse the same values, and its stub board
   drives no GPIO. Apart from the chip names below, the stub ignores the
-  string stored with socket_gpio_config(), so on this build
-  socket_send() and socket_send_codeword() succeed even with a
+  string stored with rss_gpio_config(), so on this build
+  rss_send() and rss_send_codeword() succeed even with a
   malformed one.
 
   A chip named failnochip, failbusy, faildenied, failbadline, failio
   or failother (followed by ":" and a line, e.g. "failbusy:0") makes
   the stub fail on purpose, so every failure cause can be tested
-  without hardware. socket_last_error() then reads SOCKET_ERR_NOCHIP,
-  SOCKET_ERR_BUSY, SOCKET_ERR_DENIED, SOCKET_ERR_BADLINE,
-  SOCKET_ERR_IO or SOCKET_ERR_OTHER. failio fails at the first pulse,
+  without hardware. rss_last_error() then reads RSS_ERR_NOCHIP,
+  RSS_ERR_BUSY, RSS_ERR_DENIED, RSS_ERR_BADLINE,
+  RSS_ERR_IO or RSS_ERR_OTHER. failio fails at the first pulse,
   so the codeword is still printed; the others fail before anything is
   sent. Every send fails while such a name is set. On a libgpiod board
   these names are ordinary chip names that do not exist, so they report

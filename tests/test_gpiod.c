@@ -609,7 +609,7 @@ static void test_missing_chip_logs_to_syslog(void)
 	stderr_bytes = call_board_init_capturing_stderr(
 		"librsswitch-test-nonexistent:17", &ret);
 
-	CHECK_EQ(ret, -(int32_t)SOCKET_ERR_NOCHIP);
+	CHECK_EQ(ret, -(int32_t)RSS_ERR_NOCHIP);
 	CHECK_EQ(stderr_bytes, 0);
 	CHECK(captured_count() > 0);
 	CHECK(captured_find("[-]"));
@@ -626,7 +626,7 @@ static void test_exit_without_open_chip(void)
 	captured_reset();
 	(void)call_board_init_capturing_stderr(
 		"librsswitch-test-nonexistent:17", &ret);
-	CHECK_EQ(ret, -(int32_t)SOCKET_ERR_NOCHIP);
+	CHECK_EQ(ret, -(int32_t)RSS_ERR_NOCHIP);
 
 	CHECK_EQ(board_exit(), 0);
 	CHECK_EQ(board_exit(), 0);
@@ -785,7 +785,7 @@ static void test_failed_low_write_driven_low_at_release(void)
 
 	captured_reset();
 	transmit_ret = transmit(1, 1, 1);
-	CHECK_EQ(transmit_ret, -(int32_t)SOCKET_ERR_IO);
+	CHECK_EQ(transmit_ret, -(int32_t)RSS_ERR_IO);
 	CHECK_EQ(mock_level, 1);
 	CHECK(captured_find(strerror(EIO)));
 
@@ -845,12 +845,12 @@ static void test_failed_drive_low_still_releases(void)
 	mock_fail_low_writes = 2;
 
 	transmit_ret = transmit(1, 1, 1);
-	CHECK_EQ(transmit_ret, -(int32_t)SOCKET_ERR_IO);
+	CHECK_EQ(transmit_ret, -(int32_t)RSS_ERR_IO);
 
 	captured_reset();
 	exit_ret = board_exit();
 
-	CHECK_EQ(exit_ret, -(int32_t)SOCKET_ERR_IO);
+	CHECK_EQ(exit_ret, -(int32_t)RSS_ERR_IO);
 	CHECK(captured_find("[-] Failed to drive GPIO line low"));
 	CHECK(captured_find(strerror(EIO)));
 	CHECK_EQ(mock_release_count, 1);
@@ -1000,7 +1000,7 @@ static void test_board_init_get_line_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_get_line = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BADLINE);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BADLINE);
 	CHECK(captured_find("[-] Failed to get GPIO line 3"));
 	check_board_init_failed_cleanly();
 
@@ -1018,7 +1018,7 @@ static void test_board_init_request_output_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_output = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BUSY);
 	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
 	CHECK(line == NULL);
 	check_board_init_failed_cleanly();
@@ -1071,7 +1071,7 @@ static void test_board_init_request_lines_fails(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_lines = 1;
 
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BUSY);
 	CHECK(captured_find("[-] Failed to request GPIO line 3 as output"));
 	CHECK(request == NULL);
 	check_board_init_failed_cleanly();
@@ -1122,13 +1122,13 @@ static void test_cause_from_errno(void)
 		int err;
 		int32_t expected;
 	} table[] = {
-		{ENOENT, -(int32_t)SOCKET_ERR_NOCHIP},
-		{ENODEV, -(int32_t)SOCKET_ERR_NOCHIP},
-		{ENXIO, -(int32_t)SOCKET_ERR_NOCHIP},
-		{EACCES, -(int32_t)SOCKET_ERR_DENIED},
-		{EPERM, -(int32_t)SOCKET_ERR_DENIED},
-		{EBUSY, -(int32_t)SOCKET_ERR_BUSY},
-		{EINVAL, -(int32_t)SOCKET_ERR_BADLINE},
+		{ENOENT, -(int32_t)RSS_ERR_NOCHIP},
+		{ENODEV, -(int32_t)RSS_ERR_NOCHIP},
+		{ENXIO, -(int32_t)RSS_ERR_NOCHIP},
+		{EACCES, -(int32_t)RSS_ERR_DENIED},
+		{EPERM, -(int32_t)RSS_ERR_DENIED},
+		{EBUSY, -(int32_t)RSS_ERR_BUSY},
+		{EINVAL, -(int32_t)RSS_ERR_BADLINE},
 		{0, -1},
 		{ENOTTY, -1},
 		{ENOMEM, -1},
@@ -1154,7 +1154,7 @@ static void test_errno_copied_before_logging(void)
 	captured_reset();
 	mock_clobber_errno = 1;
 	CHECK_EQ(board_init("librsswitch-test-nonexistent:17"),
-		 -(int32_t)SOCKET_ERR_NOCHIP);
+		 -(int32_t)RSS_ERR_NOCHIP);
 	CHECK(captured_count() > 0);
 	CHECK_EQ(board_exit(), 0);
 
@@ -1165,7 +1165,7 @@ static void test_errno_copied_before_logging(void)
 	mock_fake_chip_open = 1;
 	mock_fail_get_line = 1;
 	mock_clobber_errno = 1;
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BADLINE);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BADLINE);
 	CHECK_EQ(mock_close_count, 1);
 
 	/* The line request fails with EBUSY, and the chip is closed. */
@@ -1174,7 +1174,7 @@ static void test_errno_copied_before_logging(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_output = 1;
 	mock_clobber_errno = 1;
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BUSY);
 	CHECK_EQ(mock_close_count, 1);
 #else
 	/* The line request fails with EBUSY, and the chip is closed. */
@@ -1183,7 +1183,7 @@ static void test_errno_copied_before_logging(void)
 	mock_fake_chip_open = 1;
 	mock_fail_request_lines = 1;
 	mock_clobber_errno = 1;
-	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)SOCKET_ERR_BUSY);
+	CHECK_EQ(board_init("gpiochip9:3"), -(int32_t)RSS_ERR_BUSY);
 	CHECK_EQ(mock_close_count, 1);
 #endif
 

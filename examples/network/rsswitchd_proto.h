@@ -41,7 +41,7 @@
  *     value above UINT32_MAX) wins the PROTO_ERR_RANGE error.
  *   - Once dev, group, socket and data are all syntactically valid
  *     numbers, they are checked in that same order against
- *     librsswitch.h's socket_addr_limits() -- never
+ *     librsswitch.h's rss_addr_limits() -- never
  *     against a table copied into this file. The first field out of
  *     range wins: an unknown dev gives "dev %u unknown"; an
  *     out-of-range group, socket or data gives "<field> %u not in
@@ -56,9 +56,9 @@
  *     '1' and uppercase 'F'; pulse_len follows the same digit,
  *     no-leading-zero and 10-digit rules as a v2 field. Only once
  *     both pass syntax is either range-checked: a tristate longer
- *     than SOCKET_CODEWORD_MAX_LEN, checked before its length is used
+ *     than RSS_CODEWORD_MAX_LEN, checked before its length is used
  *     for anything else, or a pulse_len outside
- *     [SOCKET_PULSE_LEN_MIN_US, SOCKET_PULSE_LEN_MAX_US]. Passing
+ *     [RSS_PULSE_LEN_MIN_US, RSS_PULSE_LEN_MAX_US]. Passing
  *     both produces PROTO_RAW.
  *   - Any other line, including one of four digits without spaces, is
  *     an ordinary one-field line and a syntax error. It is not a
@@ -116,9 +116,9 @@ enum proto_kind {
 /*
  * The five error classes a reply's first word after "ERR " names.
  * PROTO_ERR_SEND and PROTO_ERR_GPIO are never produced by this parser
- * -- it has no socket_send() call to fail -- rsswitchd.c sets them
+ * -- it has no rss_send() call to fail -- rsswitchd.c sets them
  * after a library call returns -1: PROTO_ERR_GPIO when
- * socket_last_error() names a cause the protocol knows (see
+ * rss_last_error() names a cause the protocol knows (see
  * proto_gpio_cause()), PROTO_ERR_SEND for every other failure.
  * proto_err_name() maps each class to its wire/log word.
  */
@@ -144,14 +144,14 @@ struct proto_gpio_cause {
  *
  * kind == PROTO_SWITCH: dev/group/socket/data hold the parsed fields,
  * already checked against UINT32_MAX and against
- * socket_addr_limits()'s per-device bounds. err/text are
+ * rss_addr_limits()'s per-device bounds. err/text are
  * unused.
  *
  * kind == PROTO_RAW: tristate is a NUL-terminated string of '0', '1'
- * and uppercase 'F', 1 to SOCKET_CODEWORD_MAX_LEN bytes long, exactly
+ * and uppercase 'F', 1 to RSS_CODEWORD_MAX_LEN bytes long, exactly
  * as given by the client; pulse_len holds the parsed pulse length,
- * already checked against [SOCKET_PULSE_LEN_MIN_US,
- * SOCKET_PULSE_LEN_MAX_US]. Every other field is unused.
+ * already checked against [RSS_PULSE_LEN_MIN_US,
+ * RSS_PULSE_LEN_MAX_US]. Every other field is unused.
  *
  * kind == PROTO_ERROR: err names the class and text holds a short,
  * human-readable explanation built only from fixed words and
@@ -166,7 +166,7 @@ struct proto_cmd {
 	uint32_t group;
 	uint32_t socket;
 	uint32_t data;
-	char tristate[SOCKET_CODEWORD_MAX_LEN + 1];
+	char tristate[RSS_CODEWORD_MAX_LEN + 1];
 	uint32_t pulse_len;
 	enum proto_err err;
 	char text[PROTO_TEXT_LEN];
@@ -221,13 +221,13 @@ int proto_next(struct proto_conn *pc, const char **in, size_t *inlen,
 const char *proto_err_name(enum proto_err err);
 
 /*
- * Returns the fixed cause word and text for SOCKET_ERR_NOCHIP,
- * SOCKET_ERR_BUSY, SOCKET_ERR_DENIED, SOCKET_ERR_BADLINE and
- * SOCKET_ERR_IO, and NULL for every other value, including one outside
- * enum socket_err. The words and texts are part of the protocol: fixed
+ * Returns the fixed cause word and text for RSS_ERR_NOCHIP,
+ * RSS_ERR_BUSY, RSS_ERR_DENIED, RSS_ERR_BADLINE and
+ * RSS_ERR_IO, and NULL for every other value, including one outside
+ * enum rss_err. The words and texts are part of the protocol: fixed
  * ASCII without digits or "/", never OS error text, never part of the
  * configured chip name. The result points to static storage.
  */
-const struct proto_gpio_cause *proto_gpio_cause(enum socket_err cause);
+const struct proto_gpio_cause *proto_gpio_cause(enum rss_err cause);
 
 #endif /* RSSWITCHD_PROTO_H */

@@ -28,8 +28,8 @@ FORMAT_VERSION = 1
 # the number of groups and of sockets per group of that device.
 SocketType = namedtuple("SocketType", "dev groups sockets")
 
-# Mirrors enum socket_type (REV_008345 = 0, POLLIN_2605 = 1) and the
-# limits reported by socket_addr_limits() in librsswitch.h.
+# Mirrors enum rss_type (RSS_REV_008345 = 0, RSS_POLLIN_2605 = 1) and the
+# limits reported by rss_addr_limits() in librsswitch.h.
 SOCKET_TYPES = {
     "rev_008345": SocketType(0, 4, 3),
     "pollin_2605": SocketType(1, 32, 32),

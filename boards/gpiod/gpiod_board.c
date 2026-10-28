@@ -46,7 +46,7 @@
  *	EBUSY			the line is in use by another program
  *	EINVAL			the line offset is not valid for the chip
  *
- * Everything else is -(int32_t)SOCKET_ERR_OTHER, on purpose, because a
+ * Everything else is -(int32_t)RSS_ERR_OTHER, on purpose, because a
  * wrong cause is worse than none. Two cases are left as other deliberately:
  * ENOTTY, which libgpiod 1.x sets for a device node that exists but is
  * not a GPIO chip, and any errno that two different situations share.
@@ -57,16 +57,16 @@ static int32_t cause_from_errno(int e)
 	case ENOENT:
 	case ENODEV:
 	case ENXIO:
-		return -(int32_t)SOCKET_ERR_NOCHIP;
+		return -(int32_t)RSS_ERR_NOCHIP;
 	case EACCES:
 	case EPERM:
-		return -(int32_t)SOCKET_ERR_DENIED;
+		return -(int32_t)RSS_ERR_DENIED;
 	case EBUSY:
-		return -(int32_t)SOCKET_ERR_BUSY;
+		return -(int32_t)RSS_ERR_BUSY;
 	case EINVAL:
-		return -(int32_t)SOCKET_ERR_BADLINE;
+		return -(int32_t)RSS_ERR_BADLINE;
 	default:
-		return -(int32_t)SOCKET_ERR_OTHER;
+		return -(int32_t)RSS_ERR_OTHER;
 	}
 }
 
@@ -187,7 +187,7 @@ int32_t board_exit(void)
 			syslog(LOG_ERR,
 			       "[-] Failed to drive GPIO line low: %s",
 			       strerror(e));
-			ret = -(int32_t)SOCKET_ERR_IO;
+			ret = -(int32_t)RSS_ERR_IO;
 		}
 		line_high = 0;
 	}
@@ -346,7 +346,7 @@ int32_t board_exit(void)
 			syslog(LOG_ERR,
 			       "[-] Failed to drive GPIO line low: %s",
 			       strerror(e));
-			ret = -(int32_t)SOCKET_ERR_IO;
+			ret = -(int32_t)RSS_ERR_IO;
 		}
 		line_high = 0;
 	}
@@ -399,7 +399,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		int e = errno;
 
 		syslog(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
-		return -(int32_t)SOCKET_ERR_IO;
+		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 1;
 	delayMicroseconds(pulse_len * nhigh);
@@ -407,7 +407,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		int e = errno;
 
 		syslog(LOG_ERR, "[-] gpiod_line_set_value: %s", strerror(e));
-		return -(int32_t)SOCKET_ERR_IO;
+		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 0;
 	delayMicroseconds(pulse_len * nlow);
@@ -425,7 +425,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 
 		syslog(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
 		       strerror(e));
-		return -(int32_t)SOCKET_ERR_IO;
+		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 1;
 	delayMicroseconds(pulse_len * nhigh);
@@ -435,7 +435,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 
 		syslog(LOG_ERR, "[-] gpiod_line_request_set_value: %s",
 		       strerror(e));
-		return -(int32_t)SOCKET_ERR_IO;
+		return -(int32_t)RSS_ERR_IO;
 	}
 	line_high = 0;
 	delayMicroseconds(pulse_len * nlow);

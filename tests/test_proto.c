@@ -390,7 +390,7 @@ static void test_overflow(void)
 }
 
 /*
- * Every field is checked against socket_addr_limits(),
+ * Every field is checked against rss_addr_limits(),
  * in dev/group/socket/data order, and the range check never opens a
  * board session.
  */
@@ -500,7 +500,7 @@ static void test_ranges(void)
 	check_error(&cmd[0], PROTO_ERR_RANGE);
 	CHECK_EQ(strcmp(cmd[0].text, "dev 9 unknown"), 0);
 
-	/* POLLIN_2605, group 9 and socket 9 both valid, data 9 not in
+	/* RSS_POLLIN_2605, group 9 and socket 9 both valid, data 9 not in
 	 * 0-1.
 	 */
 	proto_init(&pc);
@@ -553,7 +553,7 @@ static void test_ranges(void)
 }
 
 /*
- * The parser's range check follows socket_addr_limits() exactly, not
+ * The parser's range check follows rss_addr_limits() exactly, not
  * a copy of it: for both devices, every (group, socket, data) inside
  * the reported limits parses to a switch, and each field one past its
  * reported limit is a range error -- with no board session ever
@@ -561,7 +561,7 @@ static void test_ranges(void)
  */
 static void test_ranges_follow_library(void)
 {
-	static const uint32_t devs[] = { REV_008345, POLLIN_2605 };
+	static const uint32_t devs[] = { RSS_REV_008345, RSS_POLLIN_2605 };
 	size_t d;
 
 	x86_64_recorder_reset();
@@ -572,7 +572,7 @@ static void test_ranges_follow_library(void)
 		struct proto_conn pc;
 		struct proto_cmd cmd;
 
-		CHECK_EQ(socket_addr_limits(devs[d], &ngroups, &nsockets,
+		CHECK_EQ(rss_addr_limits(devs[d], &ngroups, &nsockets,
 					     &ndata), 0);
 
 		proto_init(&pc);
@@ -955,23 +955,23 @@ static void test_err_names(void)
 static void test_gpio_causes(void)
 {
 	static const struct {
-		enum socket_err cause;
+		enum rss_err cause;
 		const char *word;
 		const char *text;
 	} known[] = {
-		{SOCKET_ERR_NOCHIP, "nochip", "GPIO chip not found"},
-		{SOCKET_ERR_BUSY, "busy",
+		{RSS_ERR_NOCHIP, "nochip", "GPIO chip not found"},
+		{RSS_ERR_BUSY, "busy",
 		 "GPIO line in use by another program"},
-		{SOCKET_ERR_DENIED, "denied",
+		{RSS_ERR_DENIED, "denied",
 		 "no permission on the GPIO chip"},
-		{SOCKET_ERR_BADLINE, "badline",
+		{RSS_ERR_BADLINE, "badline",
 		 "GPIO line not valid for this chip"},
-		{SOCKET_ERR_IO, "io", "writing to the GPIO line failed"},
+		{RSS_ERR_IO, "io", "writing to the GPIO line failed"},
 	};
-	static const enum socket_err unknown[] = {
-		SOCKET_ERR_NONE, SOCKET_ERR_OTHER, SOCKET_ERR_ARG,
-		(enum socket_err)8, (enum socket_err)99,
-		(enum socket_err)-1
+	static const enum rss_err unknown[] = {
+		RSS_ERR_NONE, RSS_ERR_OTHER, RSS_ERR_ARG,
+		(enum rss_err)8, (enum rss_err)99,
+		(enum rss_err)-1
 	};
 	size_t i, j;
 

@@ -15,7 +15,7 @@
  */
 
 /*
- * Tests socket_send()'s return-code contract for both supported
+ * Tests rss_send()'s return-code contract for both supported
  * devices. Built against the x86_64 stub board, so this runs on any
  * host, no hardware needed. Codeword content is checked in
  * test_codewords.c; this file covers the return-code and
@@ -36,46 +36,46 @@ static void test_rev_008345_valid(void)
 	for (group = 0; group < 4; group++)
 		for (socket = 0; socket < 3; socket++)
 			for (data = 0; data < 2; data++)
-				CHECK_EQ(socket_send(REV_008345, group, socket, data), 0);
+				CHECK_EQ(rss_send(RSS_REV_008345, group, socket, data), 0);
 }
 
 static void test_rev_008345_out_of_range(void)
 {
-	CHECK_EQ(socket_send(REV_008345, 4, 0, 0), -1);   /* group */
-	CHECK_EQ(socket_send(REV_008345, 0, 3, 0), -1);   /* socket */
-	CHECK_EQ(socket_send(REV_008345, 0, 0, 2), -1);   /* data */
+	CHECK_EQ(rss_send(RSS_REV_008345, 4, 0, 0), -1);   /* group */
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 3, 0), -1);   /* socket */
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 0, 2), -1);   /* data */
 }
 
 static void test_pollin_2605_valid(void)
 {
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 0), 0);
-	CHECK_EQ(socket_send(POLLIN_2605, 31, 31, 1), 0);
-	CHECK_EQ(socket_send(POLLIN_2605, 15, 15, 0), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 0), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 31, 31, 1), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 15, 15, 0), 0);
 }
 
 static void test_pollin_2605_out_of_range(void)
 {
-	CHECK_EQ(socket_send(POLLIN_2605, 32, 0, 0), -1);  /* group */
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 32, 0), -1);  /* socket */
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 2), -1);   /* data */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 32, 0, 0), -1);  /* group */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 32, 0), -1);  /* socket */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 2), -1);   /* data */
 }
 
 static void test_unknown_device(void)
 {
-	CHECK_EQ(socket_send(99, 0, 0, 0), -1);
+	CHECK_EQ(rss_send(99, 0, 0, 0), -1);
 }
 
 static void test_rev_008345_boundary(void)
 {
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(REV_008345, 3, 2, 0), 0);
+	CHECK_EQ(rss_send(RSS_REV_008345, 3, 2, 0), 0);
 	CHECK_EQ(expect_transmission("FFF1FF100001", 350), 0);
 }
 
 static void test_pollin_2605_boundary(void)
 {
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 31, 31, 0), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 31, 31, 0), 0);
 	CHECK_EQ(expect_transmission("0000000000F0", 350), 0);
 }
 
@@ -89,50 +89,50 @@ static void test_pollin_2605_boundary(void)
 static void test_rejected_sends_transmit_nothing(void)
 {
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(REV_008345, 4, 0, 0), -1);   /* group */
+	CHECK_EQ(rss_send(RSS_REV_008345, 4, 0, 0), -1);   /* group */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(REV_008345, 0, 3, 0), -1);   /* socket */
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 3, 0), -1);   /* socket */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(REV_008345, 0, 0, 2), -1);   /* data */
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 0, 2), -1);   /* data */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 32, 0, 0), -1);  /* group */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 32, 0, 0), -1);  /* group */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 32, 0), -1);  /* socket */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 32, 0), -1);  /* socket */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 2), -1);   /* data */
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 2), -1);   /* data */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(99, 0, 0, 0), -1);            /* device */
+	CHECK_EQ(rss_send(99, 0, 0, 0), -1);            /* device */
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
 	/* Control: a valid send still opens exactly one board session. */
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 0), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 0), 0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)1);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
 }
@@ -140,8 +140,8 @@ static void test_rejected_sends_transmit_nothing(void)
 /*
  * A failing transmit() must abort the rest of the codeword: no pulse
  * after the failing one is recorded, board_exit() still runs exactly
- * once, and socket_send() returns -1. Exercised at four points across
- * a 12-symbol, 10-repetition POLLIN_2605 codeword: the very first
+ * once, and rss_send() returns -1. Exercised at four points across
+ * a 12-symbol, 10-repetition RSS_POLLIN_2605 codeword: the very first
  * pulse, inside a symbol, at the first sync pulse, and inside the
  * second frame.
  */
@@ -155,22 +155,22 @@ static void test_transmit_failure_aborts_codeword(void)
 
 		x86_64_recorder_reset();
 		x86_64_recorder_fail_at(idx);
-		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
+		CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
 		CHECK_EQ(x86_64_recorder_count(), idx);
 		CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
 	}
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 }
 
 /*
- * socket_addr_limits() reports the same bounds address_check()
+ * rss_addr_limits() reports the same bounds address_check()
  * enforces, for both devices; rejects an unknown dev or any NULL
  * pointer without touching its outputs; and every address at or one
  * past each device's reported limit gets the same accept/reject
- * verdict from socket_send() -- with no board session opened for a
+ * verdict from rss_send() -- with no board session opened for a
  * rejected address.
  */
 static void test_addr_limits(void)
@@ -178,58 +178,58 @@ static void test_addr_limits(void)
 	uint32_t ngroups, nsockets, ndata;
 	uint32_t sg, ss, sd;
 	static const struct {
-		enum socket_type dev;
+		enum rss_type dev;
 		uint32_t ngroups, nsockets, ndata;
 	} devs[] = {
-		{ REV_008345, 4, 3, 2 },
-		{ POLLIN_2605, 32, 32, 2 },
+		{ RSS_REV_008345, 4, 3, 2 },
+		{ RSS_POLLIN_2605, 32, 32, 2 },
 	};
 	size_t i;
 
-	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, &nsockets, &ndata),
+	CHECK_EQ(rss_addr_limits(RSS_REV_008345, &ngroups, &nsockets, &ndata),
 		 0);
 	CHECK_EQ(ngroups, (uint32_t)4);
 	CHECK_EQ(nsockets, (uint32_t)3);
 	CHECK_EQ(ndata, (uint32_t)2);
 
-	CHECK_EQ(socket_addr_limits(POLLIN_2605, &ngroups, &nsockets, &ndata),
+	CHECK_EQ(rss_addr_limits(RSS_POLLIN_2605, &ngroups, &nsockets, &ndata),
 		 0);
 	CHECK_EQ(ngroups, (uint32_t)32);
 	CHECK_EQ(nsockets, (uint32_t)32);
 	CHECK_EQ(ndata, (uint32_t)2);
 
 	sg = ss = sd = 999;
-	CHECK_EQ(socket_addr_limits(2, &sg, &ss, &sd), -1);
+	CHECK_EQ(rss_addr_limits(2, &sg, &ss, &sd), -1);
 	CHECK_EQ(sg, (uint32_t)999);
 	CHECK_EQ(ss, (uint32_t)999);
 	CHECK_EQ(sd, (uint32_t)999);
 
-	CHECK_EQ(socket_addr_limits(REV_008345, NULL, &nsockets, &ndata), -1);
-	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, NULL, &ndata), -1);
-	CHECK_EQ(socket_addr_limits(REV_008345, &ngroups, &nsockets, NULL),
+	CHECK_EQ(rss_addr_limits(RSS_REV_008345, NULL, &nsockets, &ndata), -1);
+	CHECK_EQ(rss_addr_limits(RSS_REV_008345, &ngroups, NULL, &ndata), -1);
+	CHECK_EQ(rss_addr_limits(RSS_REV_008345, &ngroups, &nsockets, NULL),
 		 -1);
 
 	for (i = 0; i < ARRAY_SIZE(devs); i++) {
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+		CHECK_EQ(rss_send(devs[i].dev, devs[i].ngroups - 1,
 				      devs[i].nsockets - 1,
 				      devs[i].ndata - 1), 0);
 		CHECK_EQ(x86_64_board_init_count(), (size_t)1);
 
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups,
+		CHECK_EQ(rss_send(devs[i].dev, devs[i].ngroups,
 				      devs[i].nsockets - 1,
 				      devs[i].ndata - 1), -1);
 		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+		CHECK_EQ(rss_send(devs[i].dev, devs[i].ngroups - 1,
 				      devs[i].nsockets,
 				      devs[i].ndata - 1), -1);
 		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(devs[i].dev, devs[i].ngroups - 1,
+		CHECK_EQ(rss_send(devs[i].dev, devs[i].ngroups - 1,
 				      devs[i].nsockets - 1,
 				      devs[i].ndata), -1);
 		CHECK_EQ(x86_64_board_init_count(), (size_t)0);
@@ -268,7 +268,7 @@ static void test_board_config_check_x86_64(void)
 }
 
 /*
- * socket_gpio_config_check() answers like the board's check, without
+ * rss_gpio_config_check() answers like the board's check, without
  * storing the string and without opening a session or transmitting.
  */
 static void test_gpio_config_check(void)
@@ -277,13 +277,13 @@ static void test_gpio_config_check(void)
 
 	x86_64_recorder_reset();
 
-	CHECK_EQ(socket_gpio_config_check(NULL), 0);
-	CHECK_EQ(socket_gpio_config_check("gpiochip0:17"), 0);
-	CHECK_EQ(socket_gpio_config_check("gpiochip3:5"), 0);
-	CHECK_EQ(socket_gpio_config_check("gpiochip3:007"), 0);
+	CHECK_EQ(rss_gpio_config_check(NULL), 0);
+	CHECK_EQ(rss_gpio_config_check("gpiochip0:17"), 0);
+	CHECK_EQ(rss_gpio_config_check("gpiochip3:5"), 0);
+	CHECK_EQ(rss_gpio_config_check("gpiochip3:007"), 0);
 
 	for (i = 0; i < ARRAY_SIZE(malformed_gpio); i++)
-		CHECK_EQ(socket_gpio_config_check(malformed_gpio[i]), -1);
+		CHECK_EQ(rss_gpio_config_check(malformed_gpio[i]), -1);
 
 	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
@@ -300,30 +300,30 @@ static void test_injected_init_causes(void)
 {
 	static const struct {
 		const char *config;
-		enum socket_err cause;
+		enum rss_err cause;
 	} causes[] = {
-		{ "failnochip:0", SOCKET_ERR_NOCHIP },
-		{ "failbusy:0", SOCKET_ERR_BUSY },
-		{ "faildenied:0", SOCKET_ERR_DENIED },
-		{ "failbadline:0", SOCKET_ERR_BADLINE },
-		{ "failother:0", SOCKET_ERR_OTHER },
+		{ "failnochip:0", RSS_ERR_NOCHIP },
+		{ "failbusy:0", RSS_ERR_BUSY },
+		{ "faildenied:0", RSS_ERR_DENIED },
+		{ "failbadline:0", RSS_ERR_BADLINE },
+		{ "failother:0", RSS_ERR_OTHER },
 	};
 	size_t i;
 
 	for (i = 0; i < ARRAY_SIZE(causes); i++) {
 		x86_64_recorder_reset();
-		socket_gpio_config(causes[i].config);
+		rss_gpio_config(causes[i].config);
 
-		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
-		CHECK_EQ(socket_last_error(), causes[i].cause);
-		CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), -1);
-		CHECK_EQ(socket_last_error(), causes[i].cause);
+		CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
+		CHECK_EQ(rss_last_error(), causes[i].cause);
+		CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), -1);
+		CHECK_EQ(rss_last_error(), causes[i].cause);
 
 		CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 		CHECK_EQ(x86_64_board_init_count(), (size_t)2);
 		CHECK_EQ(x86_64_board_exit_count(), (size_t)0);
 
-		socket_gpio_config(NULL);
+		rss_gpio_config(NULL);
 		x86_64_recorder_reset();
 	}
 }
@@ -336,22 +336,22 @@ static void test_injected_init_causes(void)
 static void test_injected_io_cause(void)
 {
 	x86_64_recorder_reset();
-	socket_gpio_config("failio:0");
+	rss_gpio_config("failio:0");
 
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
-	CHECK_EQ(socket_last_error(), SOCKET_ERR_IO);
-	CHECK_EQ(socket_send_codeword("0FFF0000F00F", 350), -1);
-	CHECK_EQ(socket_last_error(), SOCKET_ERR_IO);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
+	CHECK_EQ(rss_last_error(), RSS_ERR_IO);
+	CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), -1);
+	CHECK_EQ(rss_last_error(), RSS_ERR_IO);
 
 	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)2);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)2);
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 
-	socket_gpio_config(NULL);
+	rss_gpio_config(NULL);
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
-	CHECK_EQ(socket_last_error(), SOCKET_ERR_NONE);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(rss_last_error(), RSS_ERR_NONE);
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 }
 
@@ -374,17 +374,17 @@ static void test_injection_needs_exact_name(void)
 
 	for (i = 0; i < ARRAY_SIZE(sends); i++) {
 		x86_64_recorder_reset();
-		socket_gpio_config(sends[i]);
+		rss_gpio_config(sends[i]);
 
-		CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
-		CHECK_EQ(socket_last_error(), SOCKET_ERR_NONE);
+		CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
+		CHECK_EQ(rss_last_error(), RSS_ERR_NONE);
 		CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 	}
 
 	for (i = 0; i < ARRAY_SIZE(injecting); i++)
 		CHECK_EQ(board_config_check(injecting[i]), 0);
 
-	socket_gpio_config(NULL);
+	rss_gpio_config(NULL);
 	x86_64_recorder_reset();
 }
 
@@ -396,21 +396,21 @@ static void test_injection_needs_exact_name(void)
 static void test_injection_opens_no_session(void)
 {
 	x86_64_recorder_reset();
-	socket_gpio_config("failbusy:0");
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
-	socket_gpio_config(NULL);
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	rss_gpio_config("failbusy:0");
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
+	rss_gpio_config(NULL);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(x86_64_board_init_count(), (size_t)3);
 	CHECK_EQ(x86_64_board_exit_count(), (size_t)1);
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 
 	x86_64_recorder_reset();
-	socket_gpio_config("failio:0");
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), -1);
-	socket_gpio_config(NULL);
+	rss_gpio_config("failio:0");
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), -1);
+	rss_gpio_config(NULL);
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(x86_64_recorder_count() > 0, 1);
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 }

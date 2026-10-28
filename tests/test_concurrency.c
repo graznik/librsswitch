@@ -17,7 +17,7 @@
 /*
  * Concurrency tests. Proves that the x86_64 board's
  * overlap detector actually detects an unserialized board session
- * (not a vacuous always-zero counter), then, once socket_send() is
+ * (not a vacuous always-zero counter), then, once rss_send() is
  * serialized with a mutex, that concurrent callers from multiple
  * threads always produce whole, non-interleaved codewords.
  */
@@ -58,7 +58,7 @@ static void test_overlap_detector_is_not_vacuous(void)
 	CHECK_EQ(board_exit(), 0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 17, 23, 1), 0);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
 }
 
@@ -76,7 +76,7 @@ static void compute_references(void)
 		uint32_t pulse_len;
 
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(POLLIN_2605, addr_group[t],
+		CHECK_EQ(rss_send(RSS_POLLIN_2605, addr_group[t],
 				      addr_socket[t], addr_data[t]), 0);
 		CHECK_EQ(next_transmission(&pos, ref[t], sizeof(ref[t]),
 					    &pulse_len), 0);
@@ -90,13 +90,13 @@ static void *worker_main(void *arg)
 	int i;
 
 	for (i = 0; i < NSENDS; i++) {
-		if (socket_send(POLLIN_2605, ctx->group, ctx->socket,
-				ctx->data) != 0)
+		if (rss_send(RSS_POLLIN_2605, ctx->group, ctx->socket,
+			     ctx->data) != 0)
 			ctx->ok = 0;
 
 		/* Thread 0 also sends a rejected address between sends. */
 		if (ctx->is_thread0 && i == 4) {
-			if (socket_send(POLLIN_2605, 32, 0, 0) != -1)
+			if (rss_send(RSS_POLLIN_2605, 32, 0, 0) != -1)
 				ctx->ok = 0;
 		}
 	}
@@ -106,14 +106,14 @@ static void *worker_main(void *arg)
 
 /*
  * One round: NTHREADS threads each send their own address NSENDS
- * times through socket_send() (thread 0 also sends one rejected
+ * times through rss_send() (thread 0 also sends one rejected
  * address in between); after joining, the whole recording must
  * decode into whole, non-interleaved NTIMES-frame transmissions, each
  * matching exactly one thread's reference codeword exactly NSENDS
  * times, with no overlap and a matching board_init()/board_exit()
  * count.
  *
- * NTHREADS * NSENDS counts only the accepted sends: socket_send()
+ * NTHREADS * NSENDS counts only the accepted sends: rss_send()
  * validates the address before it takes send_lock or calls
  * board_init(), so thread 0's rejected address is refused before any
  * board session opens and does not add to the board_init()/
@@ -206,7 +206,7 @@ static char mixed_ref[NTHREADS_MIXED][PULSE_DECODE_MAX_FRAME_LEN];
 static uint32_t mixed_ref_pulse_len[NTHREADS_MIXED];
 
 struct mixed_worker_ctx {
-	int use_codeword;	/* 1: socket_send_codeword(), 0: socket_send() */
+	int use_codeword;	/* 1: rss_send_codeword(), 0: rss_send() */
 	uint32_t group;
 	uint32_t socket;
 	uint32_t data;
@@ -218,9 +218,9 @@ struct mixed_worker_ctx {
 
 /*
  * Records one reference (codeword, pulse_len) pair per mixed-sender
- * thread: the first three via socket_send() (decoded, like
+ * thread: the first three via rss_send() (decoded, like
  * compute_references()), the last three the literal codewords sent
- * through socket_send_codeword().
+ * through rss_send_codeword().
  */
 static void compute_mixed_references(void)
 {
@@ -230,7 +230,7 @@ static void compute_mixed_references(void)
 		size_t pos = 0;
 
 		x86_64_recorder_reset();
-		CHECK_EQ(socket_send(POLLIN_2605, addr_group[t],
+		CHECK_EQ(rss_send(RSS_POLLIN_2605, addr_group[t],
 				      addr_socket[t], addr_data[t]), 0);
 		CHECK_EQ(next_transmission(&pos, mixed_ref[t],
 					    sizeof(mixed_ref[t]),
@@ -254,10 +254,10 @@ static void *mixed_worker_main(void *arg)
 		int32_t ret;
 
 		if (ctx->use_codeword)
-			ret = socket_send_codeword(ctx->codeword,
+			ret = rss_send_codeword(ctx->codeword,
 						    ctx->pulse_len);
 		else
-			ret = socket_send(POLLIN_2605, ctx->group,
+			ret = rss_send(RSS_POLLIN_2605, ctx->group,
 					   ctx->socket, ctx->data);
 
 		if (ret != 0)
@@ -265,7 +265,7 @@ static void *mixed_worker_main(void *arg)
 
 		/* Thread 0 also sends a rejected address between sends. */
 		if (ctx->is_thread0 && i == 4) {
-			if (socket_send(POLLIN_2605, 32, 0, 0) != -1)
+			if (rss_send(RSS_POLLIN_2605, 32, 0, 0) != -1)
 				ctx->ok = 0;
 		}
 	}
@@ -274,8 +274,8 @@ static void *mixed_worker_main(void *arg)
 }
 
 /*
- * Like run_round(), but three threads send through socket_send() and
- * three through socket_send_codeword() with distinct literal
+ * Like run_round(), but three threads send through rss_send() and
+ * three through rss_send_codeword() with distinct literal
  * codewords and distinct pulse_len values (different codewords
  * through both entry points), proving the two entry points share the
  * same lock and never interleave with each other either.

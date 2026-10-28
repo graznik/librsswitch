@@ -18,8 +18,8 @@
  * Decodes pulses recorded by the x86_64 board's test-only recorder
  * back into the 0/1/F/sync tri-state frames librsswitch.c's
  * send_0()/send_1()/send_f()/send_sync() produce. Used only by
- * tests/test_*.c to assert on the exact codeword a socket_send() (or,
- * later, socket_send_codeword()) call transmitted.
+ * tests/test_*.c to assert on the exact codeword a rss_send() (or,
+ * later, rss_send_codeword()) call transmitted.
  */
 #ifndef PULSE_DECODE_H
 #define PULSE_DECODE_H

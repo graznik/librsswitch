@@ -9,11 +9,11 @@
  * Every transmit() call on this board appends the pulse it was asked
  * to send instead of driving any GPIO. This lets host tests decode
  * the recorded stream back into 0/1/F/sync frames and assert on the
- * exact codeword a socket_send() call produced.
+ * exact codeword a rss_send() call produced.
  *
  * The recorder does no locking of its own: it relies on the library
  * serializing every transmit() call for the duration of one
- * socket_send()/socket_send_codeword() (board_init() -> ... ->
+ * rss_send()/rss_send_codeword() (board_init() -> ... ->
  * board_exit()), and on tests reading it only after all senders for
  * the current test have finished. It must never be called
  * concurrently with a send in flight.

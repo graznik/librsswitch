@@ -159,7 +159,7 @@ test_rsswitchd_bin: ../examples/network/rsswitchd.c \
 
 # Unit-tests the protocol parser with no socket or GPIO dependency of
 # its own. It links $(LIB_SRCS) anyway: the parser calls
-# socket_addr_limits() for its per-device range check, and this rule
+# rss_addr_limits() for its per-device range check, and this rule
 # never opens a board (see test_proto.c's test_err_names, which
 # asserts x86_64_board_init_count() stays 0).
 test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
@@ -187,7 +187,7 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd test_rsswitchd.c
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
-# ..., data: ..." line in socket_send() is exercised.
+# ..., data: ..." line in rss_send() is exercised.
 # Includes ../librsswitch.c directly (like test_codeword_api), so it
 # links only the x86_64 board, not librsswitch.c a second time.
 test_logging: test_logging.c $(TEST_DEPS)

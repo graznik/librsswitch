@@ -18,8 +18,9 @@
 # root and without network: the venv target of tests/Makefile, with
 # stand-ins for python3 and pip, and the order of venv and test. Takes
 # the root of the code repository as $1; run by `make test`. It also
-# checks the DEBUG opt-in and the .PHONY lines of the Makefiles, and that
-# stale comments stay out of librsswitch.c.
+# checks the DEBUG opt-in and the .PHONY lines of the Makefiles, that
+# stale comments stay out of librsswitch.c, and that the old public
+# names stay gone.
 
 if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 	echo "usage: $0 <code repository root>" >&2
@@ -308,6 +309,29 @@ stale_comments_gone()
 			"$ROOT/librsswitch.c"
 }
 check "librsswitch.c: the stale comments stay gone" stale_comments_gone
+
+# The public names were renamed to the rss_ prefix before the first
+# installable release and have no aliases. The pattern brackets one
+# letter of each old name so that this file does not match itself.
+# examples/web/tests is left out: it holds an invalid upper-case device
+# type as string data on purpose.
+old_api_gone()
+{
+	old='[s]ocket_(send|send_codeword|last_error|gpio_config'
+	old="$old|gpio_config_check|addr_limits|err|type)"
+	old="$old|[S]OCKET_(ERR_[A-Z]+|CODEWORD_M[AI][XN]_LEN"
+	old="$old|PULSE_LEN_M[AI][XN]_US)|RE[V]_008345|[P]OLLIN_2605"
+
+	hits=$(find "$ROOT" \( -path "$ROOT/.git" -o -path "$ROOT/build" \
+		-o -path "$ROOT/examples/web" \) -prune -o -type f \
+		\( -name '*.c' -o -name '*.h' -o -name '*.md' -o -name '*.sh' \
+		-o -name 'Makefile' -o -name '*.service' \) \
+		-exec grep -lwE "$old" {} + ;
+		grep -lwE "$old" "$ROOT"/examples/web/rsswitch_web/*.py)
+	[ -z "$hits" ] || echo "$hits" >&2
+	[ -z "$hits" ]
+}
+check "the old public names stay gone" old_api_gone
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

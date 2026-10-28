@@ -18,7 +18,7 @@
  * Captures every syslog() call the library makes.
  * syslog is redefined to capture_syslog before ../librsswitch.c is
  * included directly, so every log call inside the library -- and the
- * DEBUG-only line in socket_send(), since this binary is built with
+ * DEBUG-only line in rss_send(), since this binary is built with
  * -DDEBUG (see tests/Makefile) -- is captured instead of going to the
  * real syslog. Included directly rather than linked, exactly like
  * tests/test_codeword_api.c, so this file can also reach the static
@@ -103,7 +103,7 @@ static void test_capture_is_not_vacuous(void)
 	CHECK_EQ(captured_find("this message was never logged"), 0);
 
 	x86_64_recorder_reset();
-	CHECK_EQ(socket_send(REV_008345, 4294967295U, 0, 0), -1);
+	CHECK_EQ(rss_send(RSS_REV_008345, 4294967295U, 0, 0), -1);
 	CHECK(captured_count() > 0);
 	CHECK_EQ(captured_find("this message was never logged"), 0);
 }
@@ -111,41 +111,41 @@ static void test_capture_is_not_vacuous(void)
 static void test_uint32_values_logged_unsigned(void)
 {
 	captured_reset();
-	CHECK_EQ(socket_send(REV_008345, 4294967295U, 0, 0), -1);
+	CHECK_EQ(rss_send(RSS_REV_008345, 4294967295U, 0, 0), -1);
 	CHECK(captured_find("[-] Unknown socket group 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(REV_008345, 0, 4294967295U, 0), -1);
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 4294967295U, 0), -1);
 	CHECK(captured_find("[-] Unknown socket 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(REV_008345, 0, 0, 4294967295U), -1);
+	CHECK_EQ(rss_send(RSS_REV_008345, 0, 0, 4294967295U), -1);
 	CHECK(captured_find("[-] Unknown switch parameter 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 4294967295U, 0, 0), -1);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 4294967295U, 0, 0), -1);
 	CHECK(captured_find("[-] Unknown socket group 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 4294967295U, 0), -1);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 4294967295U, 0), -1);
 	CHECK(captured_find("[-] Unknown socket 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(POLLIN_2605, 0, 0, 4294967295U), -1);
+	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 4294967295U), -1);
 	CHECK(captured_find("[-] Unknown switch parameter 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(4294967295U, 0, 0, 0), -1);
+	CHECK_EQ(rss_send(4294967295U, 0, 0, 0), -1);
 	CHECK(captured_find("[-] Unknown socket type 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send(4294967295U, 4294967295U, 4294967295U,
+	CHECK_EQ(rss_send(4294967295U, 4294967295U, 4294967295U,
 			      4294967295U), -1);
 	CHECK(captured_find(
 		"dev: 4294967295, group: 4294967295, socket: 4294967295, data: 4294967295"));
 
 	captured_reset();
-	CHECK_EQ(socket_send_codeword("0", 4294967295U), -1);
+	CHECK_EQ(rss_send_codeword("0", 4294967295U), -1);
 	CHECK(captured_find("4294967295"));
 }
 

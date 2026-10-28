@@ -37,10 +37,10 @@
 
 /*
  * A board reports a failure with a negative value. -1 means "other"
- * (-(int32_t)SOCKET_ERR_OTHER); a board that can name the cause returns
+ * (-(int32_t)RSS_ERR_OTHER); a board that can name the cause returns
  * -(int32_t)SOCKET_ERR_x for it instead. A board never returns
- * SOCKET_ERR_NONE or SOCKET_ERR_ARG as a negative value, and the
- * library reads any other negative value as SOCKET_ERR_OTHER. Each
+ * RSS_ERR_NONE or RSS_ERR_ARG as a negative value, and the
+ * library reads any other negative value as RSS_ERR_OTHER. Each
  * function below says which causes it can return.
  *
  * config: board-specific, opaque to the library's callers. NULL means
@@ -61,8 +61,8 @@
  * drive; its board_init()/board_exit()/transmit() are no-ops.
  *
  * Returns 0, or -(int32_t)SOCKET_ERR_x for a failure the board can
- * name (SOCKET_ERR_NOCHIP, SOCKET_ERR_BUSY, SOCKET_ERR_DENIED or
- * SOCKET_ERR_BADLINE), or -1 for any other failure.
+ * name (RSS_ERR_NOCHIP, RSS_ERR_BUSY, RSS_ERR_DENIED or
+ * RSS_ERR_BADLINE), or -1 for any other failure.
  */
 int32_t board_init(const char *config);
 
@@ -82,14 +82,14 @@ int32_t board_config_check(const char *config);
  * driving it high), board_exit() first drives it low, so no session
  * ends with the 433 MHz transmitter keyed. A failure to
  * drive it low is logged and makes board_exit() return
- * -(int32_t)SOCKET_ERR_IO, but the line is closed or released
+ * -(int32_t)RSS_ERR_IO, but the line is closed or released
  * regardless. Returns 0 otherwise.
  */
 int32_t board_exit(void);
 
 /*
  * Drives one high/low pulse pair. Returns 0 on success, or a negative
- * cause on error -- normally -(int32_t)SOCKET_ERR_IO, or -1 for a
+ * cause on error -- normally -(int32_t)RSS_ERR_IO, or -1 for a
  * failure the board cannot name -- in which case the caller abandons
  * the rest of the codeword (no further transmit() call is made for
  * that send) -- the line may be left high by such a failure, and the

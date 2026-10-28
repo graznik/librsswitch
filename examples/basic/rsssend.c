@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 
 	if (parse_u32("DEV", argv[1], &dev) < 0)
 		exit(2);
-	if (dev != REV_008345 && dev != POLLIN_2605) {
+	if (dev != RSS_REV_008345 && dev != RSS_POLLIN_2605) {
 		fprintf(stderr, "rsssend: invalid DEV '%s'\n", argv[1]);
 		exit(2);
 	}
@@ -84,14 +84,14 @@ int main(int argc, char *argv[])
 	 * Without this check a malformed config would show up only as
 	 * a failed send, which reads like a problem with the radio.
 	 */
-	if (socket_gpio_config_check(gpio_config) < 0) {
+	if (rss_gpio_config_check(gpio_config) < 0) {
 		fprintf(stderr, "rsssend: malformed --gpio '%s'\n",
 			gpio_config);
 		exit(1);
 	}
 
-	socket_gpio_config(gpio_config);
-	ret = socket_send(dev, group, isocket, data);
+	rss_gpio_config(gpio_config);
+	ret = rss_send(dev, group, isocket, data);
 	if (ret < 0) {
 		fprintf(stderr,
 			"rsssend: sending DEV %" PRIu32 " GROUP %" PRIu32
