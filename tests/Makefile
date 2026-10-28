@@ -2,7 +2,7 @@ CFLAGS += -Werror -Wall -W -pedantic -pthread
 INCLUDES = -I..
 
 TESTS = test_last_error test_socket_send test_codewords test_concurrency \
-	test_codeword_api test_logging test_rsswitchd test_proto
+	test_codeword_api test_logging test_rsswitchd test_proto test_version
 LIB_SRCS = ../librsswitch.c ../boards/stub/stub.c \
 	   ../boards/gpiod/gpiod_config.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
@@ -121,6 +121,9 @@ venv:
 
 test_socket_send: test_socket_send.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_socket_send test_socket_send.c $(LIB_SRCS)
+
+test_version: test_version.c $(TEST_DEPS)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_version test_version.c $(LIB_SRCS)
 
 test_codewords: test_codewords.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codewords test_codewords.c $(LIB_SRCS)

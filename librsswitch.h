@@ -20,6 +20,29 @@
 #include <stdint.h>
 
 /*
+ * The version of the library, as the numbers below and as the string
+ * LIBRSSWITCH_VERSION built from them. It is the version of the
+ * library itself and independent of the tags of the project.
+ *
+ * MAJOR is the SONAME of the shared library and changes only for an
+ * incompatible ABI change. MINOR grows when API is added, PATCH with
+ * fixes that change no interface. Each number is a plain decimal
+ * constant on a line of its own, so that a build script can read it.
+ *
+ * These are the values of the header a program was compiled with.
+ * rss_version() reports the library that is actually loaded.
+ */
+#define LIBRSSWITCH_VERSION_MAJOR 1
+#define LIBRSSWITCH_VERSION_MINOR 0
+#define LIBRSSWITCH_VERSION_PATCH 0
+
+#define RSS_STR_(x) #x
+#define RSS_STR(x) RSS_STR_(x)
+#define LIBRSSWITCH_VERSION RSS_STR(LIBRSSWITCH_VERSION_MAJOR) "." \
+			    RSS_STR(LIBRSSWITCH_VERSION_MINOR) "." \
+			    RSS_STR(LIBRSSWITCH_VERSION_PATCH)
+
+/*
  * Thread safety
  *
  * rss_send(), rss_send_codeword() and rss_gpio_config() are
@@ -207,5 +230,15 @@ enum rss_type {
 		  RSS_REV_008345,
 		  RSS_POLLIN_2605
 };
+
+/*
+ * Returns the version of the library that is actually loaded, as
+ * "MAJOR.MINOR.PATCH" in static storage that the caller must not
+ * modify or free. It may differ from LIBRSSWITCH_VERSION of the
+ * header a program was compiled with, when the program runs against
+ * another build of the library. Never returns NULL; takes no lock and
+ * never touches the board.
+ */
+const char *rss_version(void);
 
 #endif /* LIBRSSWITCH_H */

@@ -523,3 +523,8 @@ enum rss_err rss_last_error(void)
 {
 	return last_error;
 }
+
+const char *rss_version(void)
+{
+	return LIBRSSWITCH_VERSION;
+}

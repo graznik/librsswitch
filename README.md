@@ -151,7 +151,7 @@ make -C examples/network x86_64
 
 ## Usage
 
-Six public functions, declared in librsswitch.h.
+Seven public functions, declared in librsswitch.h.
 
 ```c
 rss_gpio_config(const char *config);
@@ -249,6 +249,21 @@ sizes elsewhere.
 
 Returns 0 and fills `*ngroups`, `*nsockets` and `*ndata`, or -1 for an
 unknown dev or a NULL pointer, leaving the outputs untouched.
+
+```c
+const char *rss_version(void);
+```
+
+Returns the version of the library that is actually loaded, as
+"MAJOR.MINOR.PATCH" in static storage, for example "1.0.0". The header
+carries the version of the library it belongs to as
+LIBRSSWITCH_VERSION_MAJOR, LIBRSSWITCH_VERSION_MINOR and
+LIBRSSWITCH_VERSION_PATCH and as the string LIBRSSWITCH_VERSION built
+from them. The two can differ when a program runs against another
+build of the library than the one it was compiled with. MAJOR is the
+SONAME and changes only for an incompatible ABI change, MINOR grows
+with new API, PATCH with fixes. The version is the library's own and
+independent of the tags of the project.
 
 
 ## Thread safety
