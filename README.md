@@ -92,7 +92,16 @@ library needs are kept:
 make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib
 ```
 
-The goal test runs the tests of tests/, and clean removes build/.
+BUILD names the directory of the board instead of build/<board>/, for
+a build that must not write below the sources, or on a file system that
+cannot make symbolic links:
+
+```bash
+make BOARD=stub BUILD=/tmp/rsswitch-build/stub
+```
+
+The goal test runs the tests of tests/, and clean removes build/ and
+the BUILD directory.
 
 
 ## Installing the library

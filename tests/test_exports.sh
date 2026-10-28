@@ -35,6 +35,11 @@ if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 fi
 ROOT=$(cd "$1" && pwd -P)
 
+# The tests build in the default directory of a copy. A BUILD in the
+# environment of the caller would move the libraries away from the
+# paths they look at.
+unset BUILD
+
 total=0
 passed=0
 
@@ -293,6 +298,57 @@ bad_board()
 }
 check "an unknown BOARD stops make" bad_board
 
+# BUILD moves the files of a board out of the build directory, with an
+# absolute and with a relative path, and writes nothing to build/ then.
+# make clean removes the directory again, and an empty BUILD stops make.
+# The program links against the library in the other place, which is
+# what the examples and the tests do on a file system without symbolic
+# links.
+ELSE="$S/elsewhere"
+mkdir "$ELSE" || exit 1
+cp -R "$TREE/Makefile" "$TREE/librsswitch.c" "$TREE/librsswitch.h" \
+	"$TREE/librsswitch.map" "$TREE/boards" "$ELSE" || exit 1
+
+make_else()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -s -C "$ELSE" BOARD=stub DEBUG= LIBGPIOD_VERSION= \
+			CROSS_COMPILE= "$@"
+	) > "$S/make-else.log" 2>&1 || {
+		sed 's/^/  /' "$S/make-else.log" >&2
+		return 1
+	}
+}
+
+build_dir_absolute()
+{
+	make_else BUILD="$S/out/stub" || return 1
+	[ -f "$S/out/stub/librsswitch.so.$VERSION" ] &&
+		[ -f "$S/out/stub/librsswitch.a" ] &&
+		[ "$(readlink "$S/out/stub/librsswitch.so")" = \
+			"librsswitch.so.$MAJOR" ] &&
+		[ ! -e "$ELSE/build" ]
+}
+check "BUILD with an absolute path builds there and not in build/" \
+	build_dir_absolute
+
+build_dir_relative()
+{
+	make_else BUILD=rel/stub || return 1
+	[ -f "$ELSE/rel/stub/librsswitch.so.$VERSION" ] &&
+		[ ! -e "$ELSE/build" ]
+}
+check "BUILD with a relative path is taken relative to the make directory" \
+	build_dir_relative
+
+build_dir_empty()
+{
+	! make_else BUILD= 2> /dev/null &&
+		grep -q 'BUILD must not be empty' "$S/make-else.log"
+}
+check "an empty BUILD stops make" build_dir_empty
+
 # A program that links the stub library and runs it through the dynamic
 # loader: it sends Pollin 17/23 On, which the stub prints, and then
 # prints the version of the library it loaded. The loader finds the
@@ -328,6 +384,26 @@ consumer_needed()
 }
 check "the program needs the SONAME of the library" consumer_needed
 check "the program has no RPATH or RUNPATH" no_rpath "$S/consumer"
+
+build_dir_linked()
+{
+	cc -Wall -Werror -I"$ELSE" -o "$S/consumer-else" "$S/consumer.c" \
+		-L"$S/out/stub" -lrsswitch || return 1
+	LD_LIBRARY_PATH="$S/out/stub" "$S/consumer-else" > "$S/else.out" ||
+		return 1
+	printf '%s\n%s\n' 0FFF0000F00F "$VERSION" > "$S/else.want"
+	cmp -s "$S/else.out" "$S/else.want"
+}
+check "a program built against the library in BUILD runs" \
+	build_dir_linked
+
+build_dir_clean()
+{
+	make_else BUILD="$S/out/stub" clean || return 1
+	make_else BUILD=rel/stub clean || return 1
+	[ ! -e "$S/out/stub" ] && [ ! -e "$ELSE/rel/stub" ]
+}
+check "make clean removes the BUILD directory" build_dir_clean
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

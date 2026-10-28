@@ -39,6 +39,11 @@ if [ -z "$1" ] || [ ! -f "$1/tests/Makefile" ]; then
 fi
 ROOT=$(cd "$1" && pwd -P)
 
+# The tests build in the default directory of a copy. A BUILD in the
+# environment of the caller would move the libraries away from the
+# paths they look at.
+unset BUILD
+
 total=0
 passed=0
 

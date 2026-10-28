@@ -9,7 +9,9 @@
 #                             pkg-config file, under PREFIX
 #
 # The two boards build into separate directories, so building one leaves
-# the other in place and switching needs no make clean.
+# the other in place and switching needs no make clean. BUILD names the
+# directory of one board, for a build that must not write below the
+# sources.
 
 # Which board is built. A board is chosen by the source file that is
 # compiled, not by a define.
@@ -97,7 +99,17 @@ else
 $(error BOARD must be gpiod or stub)
 endif
 
-BUILD := build/$(BOARD)
+# Where the files of BOARD are built. The default is a directory of its
+# own below the sources. A checkout on a file system that cannot make
+# symbolic links, or a build that must leave the source tree alone,
+# names another directory, for example BUILD=/tmp/rsswitch/stub. A
+# relative path is taken relative to the directory make runs in. The
+# programs and the tests take the library from the same variable.
+BUILD ?= build/$(BOARD)
+ifeq ($(BUILD),)
+$(error BUILD must not be empty)
+endif
+
 OBJS := $(SRCS:%.c=$(BUILD)/%.o)
 DEPS := $(OBJS:.o=.d)
 
@@ -204,7 +216,11 @@ uninstall:
 test:
 	$(MAKE) -C tests test
 
+# A BUILD outside the default is removed as well.
 clean:
 	rm -rf build
+ifneq ($(BUILD),build/$(BOARD))
+	rm -rf "$(BUILD)"
+endif
 
 -include $(DEPS)
