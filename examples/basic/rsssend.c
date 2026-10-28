@@ -86,16 +86,16 @@ int main(int argc, char *argv[])
 	}
 
 	/*
-	 * Without this check a malformed config would show up only as
-	 * a failed send, which reads like a problem with the radio.
+	 * Without this check a malformed or too long config would show
+	 * up only as a failed send, which reads like a problem with the
+	 * radio.
 	 */
-	if (rss_gpio_config_check(gpio_config) < 0) {
+	if (rss_gpio_config(gpio_config) < 0) {
 		fprintf(stderr, "rsssend: malformed --gpio '%s'\n",
 			gpio_config);
 		exit(1);
 	}
 
-	rss_gpio_config(gpio_config);
 	ret = rss_send(dev, group, isocket, data);
 	if (ret < 0) {
 		fprintf(stderr,

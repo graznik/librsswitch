@@ -86,6 +86,11 @@ check()
 	fi
 }
 
+# A well formed config is 63 characters of chip name, a colon and the
+# line number, here padded with zeros: the library keeps 79 characters.
+GPIO79=$(printf '%063d' 0 | tr 0 a):$(printf '%015d' 17)
+GPIO80=$(printf '%063d' 0 | tr 0 a):$(printf '%016d' 17)
+
 # --- usage to stderr, distinct exit codes ---------------------------
 check "no arguments" 2 "" contains "Usage:"
 check "valid pollin on" 0 "0FFF0000F00F" empty ""  1 17 23 1
@@ -130,6 +135,8 @@ check "gpio without line refused" 1 "" contains "rsssend: malformed --gpio 'gpio
 check "gpio empty refused" 1 "" contains "rsssend: malformed --gpio ''"  1 17 23 1 --gpio ""
 check "gpio path refused" 1 "" contains "rsssend: malformed --gpio '/dev/gpiochip0:17'"  1 17 23 1 --gpio /dev/gpiochip0:17
 check "gpio dot dot chip refused" 1 "" contains "rsssend: malformed --gpio '..:3'"  1 17 23 1 --gpio ..:3
+check "gpio 79 characters accepted" 0 "0FFF0000F00F" empty ""  1 17 23 1 --gpio "$GPIO79"
+check "gpio 80 characters refused" 1 "" contains "rsssend: malformed --gpio '$GPIO80'"  1 17 23 1 --gpio "$GPIO80"
 check "usage error before gpio check" 2 "" contains "invalid DEV 'abc'"  abc 17 23 1 --gpio 49
 check "gpio missing value" 2 "" any ""  1 17 23 1 --gpio
 check "trailing extra arg" 2 "" any ""  1 17 23 1 extra

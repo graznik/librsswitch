@@ -364,7 +364,7 @@ static void test_injection_needs_exact_name(void)
 {
 	static const char * const sends[] = {
 		"failbusyx:0", "fail:0", "failBUSY:0", "xfailbusy:0",
-		"failbusy", "gpiochip0:17",
+		"gpiochip0:17",
 	};
 	static const char * const injecting[] = {
 		"failnochip:0", "failbusy:0", "faildenied:0",
@@ -383,6 +383,13 @@ static void test_injection_needs_exact_name(void)
 
 	for (i = 0; i < ARRAY_SIZE(injecting); i++)
 		CHECK_EQ(board_config_check(injecting[i]), 0);
+
+	/*
+	 * Without a colon it is no chip:line config at all, so the
+	 * library refuses to store it and the config in effect stays.
+	 */
+	CHECK_EQ(rss_gpio_config("failbusy"), -1);
+	CHECK_EQ(rss_last_error(), RSS_ERR_ARG);
 
 	rss_gpio_config(NULL);
 	stub_recorder_reset();

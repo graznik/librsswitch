@@ -65,7 +65,9 @@
  * thread simply blocks until the previous send session completes.
  * rss_gpio_config() takes the same lock around its store, so a
  * config change is ordered against sends that start after it returns
- * (it does not affect a session already in progress).
+ * (it does not affect a session already in progress). It checks the
+ * string before it takes the lock and keeps a copy, so the string need
+ * not outlive the call.
  *
  * This guarantee is process-local only: two separate processes
  * driving the same GPIO line (for example rsssend run once while
@@ -93,29 +95,37 @@ extern "C" {
 
 /*
  * Sets the GPIO config string passed to board_init() on every
- * subsequent rss_send() call. NULL (the default, if never called)
- * means "use this board's compiled-in default". On the libgpiod boards
- * a non-NULL config that cannot be parsed is not replaced by the
- * default: every following rss_send() and rss_send_codeword()
- * call returns -1 without opening a GPIO chip, and the error is
- * logged. Format is board-specific -- see the README section "GPIO
- * configuration"; the libgpiod boards parse it in
- * boards/gpiod/gpiod_config.c. rsssend and rsswitchd call
- * rss_gpio_config_check() first and refuse a malformed config.
- * config is not copied; the pointer must stay valid for as long as
- * rss_send() may still be called.
+ * subsequent rss_send() and rss_send_codeword() call. NULL restores
+ * the board's compiled-in default, which is also what is used if this
+ * function is never called. Format is board-specific -- see the README
+ * section "GPIO configuration"; the libgpiod boards parse it in
+ * boards/gpiod/gpiod_config.c.
+ *
+ * The string is checked as rss_gpio_config_check() checks it, and
+ * then copied into a buffer of the library: at most 79 characters fit,
+ * and the caller's string is not kept, so it may be changed, freed or
+ * go out of scope as soon as the call returns. A string of 80 or more
+ * characters is refused without being read further than that.
+ *
+ * Returns 0 on success, with rss_last_error() set to RSS_ERR_NONE.
+ * Returns -1 with rss_last_error() RSS_ERR_ARG for a string that is
+ * too long or malformed, and the previous config stays in effect, or
+ * with RSS_ERR_OTHER if the library's lock fails. The cause of a
+ * rejected string is logged. A running send is not affected, and the
+ * call waits for it to finish before it stores the copy.
  */
-RSS_API void rss_gpio_config(const char *config);
+RSS_API int32_t rss_gpio_config(const char *config);
 
 /*
  * Checks a GPIO config string without storing it and without touching
  * the GPIO. Returns 0 for NULL (the board default) and for a config
  * the board can parse, and -1 for a malformed one, with the cause
- * logged via syslog by the board. Well-formed does not mean the chip
- * exists: only the format is checked, and the first rss_send()
- * still reports a missing chip. Call it before rss_gpio_config() to
- * refuse a bad config at start-up. It takes no lock and never touches
- * the board.
+ * logged by the board. Well-formed does not mean the chip exists: only
+ * the format is checked, and the first rss_send() still reports a
+ * missing chip. rss_gpio_config() makes the same check itself; this
+ * function is for a caller that wants to know without storing. It
+ * takes no lock, never touches the board and leaves rss_last_error()
+ * unchanged.
  */
 RSS_API int32_t rss_gpio_config_check(const char *config);
 
@@ -218,7 +228,8 @@ RSS_API int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len);
  * RSS_ERR_IO:      driving the line failed during the send.
  * RSS_ERR_ARG:     the call was rejected before the board was
  *                     touched: an invalid dev, group, socket, data,
- *                     codeword or pulse_len.
+ *                     codeword or pulse_len, or a GPIO config string
+ *                     that rss_gpio_config() refused.
  */
 enum rss_err {
 		 RSS_ERR_NONE = 0,
@@ -232,11 +243,12 @@ enum rss_err {
 };
 
 /*
- * Returns the cause of the calling thread's last rss_send() or
- * rss_send_codeword() call: RSS_ERR_NONE after a success, the
- * reason after a failure. Every send call sets it, so a success never
- * leaves a stale cause behind; every other library function leaves it
- * unchanged. Before the thread's first send it is RSS_ERR_NONE.
+ * Returns the cause of the calling thread's last rss_send(),
+ * rss_send_codeword() or rss_gpio_config() call: RSS_ERR_NONE after a
+ * success, the reason after a failure. Each of these calls sets it,
+ * so a success never leaves a stale cause behind; every other library
+ * function leaves it unchanged. Before the thread's first such call
+ * it is RSS_ERR_NONE.
  * It takes no lock and never blocks. The cause is per thread: a send
  * in another thread never changes it.
  */

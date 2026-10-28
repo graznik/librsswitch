@@ -50,7 +50,20 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 static int32_t fail(enum rss_err err);
 static enum rss_err cause_from_board(int32_t ret);
 
-static const char *gpio_config;
+/*
+ * Size of the buffer that holds the GPIO config string, with its
+ * terminating NUL. The longest string the chip:line grammar allows is
+ * a chip name of 63 characters, a colon and a line number of 10
+ * digits, 74 characters; the rest is headroom.
+ */
+#define GPIO_CONFIG_BUF 80
+
+/*
+ * The library's own copy of the string given to rss_gpio_config(). An
+ * empty string means "use the board's default": a real config is
+ * never empty, since the chip:line grammar refuses an empty string.
+ */
+static char gpio_config[GPIO_CONFIG_BUF];
 
 /*
  * The cause of the calling thread's last send, returned by
@@ -184,8 +197,9 @@ static int32_t tristate_check(const char *codeword)
 }
 
 /*
- * Records err as the cause of the calling thread's failed send and
- * returns -1, the value both public send functions return on failure.
+ * Records err as the cause of the calling thread's failed call and
+ * returns -1, the value every public function that sets a cause
+ * returns on failure.
  */
 static int32_t fail(enum rss_err err)
 {
@@ -386,14 +400,39 @@ static int32_t socket_ctrl(const char *group, const char *socket,
 	return send_tris(codeword, pulse_len);
 }
 
-void rss_gpio_config(const char *config)
+int32_t rss_gpio_config(const char *config)
 {
+	size_t len = 0;
+
+	/*
+	 * Both checks come before the lock: they read no shared state.
+	 * The scan is bounded, as the caller's buffer is not known to
+	 * end in a NUL within any length.
+	 */
+	if (config) {
+		len = strnlen(config, GPIO_CONFIG_BUF);
+		if (len >= GPIO_CONFIG_BUF) {
+			syslog(LOG_ERR,
+			       "[-] GPIO config longer than %d characters",
+			       GPIO_CONFIG_BUF - 1);
+			return fail(RSS_ERR_ARG);
+		}
+		if (board_config_check(config) < 0)
+			return fail(RSS_ERR_ARG);
+	}
+
 	if (pthread_mutex_lock(&send_lock) != 0) {
 		syslog(LOG_ERR, "[-] pthread_mutex_lock");
-		return;
+		return fail(RSS_ERR_OTHER);
 	}
-	gpio_config = config;
+	if (config)
+		memcpy(gpio_config, config, len + 1);
+	else
+		gpio_config[0] = '\0';
 	pthread_mutex_unlock(&send_lock);
+
+	last_error = RSS_ERR_NONE;
+	return 0;
 }
 
 int32_t rss_gpio_config_check(const char *config)
@@ -422,7 +461,7 @@ int32_t rss_send(uint32_t dev, uint32_t group,
 		return fail(RSS_ERR_OTHER);
 	}
 
-	ret = board_init(gpio_config);
+	ret = board_init(gpio_config[0] ? gpio_config : NULL);
 	if (ret < 0) {
 		syslog(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);
@@ -503,7 +542,7 @@ int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len)
 		return fail(RSS_ERR_OTHER);
 	}
 
-	ret = board_init(gpio_config);
+	ret = board_init(gpio_config[0] ? gpio_config : NULL);
 	if (ret < 0) {
 		syslog(LOG_ERR, "[-] board_init");
 		pthread_mutex_unlock(&send_lock);

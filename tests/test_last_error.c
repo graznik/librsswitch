@@ -371,9 +371,29 @@ static void test_other_calls_keep_cause(void)
 
 	CHECK_EQ(rss_gpio_config_check(NULL), 0);
 	CHECK_EQ(rss_last_error(), RSS_ERR_BUSY);
+}
 
+/*
+ * rss_gpio_config() sets the cause like a send does: none after a
+ * success, RSS_ERR_ARG for a string that does not fit the library's
+ * buffer. This test board accepts every string that does fit.
+ */
+static void test_gpio_config_sets_cause(void)
+{
+	char longstr[100];
+
+	prime_cause(-(int32_t)RSS_ERR_BUSY);
+	CHECK_EQ(rss_gpio_config(NULL), 0);
+	CHECK_EQ(rss_last_error(), RSS_ERR_NONE);
+
+	memset(longstr, 'a', sizeof(longstr) - 1);
+	longstr[sizeof(longstr) - 1] = '\0';
+	CHECK_EQ(rss_gpio_config(longstr), -1);
+	CHECK_EQ(rss_last_error(), RSS_ERR_ARG);
+
+	CHECK_EQ(rss_gpio_config("gpiochip0:17"), 0);
+	CHECK_EQ(rss_last_error(), RSS_ERR_NONE);
 	rss_gpio_config(NULL);
-	CHECK_EQ(rss_last_error(), RSS_ERR_BUSY);
 }
 
 int main(void)
@@ -385,6 +405,7 @@ int main(void)
 	test_board_gets_codeword_once();
 	test_cause_is_per_thread();
 	test_other_calls_keep_cause();
+	test_gpio_config_sets_cause();
 
 	return MT_REPORT();
 }

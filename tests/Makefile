@@ -2,7 +2,8 @@ CFLAGS += -Werror -Wall -W -pedantic -pthread
 INCLUDES = -I..
 
 TESTS = test_last_error test_socket_send test_codewords test_concurrency \
-	test_codeword_api test_logging test_rsswitchd test_proto test_version
+	test_codeword_api test_logging test_rsswitchd test_proto test_version \
+	test_config
 # The sources of the stub library. Only the ThreadSanitizer run compiles
 # them into its binary, so that the library is instrumented; every other
 # test links the library that the top-level Makefile builds.
@@ -163,6 +164,9 @@ test_socket_send: test_socket_send.c $(TEST_DEPS) $(STUBLIB)
 
 test_version: test_version.c $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_version test_version.c $(STUBLIB)
+
+test_config: test_config.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_config test_config.c $(STUBLIB)
 
 test_codewords: test_codewords.c $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_codewords test_codewords.c $(STUBLIB)

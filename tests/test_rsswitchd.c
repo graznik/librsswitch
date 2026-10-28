@@ -896,6 +896,9 @@ static void test_malformed_gpio_refused(void)
 {
 	static const char *const values[] = {
 		"49", "gpiochip0", "", "/dev/gpiochip0:17",
+		/* well formed, but 80 characters: one too many */
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		":0000000000000017",
 	};
 	size_t i;
 

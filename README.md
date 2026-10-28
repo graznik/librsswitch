@@ -305,13 +305,21 @@ Seven public functions, declared in librsswitch.h. The header can be
 included from C++ as well: its declarations have C linkage there.
 
 ```c
-rss_gpio_config(const char *config);
+int32_t rss_gpio_config(const char *config);
 ```
 
 Sets the GPIO configuration string used by every following
 rss_send()/rss_send_codeword() call. NULL (the default, if never
 called) means "use this board's compiled-in default". Format is
 per-board -- see "GPIO configuration" below.
+
+The library checks the string as rss_gpio_config_check() does and
+keeps its own copy of it, at most 79 characters, so the caller's
+buffer may be changed or freed as soon as the call returns. Returns 0
+on success, and -1 with rss_last_error() RSS_ERR_ARG for a string of
+80 or more characters or one that is malformed; the previous
+configuration then stays in effect. The cause of the rejection is
+logged.
 
 ```c
 rss_gpio_config_check(const char *config);
@@ -322,8 +330,8 @@ touching the GPIO. Returns 0 for NULL and for a string the board can
 parse, and -1 for a malformed one, after the board has logged the
 cause via syslog. Only the format is checked, so a well-formed string
 may still name a chip that does not exist; the first send reports
-that. Call it before rss_gpio_config() to refuse a bad
-configuration at start-up, as rsssend and rsswitchd do.
+that. rss_gpio_config() makes the same check when it stores the
+string; this function is for a caller that only wants to know.
 
 ```c
 rss_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
@@ -364,8 +372,8 @@ rss_last_error() then tells why.
 rss_last_error(void);
 ```
 
-Returns the cause of the calling thread's last rss_send() or
-rss_send_codeword() call as an `enum rss_err`:
+Returns the cause of the calling thread's last rss_send(),
+rss_send_codeword() or rss_gpio_config() call as an `enum rss_err`:
 
 - RSS_ERR_NONE (0): no failure
 - RSS_ERR_OTHER (1): a failure the library cannot classify,
@@ -377,10 +385,11 @@ rss_send_codeword() call as an `enum rss_err`:
 - RSS_ERR_BADLINE (5): the line offset is not valid for the chip
 - RSS_ERR_IO (6): driving the line failed during the send
 - RSS_ERR_ARG (7): the call was rejected before the board was
-  touched (an invalid dev, group, socket, data, codeword or pulse_len)
+  touched (an invalid dev, group, socket, data, codeword or pulse_len,
+  or a GPIO configuration string that rss_gpio_config() refused)
 
-Every send call sets the cause, so it is RSS_ERR_NONE after a
-success. The cause is kept per thread: a send in another thread never
+Each of these calls sets the cause, so it is RSS_ERR_NONE after a
+success. The cause is kept per thread: a call in another thread never
 changes it. The other functions leave it unchanged. The values never
 change; a later cause is only added after RSS_ERR_ARG. Which
 causes a failure can have besides OTHER depends on the board; the
@@ -432,7 +441,9 @@ so concurrent sends never interleave their pulses; a calling thread
 simply blocks until the previous send session completes.
 rss_gpio_config() takes the same lock around its store, so a config
 change is ordered against sends that start after it returns (it does
-not affect a session already in progress). rss_addr_limits() and
+not affect a session already in progress). It checks and measures the
+string before it takes the lock and keeps a copy, so the string passed
+in need not outlive the call. rss_addr_limits() and
 rss_gpio_config_check() take no lock at all: the first only reads
 constant tables, the second only parses the string it is given, and
 neither touches gpio_config or opens the board, so they never block
@@ -458,14 +469,13 @@ example programs) is board-specific:
   string not of the form "chip:line" (for example a bare GPIO number
   such as "49", the BeagleBone Black's former format, a chip without
   a line, a chip name containing "/", or a chip name that does not
-  start with a letter or digit, such as "..") is malformed. rsssend and
-  rsswitchd check the string with rss_gpio_config_check() and
-  refuse to start with exit status 1 and
-  `<prog>: malformed --gpio '<value>'` on stderr, while the library
-  logs "[-] Malformed GPIO config". On these libgpiod boards, a
-  program that stores such a string with rss_gpio_config() without
-  checking it still gets -1 from rss_send() and
-  rss_send_codeword(), and no GPIO chip is opened. The default is
+  start with a letter or digit, such as "..") is malformed, and so is
+  a string of 80 or more characters. rss_gpio_config() refuses both
+  with -1 and RSS_ERR_ARG, keeps the previous configuration and logs
+  the cause ("[-] Malformed GPIO config" for the first, a line that
+  does not repeat the string for the second). rsssend and rsswitchd
+  check the result and refuse to start with exit status 1 and
+  `<prog>: malformed --gpio '<value>'` on stderr. The default is
   GPIO17 (header pin 11) on the Raspberry Pi, and P9_23 on a
   BeagleBone Black with Debian 13 (kernel 6.x). On other kernels the
   chip of P9_23 can differ: find it with `gpioinfo` from the gpiod
@@ -476,16 +486,16 @@ example programs) is board-specific:
   the line is in use by another program, RSS_ERR_DENIED when the
   process may not open the chip, RSS_ERR_BADLINE when the line
   offset is not valid for the chip, and RSS_ERR_IO when a write to
-  the line failed. Every other failure is RSS_ERR_OTHER: a
-  malformed config, an allocation failure and, on libgpiod 1.x, a
-  device that exists but is not a GPIO chip. The last one stays
+  the line failed. Every other failure is RSS_ERR_OTHER: an
+  allocation failure and, on libgpiod 1.x, a device that exists but is
+  not a GPIO chip. The last one stays
   "other" on purpose, because a wrong cause is worse than none.
 - stub: the stub build checks the string with the same "chip:line"
-  rules, so the programs refuse the same values, and its board
-  drives no GPIO. Apart from the chip names below, the stub ignores the
-  string stored with rss_gpio_config(), so on this build
-  rss_send() and rss_send_codeword() succeed even with a
-  malformed one.
+  rules, so rss_gpio_config() and the programs refuse the same values,
+  and its board drives no GPIO. Apart from the chip names below, the
+  stub ignores the string stored with rss_gpio_config(), so on this
+  build rss_send() and rss_send_codeword() succeed whatever well
+  formed string is stored.
 
   A chip named failnochip, failbusy, faildenied, failbadline, failio
   or failother (followed by ":" and a line, e.g. "failbusy:0") makes

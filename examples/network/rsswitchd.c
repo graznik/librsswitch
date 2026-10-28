@@ -297,17 +297,16 @@ int main(int argc, char *argv[])
 	}
 
 	/*
-	 * A daemon that started with a malformed config would answer
-	 * every switching command with an error while systemd saw a
-	 * healthy unit. Refuse it here, before the port is opened.
+	 * A daemon that started with a malformed or too long config
+	 * would answer every switching command with an error while
+	 * systemd saw a healthy unit. The library refuses such a string
+	 * when it is set, so stop here, before the port is opened.
 	 */
-	if (rss_gpio_config_check(gpio_config) < 0) {
+	if (rss_gpio_config(gpio_config) < 0) {
 		fprintf(stderr, "rsswitchd: malformed --gpio '%s'\n",
 			gpio_config);
 		exit(1);
 	}
-
-	rss_gpio_config(gpio_config);
 
 	listenfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (listenfd < 0)
