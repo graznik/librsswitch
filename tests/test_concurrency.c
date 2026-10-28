@@ -15,7 +15,7 @@
  */
 
 /*
- * Concurrency tests. Proves that the x86_64 board's
+ * Concurrency tests. Proves that the stub board's
  * overlap detector actually detects an unserialized board session
  * (not a vacuous always-zero counter), then, once rss_send() is
  * serialized with a mutex, that concurrent callers from multiple
@@ -27,7 +27,7 @@
 #include "minitest.h"
 #include "pulse_decode.h"
 #include "../librsswitch.h"
-#include "../boards/x86_64/x86_64.h"
+#include "../boards/stub/stub.h"
 
 #define NTHREADS 6
 #define NSENDS 10
@@ -50,16 +50,16 @@ struct worker_ctx {
 
 static void test_overlap_detector_is_not_vacuous(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(board_init(NULL), 0);
 	CHECK_EQ(board_init(NULL), 0);
-	CHECK_EQ(x86_64_board_overlap_count(), (size_t)1);
+	CHECK_EQ(stub_board_overlap_count(), (size_t)1);
 	CHECK_EQ(board_exit(), 0);
 	CHECK_EQ(board_exit(), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
-	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
+	CHECK_EQ(stub_board_overlap_count(), (size_t)0);
 }
 
 /*
@@ -75,7 +75,7 @@ static void compute_references(void)
 		size_t pos = 0;
 		uint32_t pulse_len;
 
-		x86_64_recorder_reset();
+		stub_recorder_reset();
 		CHECK_EQ(rss_send(RSS_POLLIN_2605, addr_group[t],
 				      addr_socket[t], addr_data[t]), 0);
 		CHECK_EQ(next_transmission(&pos, ref[t], sizeof(ref[t]),
@@ -127,7 +127,7 @@ static void run_round(void)
 	size_t pos;
 	int t;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 
 	for (t = 0; t < NTHREADS; t++) {
 		ctx[t].group = addr_group[t];
@@ -148,7 +148,7 @@ static void run_round(void)
 		CHECK(ctx[t].ok);
 
 	pos = 0;
-	while (pos < x86_64_recorder_count()) {
+	while (pos < stub_recorder_count()) {
 		char frame[PULSE_DECODE_MAX_FRAME_LEN];
 		uint32_t pulse_len;
 		int matched = -1;
@@ -172,15 +172,15 @@ static void run_round(void)
 			counts[matched]++;
 	}
 
-	CHECK_EQ(pos, x86_64_recorder_count());
+	CHECK_EQ(pos, stub_recorder_count());
 
 	for (t = 0; t < NTHREADS; t++)
 		CHECK_EQ(counts[t], (size_t)NSENDS);
 
-	CHECK(!x86_64_recorder_overflowed());
-	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)(NTHREADS * NSENDS));
-	CHECK_EQ(x86_64_board_exit_count(), (size_t)(NTHREADS * NSENDS));
+	CHECK(!stub_recorder_overflowed());
+	CHECK_EQ(stub_board_overlap_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)(NTHREADS * NSENDS));
+	CHECK_EQ(stub_board_exit_count(), (size_t)(NTHREADS * NSENDS));
 }
 
 static void test_concurrent_socket_send(void)
@@ -229,7 +229,7 @@ static void compute_mixed_references(void)
 	for (t = 0; t < 3; t++) {
 		size_t pos = 0;
 
-		x86_64_recorder_reset();
+		stub_recorder_reset();
 		CHECK_EQ(rss_send(RSS_POLLIN_2605, addr_group[t],
 				      addr_socket[t], addr_data[t]), 0);
 		CHECK_EQ(next_transmission(&pos, mixed_ref[t],
@@ -288,7 +288,7 @@ static void run_mixed_round(void)
 	size_t pos;
 	int t;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 
 	for (t = 0; t < 3; t++) {
 		ctx[t].use_codeword = 0;
@@ -324,7 +324,7 @@ static void run_mixed_round(void)
 		CHECK(ctx[t].ok);
 
 	pos = 0;
-	while (pos < x86_64_recorder_count()) {
+	while (pos < stub_recorder_count()) {
 		char frame[PULSE_DECODE_MAX_FRAME_LEN];
 		uint32_t pulse_len;
 		int matched = -1;
@@ -347,16 +347,16 @@ static void run_mixed_round(void)
 			counts[matched]++;
 	}
 
-	CHECK_EQ(pos, x86_64_recorder_count());
+	CHECK_EQ(pos, stub_recorder_count());
 
 	for (t = 0; t < NTHREADS_MIXED; t++)
 		CHECK_EQ(counts[t], (size_t)NSENDS_MIXED);
 
-	CHECK(!x86_64_recorder_overflowed());
-	CHECK_EQ(x86_64_board_overlap_count(), (size_t)0);
-	CHECK_EQ(x86_64_board_init_count(),
+	CHECK(!stub_recorder_overflowed());
+	CHECK_EQ(stub_board_overlap_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(),
 		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED));
-	CHECK_EQ(x86_64_board_exit_count(),
+	CHECK_EQ(stub_board_exit_count(),
 		 (size_t)(NTHREADS_MIXED * NSENDS_MIXED));
 }
 

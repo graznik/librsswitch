@@ -1,10 +1,10 @@
-#ifndef X86_64_H
-#define X86_64_H
+#ifndef STUB_H
+#define STUB_H
 
 #include "../board.h"
 
 /*
- * Test-only pulse recorder, x86_64 board only.
+ * Test-only pulse recorder, stub board only.
  *
  * Every transmit() call on this board appends the pulse it was asked
  * to send instead of driving any GPIO. This lets host tests decode
@@ -34,15 +34,15 @@
  * transmit() with IO. The name must be followed by ':' and a line, e.g.
  * "failbusy:0". The injection keeps no state across sends besides the
  * config: every send fails while such a config is set, and any other
- * config sends normally. x86_64_recorder_reset() clears a pending
+ * config sends normally. stub_recorder_reset() clears a pending
  * failio state. A failed injected board_init() is counted by
- * x86_64_board_init_count() but opens no session.
+ * stub_board_init_count() but opens no session.
  */
 #include <stddef.h>
 
-#define X86_64_RECORDER_MAX_PULSES 16384U
+#define STUB_RECORDER_MAX_PULSES 16384U
 
-struct x86_64_pulse {
+struct stub_pulse {
 	uint32_t nhigh;
 	uint32_t nlow;
 	uint32_t pulse_len;
@@ -52,32 +52,32 @@ struct x86_64_pulse {
  * Clears every recorded pulse, the overflow flag and the
  * board_init()/board_exit() call counters.
  */
-void x86_64_recorder_reset(void);
+void stub_recorder_reset(void);
 
 /* Number of pulses recorded since the last reset. */
-size_t x86_64_recorder_count(void);
+size_t stub_recorder_count(void);
 
 /*
  * Returns the pulse at index, or NULL when index is out of range
- * (index >= x86_64_recorder_count()).
+ * (index >= stub_recorder_count()).
  */
-const struct x86_64_pulse *x86_64_recorder_get(size_t index);
+const struct stub_pulse *stub_recorder_get(size_t index);
 
 /*
  * Set once the recorder buffer filled up and a pulse had to be
- * dropped. Sticky until the next x86_64_recorder_reset(). The
+ * dropped. Sticky until the next stub_recorder_reset(). The
  * recorder never aborts or exits the process on overflow -- this
- * board also backs long-running x86_64 builds of rsssend and
+ * board also backs long-running stub builds of rsssend and
  * rsswitchd, which must keep working regardless of how many pulses
  * they have sent.
  */
-int x86_64_recorder_overflowed(void);
+int stub_recorder_overflowed(void);
 
 /* Number of board_init() calls since the last reset. */
-size_t x86_64_board_init_count(void);
+size_t stub_board_init_count(void);
 
 /* Number of board_exit() calls since the last reset. */
-size_t x86_64_board_exit_count(void);
+size_t stub_board_exit_count(void);
 
 /*
  * Arms one-shot failure injection: once the recorder holds index
@@ -85,9 +85,9 @@ size_t x86_64_board_exit_count(void);
  * disarms itself, so a caller that (incorrectly) ignores the error
  * and keeps sending observably diverges from one that aborts -- later
  * pulses are then recorded again instead of every call failing
- * forever. x86_64_recorder_reset() also disarms it.
+ * forever. stub_recorder_reset() also disarms it.
  */
-void x86_64_recorder_fail_at(size_t index);
+void stub_recorder_fail_at(size_t index);
 
 /*
  * Number of board_init() calls, since the last reset, that found a
@@ -97,6 +97,6 @@ void x86_64_recorder_fail_at(size_t index);
  * for the full board_init() -> board_exit() span keeps this at zero
  * even under concurrent callers.
  */
-size_t x86_64_board_overlap_count(void);
+size_t stub_board_overlap_count(void);
 
-#endif /* X86_64_H */
+#endif /* STUB_H */

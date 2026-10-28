@@ -15,7 +15,7 @@
  */
 
 /*
- * Decodes pulses recorded by the x86_64 board's test-only recorder
+ * Decodes pulses recorded by the stub board's test-only recorder
  * back into the 0/1/F/sync tri-state frames librsswitch.c's
  * send_0()/send_1()/send_f()/send_sync() produce. Used only by
  * tests/test_*.c to assert on the exact codeword a rss_send() (or,
@@ -28,7 +28,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "../boards/x86_64/x86_64.h"
+#include "../boards/stub/stub.h"
 
 /*
  * Literal on purpose: if NTIMES in librsswitch.c ever changes, this
@@ -61,8 +61,8 @@ static inline int decode_frame(size_t *pos, char *out, size_t outlen,
 	int have_pulse_len = 0;
 
 	for (;;) {
-		const struct x86_64_pulse *p = x86_64_recorder_get(i);
-		const struct x86_64_pulse *q;
+		const struct stub_pulse *p = stub_recorder_get(i);
+		const struct stub_pulse *q;
 		char sym;
 
 		if (!p)
@@ -83,7 +83,7 @@ static inline int decode_frame(size_t *pos, char *out, size_t outlen,
 			return 0;
 		}
 
-		q = x86_64_recorder_get(i + 1);
+		q = stub_recorder_get(i + 1);
 		if (!q || q->pulse_len != *pulse_len)
 			return -1;
 
@@ -153,12 +153,12 @@ static inline int expect_transmission(const char *codeword,
 	if (!codeword)
 		return -1;
 
-	if (x86_64_recorder_overflowed())
+	if (stub_recorder_overflowed())
 		return -1;
 
 	expected_count = (size_t)EXPECTED_REPEATS *
 			 (2 * strlen(codeword) + 1);
-	if (x86_64_recorder_count() != expected_count)
+	if (stub_recorder_count() != expected_count)
 		return -1;
 
 	if (next_transmission(&pos, decoded, sizeof(decoded),
@@ -171,7 +171,7 @@ static inline int expect_transmission(const char *codeword,
 	if (strcmp(decoded, codeword) != 0)
 		return -1;
 
-	if (pos != x86_64_recorder_count())
+	if (pos != stub_recorder_count())
 		return -1;
 
 	return 0;

@@ -16,7 +16,7 @@
 
 /*
  * Exact-codeword tests. Asserts the tri-state codeword the
- * x86_64 board recorder captured for a rss_send() call against
+ * stub board recorder captured for a rss_send() call against
  * literal expected strings, so a single wrong table entry in
  * librsswitch.c fails this suite. The expected-value tables below are
  * written independently of librsswitch.c's own lookup tables -- they
@@ -25,7 +25,7 @@
  */
 #include "minitest.h"
 #include "../librsswitch.h"
-#include "../boards/x86_64/x86_64.h"
+#include "../boards/stub/stub.h"
 #include "pulse_decode.h"
 
 static const char * const rev_groups[4] = {"1FFF", "F1FF", "FF1F", "FFF1"};
@@ -46,24 +46,24 @@ static const char * const pollin_data[2] = {"F0", "0F"}; /* Off, On */
 
 static void test_pollin_2605_high_address(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 }
 
 static void test_rev_008345_entry(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_REV_008345, 2, 1, 1), 0);
 	CHECK_EQ(expect_transmission("FF1FF1F00010", 350), 0);
 }
 
 static void test_decoder_is_not_vacuous(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(expect_transmission("FFFFFFFFFFF0", 350), -1);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_POLLIN_2605, 0, 0, 0), 0);
 	CHECK_EQ(expect_transmission("000000000000", 350), -1);
 }
@@ -75,7 +75,7 @@ static void test_back_to_back_transmissions(void)
 	uint32_t pulse_len;
 	size_t pos = 0;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(rss_send(RSS_REV_008345, 2, 1, 1), 0);
 
@@ -83,7 +83,7 @@ static void test_back_to_back_transmissions(void)
 	CHECK(strcmp(first, "0FFF0000F00F") == 0);
 	CHECK_EQ(next_transmission(&pos, second, sizeof(second), &pulse_len), 0);
 	CHECK(strcmp(second, "FF1FF1F00010") == 0);
-	CHECK_EQ(pos, x86_64_recorder_count());
+	CHECK_EQ(pos, stub_recorder_count());
 }
 
 static void test_rev_008345_all_entries(void)
@@ -95,7 +95,7 @@ static void test_rev_008345_all_entries(void)
 			for (data = 0; data < 2; data++) {
 				char expected[16];
 
-				x86_64_recorder_reset();
+				stub_recorder_reset();
 				CHECK_EQ(rss_send(RSS_REV_008345, group, socket,
 						      data), 0);
 				snprintf(expected, sizeof(expected), "%s%s%s",
@@ -116,7 +116,7 @@ static void test_pollin_2605_all_entries(void)
 			for (data = 0; data < 2; data++) {
 				char expected[16];
 
-				x86_64_recorder_reset();
+				stub_recorder_reset();
 				CHECK_EQ(rss_send(RSS_POLLIN_2605, group, socket,
 						  data), 0);
 				snprintf(expected, sizeof(expected), "%s%s%s",

@@ -161,7 +161,7 @@ int main(int argc, char *argv[])
 	int opt;
 
 	/*
-	 * On the x86_64 build the library prints every sent codeword
+	 * On the stub build the board prints every sent codeword
 	 * on stdout. When stdout is a pipe or a file, as it is under
 	 * systemd or when a test captures it, the stream is fully
 	 * buffered by default, so a codeword only appears once the

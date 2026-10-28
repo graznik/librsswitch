@@ -22,7 +22,7 @@ ARCH := $(shell uname -m)
 
 ifeq ($(ARCH),x86_64)
 ifeq ($(MAKECMDGOALS), x86_64)
-CFLAGS += -DX86_64
+# The stub board is chosen by its source file alone, and built natively.
 else ifeq ($(MAKECMDGOALS), rpi3)
 ARCH:=aarch64
 CROSS_COMPILE=aarch64-linux-gnu-
@@ -71,7 +71,7 @@ bbb:
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/gpiod/gpiod_board.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 x86_64:
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/x86_64/x86_64.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -o rsssend rsssend.c ../../librsswitch.c ../../boards/stub/stub.c ../../boards/gpiod/gpiod_config.c $(LFLAGS)
 
 clean:
 	-@rm -rf *.o *~ rsssend 2>/dev/null || true

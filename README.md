@@ -5,8 +5,8 @@ remote controlled power sockets. It switches REV 008345 and Pollin
 2605 433 MHz sockets by emulating the PT2260/PT2262 encoder chip of
 their remote control on a GPIO line, so a separate 433 MHz sender is
 needed. It runs on the Raspberry Pi (32-bit), the Raspberry Pi 3
-(aarch64) and the BeagleBone Black, and has an x86_64 stub build that
-prints the codewords instead of driving a line, for tests.
+(aarch64) and the BeagleBone Black, and has a stub board that prints
+the codewords instead of driving a line, for tests.
 
 librsswitch is written in C and heavily inspired by
 [rcswitch-pi](https://github.com/r10r/rcswitch-pi), which is based on
@@ -18,7 +18,7 @@ librsswitch is written in C and heavily inspired by
 - Raspberry Pi (32-bit), through libgpiod
 - Raspberry Pi 3 (aarch64), through libgpiod
 - BeagleBone Black, through libgpiod
-- x86_64 host, a stub build for tests that needs no hardware
+- stub board, for tests on any host that needs no hardware
 
 
 ## Supported devices
@@ -306,8 +306,8 @@ example programs) is board-specific:
   malformed config, an allocation failure and, on libgpiod 1.x, a
   device that exists but is not a GPIO chip. The last one stays
   "other" on purpose, because a wrong cause is worse than none.
-- x86_64: the host build checks the string with the same "chip:line"
-  rules, so the programs refuse the same values, and its stub board
+- stub: the stub build checks the string with the same "chip:line"
+  rules, so the programs refuse the same values, and its board
   drives no GPIO. Apart from the chip names below, the stub ignores the
   string stored with rss_gpio_config(), so on this build
   rss_send() and rss_send_codeword() succeed even with a
@@ -340,7 +340,7 @@ there. A venv directory that has no pip, for example one left by an
 interrupted run, is removed and made again. `make -C tests venv test`
 makes the venv first, with -j as well. `make -C tests test` then runs
 every C test, then the tests of the web app, including the end-to-end
-test against the x86_64 rsswitchd that it builds. It exits non-zero
+test against the stub-board rsswitchd that it builds. It exits non-zero
 when any of them fails. It fails, and never skips, when the
 venv, pytest or the daemon is missing; it never makes the venv itself.
 A venv at another place is named with WEB_PYTHON, as the absolute path
@@ -405,8 +405,8 @@ make -C tests tsan
 
 Pulses are timed with sleeps on a non-real-time kernel, so system load
 or signal delivery can stretch or shorten a pulse and a receiver may
-ignore the resulting code. The x86_64 host tests cannot detect this,
-since the stub board has no real timing constraint to violate.
+ignore the resulting code. The host tests cannot detect this, since
+the stub board has no real timing constraint to violate.
 Real-hardware verification of pulse timing is outside this milestone.
 
 board_exit() drives the GPIO line low whenever a send fails, and

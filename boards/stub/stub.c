@@ -19,7 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "x86_64.h"
+#include "stub.h"
 #include "../gpiod/gpiod_config.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -28,7 +28,7 @@
  * The chip names that make the stub fail: "fail" followed by the wire
  * word of the cause. failother is the unclassified failure.
  */
-static const struct x86_64_inject {
+static const struct stub_inject {
 	const char *name;
 	enum rss_err cause;
 } inject_table[] = {
@@ -40,7 +40,7 @@ static const struct x86_64_inject {
 	{ "failother", RSS_ERR_OTHER },
 };
 
-static struct x86_64_pulse recorder[X86_64_RECORDER_MAX_PULSES];
+static struct stub_pulse recorder[STUB_RECORDER_MAX_PULSES];
 static size_t recorder_count;
 static int recorder_overflow;
 static size_t init_count;
@@ -151,7 +151,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 		return -1;
 	}
 
-	if (recorder_count >= X86_64_RECORDER_MAX_PULSES) {
+	if (recorder_count >= STUB_RECORDER_MAX_PULSES) {
 		recorder_overflow = 1;
 		sched_yield();
 		return 0;
@@ -165,7 +165,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len)
 	return 0;
 }
 
-void x86_64_recorder_reset(void)
+void stub_recorder_reset(void)
 {
 	recorder_count = 0;
 	recorder_overflow = 0;
@@ -177,12 +177,12 @@ void x86_64_recorder_reset(void)
 	overlap_count = 0;
 }
 
-size_t x86_64_recorder_count(void)
+size_t stub_recorder_count(void)
 {
 	return recorder_count;
 }
 
-const struct x86_64_pulse *x86_64_recorder_get(size_t index)
+const struct stub_pulse *stub_recorder_get(size_t index)
 {
 	if (index >= recorder_count)
 		return NULL;
@@ -190,27 +190,27 @@ const struct x86_64_pulse *x86_64_recorder_get(size_t index)
 	return &recorder[index];
 }
 
-int x86_64_recorder_overflowed(void)
+int stub_recorder_overflowed(void)
 {
 	return recorder_overflow;
 }
 
-size_t x86_64_board_init_count(void)
+size_t stub_board_init_count(void)
 {
 	return init_count;
 }
 
-size_t x86_64_board_exit_count(void)
+size_t stub_board_exit_count(void)
 {
 	return exit_count;
 }
 
-void x86_64_recorder_fail_at(size_t index)
+void stub_recorder_fail_at(size_t index)
 {
 	fail_at_index = index;
 }
 
-size_t x86_64_board_overlap_count(void)
+size_t stub_board_overlap_count(void)
 {
 	return overlap_count;
 }

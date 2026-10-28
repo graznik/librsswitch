@@ -15,7 +15,7 @@
  */
 
 /*
- * Drives the real x86_64 rsswitchd binary over TCP: spawns it on an
+ * Drives the real stub-board rsswitchd binary over TCP: spawns it on an
  * ephemeral port, waits for its stderr "listening on" line, connects
  * as a real client and reads the codewords it prints on stdout. The
  * contract this relies on -- "--port 0", the stderr listening line,

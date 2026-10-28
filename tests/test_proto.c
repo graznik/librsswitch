@@ -16,7 +16,7 @@
 
 /*
  * Unit tests for rsswitchd_proto.c/.h: no socket, no GPIO, no syslog.
- * x86_64.h is linked in only to prove that (test_err_names below), not
+ * stub.h is linked in only to prove that (test_err_names below), not
  * because the parser itself calls into the board or the library.
  */
 #include <inttypes.h>
@@ -24,7 +24,7 @@
 
 #include "minitest.h"
 #include "../examples/network/rsswitchd_proto.h"
-#include "../boards/x86_64/x86_64.h"
+#include "../boards/stub/stub.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -400,7 +400,7 @@ static void test_ranges(void)
 	struct proto_cmd cmd[4];
 	size_t n;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 
 	proto_init(&pc);
 	{
@@ -549,7 +549,7 @@ static void test_ranges(void)
 	check_error(&cmd[0], PROTO_ERR_RANGE);
 	CHECK_EQ(strcmp(cmd[0].text, "group 4294967295 not in 0-31"), 0);
 
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 }
 
 /*
@@ -564,7 +564,7 @@ static void test_ranges_follow_library(void)
 	static const uint32_t devs[] = { RSS_REV_008345, RSS_POLLIN_2605 };
 	size_t d;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 
 	for (d = 0; d < ARRAY_SIZE(devs); d++) {
 		uint32_t ngroups, nsockets, ndata;
@@ -629,7 +629,7 @@ static void test_ranges_follow_library(void)
 		}
 	}
 
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 }
 
 static void check_raw(const struct proto_cmd *cmd, const char *tristate,
@@ -943,7 +943,7 @@ static void test_err_names(void)
 	CHECK_EQ(strcmp(proto_err_name(PROTO_ERR_GPIO), "gpio"), 0);
 
 	/* The parser never opens a board. */
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 }
 
 /*

@@ -45,8 +45,8 @@
  * Returns 0 for a well-formed config and -1 for a malformed one, after
  * logging it once as "[-] Malformed GPIO config" with the reason.
  *
- * The parser needs neither libgpiod nor a board macro, so the x86_64
- * stub applies the same rules as the boards that drive a real line.
+ * The parser needs neither libgpiod nor a board macro, so the stub
+ * board applies the same rules as the boards that drive a real line.
  */
 int32_t gpiod_config_parse(const char *config, char *chipname_out,
 			   size_t chipname_out_len, unsigned int *line_out);

@@ -17,8 +17,8 @@
 /*
  * Minimal single-header test harness. No external dependency beyond
  * libc, on purpose -- this project has none today (only librt/libgpiod
- * on real boards), and the x86_64 stub target already exists to make
- * the protocol logic host-testable without hardware.
+ * on real boards), and the stub board already exists to make the
+ * protocol logic host-testable without hardware.
  */
 #ifndef MINITEST_H
 #define MINITEST_H

@@ -1,7 +1,7 @@
 # rsswitchd
 
 rsswitchd is a network daemon for the Raspberry Pi, BeagleBone
-Black and an x86_64 test build. It links
+Black and a stub build for tests. It links
 [librsswitch](https://github.com/graznik/librsswitch) and
 serves a line-based TCP protocol that switches REV 008345 and
 Pollin 2605 sockets on or off.
@@ -146,7 +146,7 @@ badline: the chip has no such line. io: the line was found, but
 driving it failed. The reply never carries the chip name, a device
 path or the system's error text; those are in the syslog.
 
-On the x86_64 host build, which has no GPIO, `--gpio` can name a
+On the stub build, which has no GPIO, `--gpio` can name a
 chip such as `failbusy:0` to make every command fail with that
 cause, for tests; the top-level README lists the names.
 
@@ -214,7 +214,7 @@ printf '1 40 0 1\n' | nc -N 127.0.0.1 5000
 ERR range group 40 not in 0-31
 ```
 
-On the x86_64 test build, `1 17 23 1` and the raw command above
+On the stub build, `1 17 23 1` and the raw command above
 both print the codeword 0FFF0000F00F on the daemon's own stdout,
 and `0 3 0 0` prints FFF11FF00001.
 

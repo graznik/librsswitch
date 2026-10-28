@@ -102,7 +102,7 @@ static void test_capture_is_not_vacuous(void)
 	CHECK_EQ(captured_count(), (size_t)0);
 	CHECK_EQ(captured_find("this message was never logged"), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_REV_008345, 4294967295U, 0, 0), -1);
 	CHECK(captured_count() > 0);
 	CHECK_EQ(captured_find("this message was never logged"), 0);
@@ -158,23 +158,23 @@ static void test_uint32_values_logged_unsigned(void)
 static void test_socket_ctrl_truncation(void)
 {
 	captured_reset();
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(socket_ctrl("1FFF1FF0", "00010", "FFFF", 350), -1);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
 	CHECK(captured_find("Codeword too long"));
 	CHECK_EQ(captured_find("snprintf() failed"), 0);
 
 	captured_reset();
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(socket_ctrl("1FFF", "1FF0", "00010", 350), -1);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
 	CHECK(captured_find("Codeword too long"));
 }
 
 /* An exactly-12-character assembled codeword is accepted and sent. */
 static void test_socket_ctrl_max_length(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(socket_ctrl("1FFF", "1FF0", "0001", 350), 0);
 	CHECK_EQ(expect_transmission("1FFF1FF00001", 350), 0);
 }

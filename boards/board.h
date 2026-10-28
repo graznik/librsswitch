@@ -49,15 +49,15 @@
  * format documented in boards/gpiod/gpiod_config.h. On those boards a
  * non-NULL string that cannot be parsed makes board_init() return -1
  * without opening the GPIO; it never selects the default instead. The
- * x86_64 stub applies the same format in board_config_check(), but its
+ * stub board applies the same format in board_config_check(), but its
  * board_init() drives nothing and accepts any string, except a chip
- * named "fail" plus a cause word (see boards/x86_64/x86_64.c), which
+ * named "fail" plus a cause word (see boards/stub/stub.c), which
  * makes it fail with that cause so tests reach every failure path.
  *
  * board_init() opens a send session with the line driven low, even if
  * an earlier process left it high -- so a stuck-high line is
  * bounded to "until the next board_init()" regardless of how it got
- * that way. The x86_64 stub has no real line, so it has nothing to
+ * that way. The stub board has no real line, so it has nothing to
  * drive; its board_init()/board_exit()/transmit() are no-ops.
  *
  * Returns 0, or -(int32_t)SOCKET_ERR_x for a failure the board can
@@ -100,7 +100,7 @@ int32_t transmit(uint32_t nhigh, uint32_t nlow, uint32_t pulse_len);
 /*
  * Called once per send, after board_init() succeeded and before the
  * first transmit(), with the NUL-terminated codeword about to be sent.
- * The x86_64 stub prints it to stdout; the libgpiod board does
+ * The stub board prints it to stdout; the libgpiod board does
  * nothing. It cannot fail.
  */
 void board_codeword(const char *codeword);

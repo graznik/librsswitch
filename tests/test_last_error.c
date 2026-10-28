@@ -22,7 +22,7 @@
  * Includes ../librsswitch.c directly, instead of linking it, so it can
  * reach the static cause_from_board(). It defines the five board
  * functions itself as a settable test board, so the cause a board
- * returns can be chosen per test without the x86_64 stub, and links no
+ * returns can be chosen per test without the stub board, and links no
  * board source.
  */
 #include <pthread.h>

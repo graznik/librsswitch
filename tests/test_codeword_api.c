@@ -20,7 +20,7 @@
  * ../librsswitch.c directly, instead of linking it, so this file can
  * call the static send_tris() and socket_ctrl() directly -- neither
  * is part of the public API in librsswitch.h. This binary therefore
- * links only ../boards/x86_64/x86_64.c, not librsswitch.c a second
+ * links only ../boards/stub/stub.c, not librsswitch.c a second
  * time.
  *
  * It also checks that a failed board_init() releases the send lock in
@@ -69,51 +69,51 @@ static void test_send_tris_rejects_invalid(void)
 	};
 	size_t i;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(send_tris(NULL, 350), -1);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(send_tris("", 350), -1);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
 
 	for (i = 0; i < ARRAY_SIZE(bad); i++) {
-		x86_64_recorder_reset();
+		stub_recorder_reset();
 		CHECK_EQ(send_tris(bad[i], 350), -1);
-		CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+		CHECK_EQ(stub_recorder_count(), (size_t)0);
 	}
 }
 
 static void test_send_tris_accepts_valid(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(send_tris("0F1", 350), 0);
 	CHECK_EQ(expect_transmission("0F1", 350), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(send_tris("F", 350), 0);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)30);
+	CHECK_EQ(stub_recorder_count(), (size_t)30);
 }
 
 static void test_socket_ctrl_propagates_rejection(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(socket_ctrl("1FFF", "1FX0", "0001", 350), -1);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
 }
 
 static void test_codeword_api_valid(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", 350), 0);
-	CHECK_EQ(x86_64_recorder_count(), (size_t)30);
+	CHECK_EQ(stub_recorder_count(), (size_t)30);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("000000000000", 350), 0);
 	CHECK_EQ(expect_transmission("000000000000", 350), 0);
 
 	/* Embedded NUL: only "01" (before it) is sent. */
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("01\0F", 350), 0);
 	CHECK_EQ(expect_transmission("01", 350), 0);
 }
@@ -129,7 +129,7 @@ static void test_codeword_api_rejects(void)
 	char buf[64];
 	size_t i;
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	capture_stdout_begin(&saved_fd, &tmp);
 
 	CHECK_EQ(rss_send_codeword(NULL, 350), -1);
@@ -139,44 +139,44 @@ static void test_codeword_api_rejects(void)
 	capture_stdout_end(saved_fd, tmp, buf, sizeof(buf));
 	CHECK_EQ(buf[0], '\0');
 
-	CHECK_EQ(x86_64_recorder_count(), (size_t)0);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_recorder_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 }
 
 static void test_codeword_api_bounds(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", RSS_PULSE_LEN_MIN_US), 0);
 	CHECK_EQ(expect_transmission("1", RSS_PULSE_LEN_MIN_US), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", RSS_PULSE_LEN_MAX_US), 0);
 	CHECK_EQ(expect_transmission("1", RSS_PULSE_LEN_MAX_US), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", (uint32_t)0), -1);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", RSS_PULSE_LEN_MIN_US - 1), -1);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", RSS_PULSE_LEN_MAX_US + 1), -1);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("1", UINT32_MAX), -1);
-	CHECK_EQ(x86_64_board_init_count(), (size_t)0);
+	CHECK_EQ(stub_board_init_count(), (size_t)0);
 }
 
 static void test_codeword_api_matches_socket_send(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send(RSS_POLLIN_2605, 17, 23, 1), 0);
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), 0);
 	CHECK_EQ(expect_transmission("0FFF0000F00F", 350), 0);
 }
@@ -187,7 +187,7 @@ static void test_codeword_api_prints_codeword(void)
 	FILE *tmp;
 	char buf[64];
 
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	capture_stdout_begin(&saved_fd, &tmp);
 	CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), 0);
 	capture_stdout_end(saved_fd, tmp, buf, sizeof(buf));
@@ -211,7 +211,7 @@ static void check_send_lock_released(void)
 
 static void test_failed_board_init_releases_send_lock(void)
 {
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	rss_gpio_config("failbusy:0");
 
 	CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), -1);
@@ -223,7 +223,7 @@ static void test_failed_board_init_releases_send_lock(void)
 	check_send_lock_released();
 
 	rss_gpio_config(NULL);
-	x86_64_recorder_reset();
+	stub_recorder_reset();
 	CHECK_EQ(rss_send_codeword("0FFF0000F00F", 350), 0);
 }
 

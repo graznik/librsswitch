@@ -1,12 +1,12 @@
-CFLAGS += -Werror -Wall -W -pedantic -DX86_64 -pthread
+CFLAGS += -Werror -Wall -W -pedantic -pthread
 INCLUDES = -I..
 
 TESTS = test_last_error test_socket_send test_codewords test_concurrency \
 	test_codeword_api test_logging test_rsswitchd test_proto
-LIB_SRCS = ../librsswitch.c ../boards/x86_64/x86_64.c \
+LIB_SRCS = ../librsswitch.c ../boards/stub/stub.c \
 	   ../boards/gpiod/gpiod_config.c
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
-	    ../boards/board.h ../boards/x86_64/x86_64.c ../boards/x86_64/x86_64.h \
+	    ../boards/board.h ../boards/stub/stub.c ../boards/stub/stub.h \
 	    ../boards/gpiod/gpiod_config.c ../boards/gpiod/gpiod_config.h
 
 # The web app's tests run from `make test` too. WEB_DIR is the app,
@@ -129,15 +129,15 @@ test_concurrency: test_concurrency.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_concurrency test_concurrency.c $(LIB_SRCS)
 
 test_codeword_api: test_codeword_api.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/x86_64/x86_64.c ../boards/gpiod/gpiod_config.c
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/stub/stub.c ../boards/gpiod/gpiod_config.c
 
 # Includes ../librsswitch.c directly and defines its own board, so the
 # cause a board returns can be chosen per test: it links no board
-# source, not even the x86_64 stub.
+# source, not even the stub board.
 test_last_error: test_last_error.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_last_error test_last_error.c
 
-# Builds ../examples/basic/rsssend.c against the x86_64 board, so
+# Builds ../examples/basic/rsssend.c against the stub board, so
 # test_rsssend.sh can drive the real CLI (argument parsing, exit
 # codes, stdout/stderr) end to end without any hardware. Not part of
 # $(TESTS): it is a shell script, not a minitest binary, so `test`
@@ -146,7 +146,7 @@ test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c $(LIB_SRCS)
 
 # Builds ../examples/network/rsswitchd.c and rsswitchd_proto.c against
-# the x86_64 board, so test_rsswitchd.c can spawn the real daemon and
+# the stub board, so test_rsswitchd.c can spawn the real daemon and
 # drive it over TCP on an ephemeral port. Not part of $(TESTS):
 # test_rsswitchd (below) is the minitest binary that spawns and drives
 # this one; `test` builds it explicitly as a dependency of both.
@@ -161,14 +161,14 @@ test_rsswitchd_bin: ../examples/network/rsswitchd.c \
 # its own. It links $(LIB_SRCS) anyway: the parser calls
 # rss_addr_limits() for its per-device range check, and this rule
 # never opens a board (see test_proto.c's test_err_names, which
-# asserts x86_64_board_init_count() stays 0).
+# asserts stub_board_init_count() stays 0).
 test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
 	    ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_proto test_proto.c \
 		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
 
 # Built like test_rsswitchd_bin, but against ../librsswitch.c and
-# failing_board.c instead of $(LIB_SRCS)'s x86_64 board, so
+# failing_board.c instead of $(LIB_SRCS)'s stub board, so
 # test_rsswitchd's test_err_send can reach the daemon's ERR send
 # reply path: a well-formed command still passes the daemon's own
 # checks and reaches the library, and it is the library's
@@ -189,9 +189,9 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
 # ..., data: ..." line in rss_send() is exercised.
 # Includes ../librsswitch.c directly (like test_codeword_api), so it
-# links only the x86_64 board, not librsswitch.c a second time.
+# links only the stub board, not librsswitch.c a second time.
 test_logging: test_logging.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/x86_64/x86_64.c ../boards/gpiod/gpiod_config.c
+	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/stub/stub.c ../boards/gpiod/gpiod_config.c
 
 # Intercepts, at link time, the libgpiod calls boards/gpiod/gpiod_board.c
 # makes to open the chip, to get and request the line, to build the 2.x
@@ -234,8 +234,7 @@ GPIOD_TEST_DEPS = test_gpiod.c minitest.h ../boards/gpiod/gpiod_board.c \
 # capture the parser's log lines and drive board_init()/board_exit(),
 # transmit() and parse_config() and their static state. It needs a
 # board macro, because gpiod_board.h picks the default chip
-# and line by it. The -DX86_64 from CFLAGS does no harm, because the
-# test includes no librsswitch.c. Only ever names a chip that cannot
+# and line by it. Only ever names a chip that cannot
 # exist for board_init(), and only ever touches dummy handles under
 # GPIOD_TEST_WRAPS interception for transmit()/board_exit(), so it
 # never opens a real GPIO line. Links no other source;
