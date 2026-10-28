@@ -1,0 +1,18 @@
+/*
+ * Version script of the shared library. The functions of the public
+ * interface carry the rss_ prefix and are listed in librsswitch.h;
+ * everything else stays local to the library.
+ *
+ * A function added to the interface later gets a node of its own, for
+ * example LIBRSSWITCH_1.1, that lists the new function by its exact
+ * name. Programs linked against the older interface keep running, and
+ * the SONAME stays the same. An exact name takes precedence over the
+ * rss_* pattern of this node, so the new function is not bound to
+ * LIBRSSWITCH_1.
+ */
+LIBRSSWITCH_1 {
+	global:
+		rss_*;
+	local:
+		*;
+};

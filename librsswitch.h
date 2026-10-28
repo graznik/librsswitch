@@ -20,6 +20,18 @@
 #include <stdint.h>
 
 /*
+ * Marks the functions that make up the public interface of the shared
+ * library. The library is compiled with -fvisibility=hidden, so every
+ * declaration without this marker stays internal to the library and is
+ * not callable from a program that links it.
+ */
+#if defined(__GNUC__)
+#define RSS_API __attribute__((visibility("default")))
+#else
+#define RSS_API
+#endif
+
+/*
  * The version of the library, as the numbers below and as the string
  * LIBRSSWITCH_VERSION built from them. It is the version of the
  * library itself and independent of the tags of the project.
@@ -93,7 +105,7 @@ extern "C" {
  * config is not copied; the pointer must stay valid for as long as
  * rss_send() may still be called.
  */
-void rss_gpio_config(const char *config);
+RSS_API void rss_gpio_config(const char *config);
 
 /*
  * Checks a GPIO config string without storing it and without touching
@@ -105,7 +117,7 @@ void rss_gpio_config(const char *config);
  * refuse a bad config at start-up. It takes no lock and never touches
  * the board.
  */
-int32_t rss_gpio_config_check(const char *config);
+RSS_API int32_t rss_gpio_config_check(const char *config);
 
 /*
  * Sends a switch command for one of the two built-in device tables.
@@ -127,8 +139,8 @@ int32_t rss_gpio_config_check(const char *config);
  * rss_send_codeword() by the same lock -- see "Thread safety"
  * above.
  */
-int32_t rss_send(uint32_t dev, uint32_t group,
-		 uint32_t socket, uint32_t data);
+RSS_API int32_t rss_send(uint32_t dev, uint32_t group,
+			 uint32_t socket, uint32_t data);
 
 /*
  * Reports the valid address range for dev: groups 0 to *ngroups - 1,
@@ -142,8 +154,8 @@ int32_t rss_send(uint32_t dev, uint32_t group,
  * unknown dev or a NULL pointer, leaving the outputs untouched. Takes
  * no lock and never touches the board -- see "Thread safety" above.
  */
-int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
-			uint32_t *nsockets, uint32_t *ndata);
+RSS_API int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
+				uint32_t *nsockets, uint32_t *ndata);
 
 /*
  * Bounds for rss_send_codeword()'s tristate argument: byte length
@@ -189,7 +201,7 @@ int32_t rss_addr_limits(uint32_t dev, uint32_t *ngroups,
  * error); rss_last_error() then tells why. Serialized with
  * rss_send() by the same lock -- see "Thread safety" above.
  */
-int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len);
+RSS_API int32_t rss_send_codeword(const char *tristate, uint32_t pulse_len);
 
 /*
  * Why a send failed. The values are part of the library's ABI: they
@@ -228,7 +240,7 @@ enum rss_err {
  * It takes no lock and never blocks. The cause is per thread: a send
  * in another thread never changes it.
  */
-enum rss_err rss_last_error(void);
+RSS_API enum rss_err rss_last_error(void);
 
 enum rss_type {
 		  RSS_REV_008345,
@@ -243,7 +255,7 @@ enum rss_type {
  * another build of the library. Never returns NULL; takes no lock and
  * never touches the board.
  */
-const char *rss_version(void);
+RSS_API const char *rss_version(void);
 
 #ifdef __cplusplus
 }

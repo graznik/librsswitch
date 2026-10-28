@@ -12,3 +12,4 @@ examples/web/venv/
 __pycache__/
 *.pyc
 .pytest_cache/
+build/

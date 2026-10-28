@@ -258,6 +258,44 @@ for dir in basic network; do
 	done
 done
 
+# top_lines [VAR=VALUE]...: the lines that a dry run of the top-level
+# Makefile prints for the stub board, with every object rebuilt: a
+# plain dry run of a built tree prints nothing. The library is made of
+# several sources, so the flags show on a line per source.
+top_lines()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -nB -C "$ROOT" BOARD=stub "$@"
+	) 2> /dev/null
+}
+
+# top_debug_off: a release build does not define DEBUG.
+top_debug_off()
+{
+	[ "$(top_lines | grep -c -- -DDEBUG)" -eq 0 ]
+}
+
+# top_debug_on: DEBUG=1 defines it for every source.
+top_debug_on()
+{
+	[ "$(top_lines DEBUG=1 | grep -c -- -DDEBUG)" -ge 1 ]
+}
+check "Makefile: no -DDEBUG by default" top_debug_off
+check "Makefile: DEBUG=1 adds -DDEBUG" top_debug_on
+
+# A CFLAGS on the command line replaces every assignment to CFLAGS in a
+# makefile. The flags that the shared library cannot do without must
+# survive it.
+top_keeps_required_flags()
+{
+	lines=$(top_lines CFLAGS=-O0) || return 1
+	printf '%s\n' "$lines" | grep -q -- -fPIC &&
+		printf '%s\n' "$lines" | grep -q -- -fvisibility=hidden
+}
+check "Makefile: CFLAGS= keeps -fPIC and -fvisibility=hidden" \
+	top_keeps_required_flags
+
 # A comma in a .PHONY line made make treat "rpi," as a name, so the real
 # board targets were not phony and an existing file of that name stopped
 # the build.
@@ -296,6 +334,10 @@ for dir in basic network; do
 		phony_names "$ROOT/examples/$dir/Makefile" \
 		rpi rpi3 bbb x86_64 clean
 done
+check "Makefile: no comma in a .PHONY line" \
+	phony_without_comma "$ROOT/Makefile"
+check "Makefile: the goals are phony" \
+	phony_names "$ROOT/Makefile" all test clean
 
 # These comments of librsswitch.c described a parameter, a struct and a
 # protocol that do not exist. Each phrase names one of them. The name of

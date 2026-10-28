@@ -40,6 +40,61 @@ Black. Another line is chosen with a "chip:line" config, see "GPIO
 configuration" below.
 
 
+## Building the library
+
+The Makefile in the root of the repository builds the library as a
+shared library with the SONAME librsswitch.so.1 and as a static
+library, for one board at a time:
+
+```bash
+make                # the libgpiod board, in build/gpiod/
+make BOARD=stub     # the stub board, in build/stub/
+```
+
+Each build leaves librsswitch.so.1.0.0, the links librsswitch.so.1 and
+librsswitch.so to it, and librsswitch.a in the directory of its board.
+The two boards build side by side, so switching between them needs no
+make clean. Any other BOARD stops make with an error. The version in
+the file names and in the SONAME comes from the LIBRSSWITCH_VERSION_*
+lines of librsswitch.h.
+
+The shared library exports the seven functions of librsswitch.h and
+nothing else; the names of the board code, such as transmit() and
+board_init(), are not visible to a program that links it. The static
+library has no export list, so it keeps those names.
+
+LIBGPIOD_VERSION=1 or 2 forces the libgpiod API (see "Software setup"
+below), and DEBUG=1 turns on the verbose syslog output:
+
+```bash
+make LIBGPIOD_VERSION=2 DEBUG=1
+```
+
+A change of one of these, of CROSS_COMPILE or of a compiler flag
+rebuilds the objects of that board by itself.
+
+The build is native unless CROSS_COMPILE names a toolchain prefix.
+Nothing guesses the architecture:
+
+```bash
+make CROSS_COMPILE=arm-linux-gnueabihf-   # 32-bit ARM (ARMv7)
+make CROSS_COMPILE=aarch64-linux-gnu-     # aarch64
+```
+
+arm-linux-gnueabihf- produces ARMv7 code. A Raspberry Pi Zero (ARMv6)
+builds the library natively on the board instead.
+
+A libgpiod that is not installed system-wide is found through CPPFLAGS
+and LDFLAGS. CFLAGS can be given too; the flags that the shared
+library needs are kept:
+
+```bash
+make CPPFLAGS=-I<prefix>/include LDFLAGS=-L<prefix>/lib
+```
+
+The goal test runs the tests of tests/, and clean removes build/.
+
+
 ## Software setup (Raspberry Pi / Raspberry Pi 3 / BeagleBone Black)
 
 GPIO access goes through
