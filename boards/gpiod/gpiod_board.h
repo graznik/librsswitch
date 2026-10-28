@@ -29,7 +29,4 @@
 #define DEFAULT_CHIPNAME "gpiochip0"
 #define DEFAULT_LINE_OFFSET 17
 
-void delayMicrosecondsHard(unsigned int howLong);
-void delayMicroseconds(unsigned int howLong);
-
 #endif /* GPIOD_BOARD_H */

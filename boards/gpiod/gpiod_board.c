@@ -361,7 +361,7 @@ int32_t board_exit(void)
 
 #endif /* LIBRSSWITCH_GPIOD_VERSION */
 
-void delayMicrosecondsHard(unsigned int howLong)
+static void delayMicrosecondsHard(unsigned int howLong)
 {
 	struct timeval tNow, tLong, tEnd;
 
@@ -374,7 +374,7 @@ void delayMicrosecondsHard(unsigned int howLong)
 		gettimeofday(&tNow, NULL);
 }
 
-void delayMicroseconds(unsigned int howLong)
+static void delayMicroseconds(unsigned int howLong)
 {
 	struct timespec sleeper;
 	unsigned int uSecs = howLong % 1000000;
