@@ -523,6 +523,24 @@ make -C tests test WEB_PYTHON=$PWD/examples/web/venv/bin/python
 WEB_VENV=/path makes and uses a venv at that place instead, with
 `make -C tests venv test WEB_VENV=/path`.
 
+The tests do not compile the library sources. They build build/stub
+with the top-level Makefile and link it: the unit tests link its
+static library, which keeps the test hooks of the stub board, and the
+test builds of rsswitchd and rsssend link its shared library, as the
+real programs do. make test sets LD_LIBRARY_PATH to that directory for
+the commands that run a test. Running a test program by hand needs it
+too, from the tests directory:
+
+```bash
+cd tests && LD_LIBRARY_PATH=../build/stub ./test_rsswitchd
+```
+
+BUILD names the directory of the stub library instead of build/stub:
+`make -C tests test BUILD=/tmp/rsswitch-build/stub`, or `make test
+BOARD=stub BUILD=...` from the root. The ThreadSanitizer run below is
+the exception: it compiles the library sources into its binary, so
+that the library is instrumented.
+
 On a host where libgpiod cannot be linked, the libgpiod test
 (test_gpiod) is skipped. Make warns about it at the start, and
 `make -C tests test` prints a line

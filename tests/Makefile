@@ -3,8 +3,26 @@ INCLUDES = -I..
 
 TESTS = test_last_error test_socket_send test_codewords test_concurrency \
 	test_codeword_api test_logging test_rsswitchd test_proto test_version
+# The sources of the stub library. Only the ThreadSanitizer run compiles
+# them into its binary, so that the library is instrumented; every other
+# test links the library that the top-level Makefile builds.
 LIB_SRCS = ../librsswitch.c ../boards/stub/stub.c \
 	   ../boards/gpiod/gpiod_config.c
+
+# The stub library, built by the top-level Makefile. BUILD names its
+# directory, relative to this one; the default is build/stub of the
+# repository. STUBLIB is the static library, which the unit tests link
+# so that they still reach the test hooks of the stub board, as hidden
+# visibility affects only the dynamic symbol table. STUBSO is the
+# shared library, which the test builds of rsswitchd and rsssend link
+# like the real programs do. They find it at run time through
+# LD_LIBRARY_PATH, which `test` sets to the absolute STUBDIR for the
+# commands that run a test, and for those only: exported for the whole
+# makefile it would reach the compiler runs as well.
+BUILD ?= ../build/stub
+STUBDIR := $(abspath $(BUILD))
+STUBLIB := $(BUILD)/librsswitch.a
+STUBSO := $(BUILD)/librsswitch.so
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/stub/stub.c ../boards/stub/stub.h \
 	    ../boards/gpiod/gpiod_config.c ../boards/gpiod/gpiod_config.h
@@ -66,7 +84,18 @@ GPIOD_SKIPPED := test_gpiod
 endif
 endif
 
-.PHONY: test venv clean tsan
+.PHONY: test venv clean tsan FORCE
+
+# One sub-make builds the shared and the static library, so the two
+# never race under -j. It runs every time and builds only what changed.
+# The shared library has no recipe of its own and depends on the static
+# one, so a test program relinks only when the library changed.
+$(STUBLIB): FORCE
+	$(MAKE) -C .. BOARD=stub BUILD=$(STUBDIR)
+
+$(STUBSO): $(STUBLIB)
+
+FORCE:
 
 # Runs the C tests, then the web app's tests, and exits non-zero when
 # any of them failed. The web tests run also after a C failure, so one
@@ -76,6 +105,9 @@ endif
 # test_rsswitchd_service.sh checks how rsswitchd is run as a service
 # from examples/network, and needs no root and no system manager.
 # test_build.sh checks the plumbing of this Makefile offline.
+# The commands that run a test binary, test_rsssend.sh and the web
+# tests get LD_LIBRARY_PATH with the stub library; the web tests also
+# get BUILD, from which their fixture takes the same directory.
 # test_exports.sh builds the libraries of the top-level Makefile and
 # checks their exports and SONAME. test_install.sh checks its install
 # and uninstall goals in a staged tree, with stand-ins for the tools
@@ -83,9 +115,9 @@ endif
 test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 	@status=0; \
 	for t in $(TESTS); do \
-		./$$t > /dev/null || status=1; \
+		LD_LIBRARY_PATH="$(STUBDIR)" ./$$t > /dev/null || status=1; \
 	done; \
-	sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
+	LD_LIBRARY_PATH="$(STUBDIR)" sh ./test_rsssend.sh ./test_rsssend_bin > /dev/null || status=1; \
 	sh ./test_rsswitchd_service.sh ../examples/network > /dev/null || status=1; \
 	sh ./test_build.sh .. > /dev/null || status=1; \
 	sh ./test_exports.sh .. > /dev/null || status=1; \
@@ -99,6 +131,7 @@ test: $(TESTS) test_rsssend_bin test_rsswitchd_bin test_rsswitchd_failbin
 		status=1; \
 	else \
 		(cd $(WEB_DIR) && RSSWITCHD_BIN="$(CURDIR)/test_rsswitchd_bin" \
+			LD_LIBRARY_PATH="$(STUBDIR)" BUILD="$(STUBDIR)" \
 			RSSWITCH_REQUIRE_DAEMON=1 \
 			"$$py" -m pytest -q -p no:cacheprovider) || status=1; \
 	fi; \
@@ -125,20 +158,23 @@ venv:
 		"$$v/bin/pip" install -r "$(WEB_DIR)/requirements-dev.txt" || exit 1; \
 	fi
 
-test_socket_send: test_socket_send.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_socket_send test_socket_send.c $(LIB_SRCS)
+test_socket_send: test_socket_send.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_socket_send test_socket_send.c $(STUBLIB)
 
-test_version: test_version.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_version test_version.c $(LIB_SRCS)
+test_version: test_version.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_version test_version.c $(STUBLIB)
 
-test_codewords: test_codewords.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_codewords test_codewords.c $(LIB_SRCS)
+test_codewords: test_codewords.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_codewords test_codewords.c $(STUBLIB)
 
-test_concurrency: test_concurrency.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_concurrency test_concurrency.c $(LIB_SRCS)
+test_concurrency: test_concurrency.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_concurrency test_concurrency.c $(STUBLIB)
 
-test_codeword_api: test_codeword_api.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c ../boards/stub/stub.c ../boards/gpiod/gpiod_config.c
+# Includes ../librsswitch.c directly, so the test sees its static
+# state; the library member that holds the same code is never pulled
+# from the archive, because the test defines every symbol it needs.
+test_codeword_api: test_codeword_api.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_codeword_api test_codeword_api.c $(STUBLIB)
 
 # Includes ../librsswitch.c directly and defines its own board, so the
 # cause a board returns can be chosen per test: it links no board
@@ -146,50 +182,53 @@ test_codeword_api: test_codeword_api.c $(TEST_DEPS)
 test_last_error: test_last_error.c $(TEST_DEPS)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_last_error test_last_error.c
 
-# Builds ../examples/basic/rsssend.c against the stub board, so
-# test_rsssend.sh can drive the real CLI (argument parsing, exit
+# Builds ../examples/basic/rsssend.c against the shared stub library,
+# so test_rsssend.sh can drive the real CLI (argument parsing, exit
 # codes, stdout/stderr) end to end without any hardware. Not part of
 # $(TESTS): it is a shell script, not a minitest binary, so `test`
 # runs it explicitly below.
-test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c $(LIB_SRCS)
+test_rsssend_bin: ../examples/basic/rsssend.c $(TEST_DEPS) $(STUBSO)
+	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsssend_bin ../examples/basic/rsssend.c -L$(BUILD) -lrsswitch
 
 # Builds ../examples/network/rsswitchd.c and rsswitchd_proto.c against
-# the stub board, so test_rsswitchd.c can spawn the real daemon and
-# drive it over TCP on an ephemeral port. Not part of $(TESTS):
-# test_rsswitchd (below) is the minitest binary that spawns and drives
-# this one; `test` builds it explicitly as a dependency of both.
+# the shared stub library, so test_rsswitchd.c can spawn the real
+# daemon and drive it over TCP on an ephemeral port. Not part of
+# $(TESTS): test_rsswitchd (below) is the minitest binary that spawns
+# and drives this one; `test` builds it explicitly as a dependency of
+# both.
 test_rsswitchd_bin: ../examples/network/rsswitchd.c \
 		     ../examples/network/rsswitchd_proto.c \
-		     ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
+		     ../examples/network/rsswitchd_proto.h $(TEST_DEPS) \
+		     $(STUBSO)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_bin \
 		../examples/network/rsswitchd.c \
-		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
+		../examples/network/rsswitchd_proto.c -L$(BUILD) -lrsswitch
 
 # Unit-tests the protocol parser with no socket or GPIO dependency of
-# its own. It links $(LIB_SRCS) anyway: the parser calls
+# its own. It links the stub library anyway: the parser calls
 # rss_addr_limits() for its per-device range check, and this rule
 # never opens a board (see test_proto.c's test_err_names, which
 # asserts stub_board_init_count() stays 0).
 test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
-	    ../examples/network/rsswitchd_proto.h $(TEST_DEPS)
+	    ../examples/network/rsswitchd_proto.h $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_proto test_proto.c \
-		../examples/network/rsswitchd_proto.c $(LIB_SRCS)
+		../examples/network/rsswitchd_proto.c $(STUBLIB)
 
-# Built like test_rsswitchd_bin, but against ../librsswitch.c and
-# failing_board.c instead of $(LIB_SRCS)'s stub board, so
-# test_rsswitchd's test_err_send can reach the daemon's ERR send
-# reply path: a well-formed command still passes the daemon's own
-# checks and reaches the library, and it is the library's
-# board_init() call that then fails.
+# Built like test_rsswitchd_bin, but with failing_board.c in front of
+# the static stub library, so test_rsswitchd's test_err_send can reach
+# the daemon's ERR send reply path: a well-formed command still passes
+# the daemon's own checks and reaches the library, and it is the
+# board_init() call of failing_board.c that then fails. The board comes
+# before the archive, so the stub board member is never pulled in and
+# its functions are not defined twice.
 test_rsswitchd_failbin: ../examples/network/rsswitchd.c \
 			 ../examples/network/rsswitchd_proto.c \
 			 ../examples/network/rsswitchd_proto.h \
-			 failing_board.c $(TEST_DEPS)
+			 failing_board.c $(TEST_DEPS) $(STUBLIB)
 	$(CC) $(CFLAGS) $(INCLUDES) -o test_rsswitchd_failbin \
 		../examples/network/rsswitchd.c \
 		../examples/network/rsswitchd_proto.c \
-		../librsswitch.c failing_board.c
+		failing_board.c $(STUBLIB)
 
 test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 		test_rsswitchd_failbin
@@ -197,10 +236,10 @@ test_rsswitchd: test_rsswitchd.c minitest.h test_rsswitchd_bin \
 
 # Built with -DDEBUG so the DEBUG-only "dev: ..., group: ..., socket:
 # ..., data: ..." line in rss_send() is exercised.
-# Includes ../librsswitch.c directly (like test_codeword_api), so it
-# links only the stub board, not librsswitch.c a second time.
-test_logging: test_logging.c $(TEST_DEPS)
-	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c ../boards/stub/stub.c ../boards/gpiod/gpiod_config.c
+# Includes ../librsswitch.c directly (like test_codeword_api), so the
+# library member of the archive is never pulled in a second time.
+test_logging: test_logging.c $(TEST_DEPS) $(STUBLIB)
+	$(CC) $(CFLAGS) -DDEBUG $(INCLUDES) -o test_logging test_logging.c $(STUBLIB)
 
 # Intercepts, at link time, the libgpiod calls boards/gpiod/gpiod_board.c
 # makes to open the chip, to get and request the line, to build the 2.x
@@ -252,7 +291,9 @@ test_gpiod: $(GPIOD_TEST_DEPS)
 # Optional ThreadSanitizer target. `make tsan` builds
 # test_concurrency with -fsanitize=thread -g -O1 into
 # test_concurrency_tsan (the name matches the tests/test_* ignore
-# pattern) and runs it. It is opt-in and never a prerequisite of
+# pattern) and runs it. It compiles the library sources (LIB_SRCS) into
+# the binary instead of linking the stub library, so that the library
+# is instrumented too. It is opt-in and never a prerequisite of
 # `test`, since not every host ships libtsan. On kernels with high
 # mmap randomization, a GCC ThreadSanitizer binary can abort with
 # "unexpected memory mapping" when run directly, so it runs under

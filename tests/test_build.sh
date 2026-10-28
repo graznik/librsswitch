@@ -329,6 +329,98 @@ top_keeps_required_flags()
 check "Makefile: CFLAGS= keeps -fPIC and -fvisibility=hidden" \
 	top_keeps_required_flags
 
+# The tests link the stub library that the top-level Makefile builds
+# instead of compiling the library sources, except the ThreadSanitizer
+# run, which keeps them so that the library is instrumented.
+
+# tests_lines TARGET [VAR=VALUE]...: the dry run of `make TARGET` in
+# tests, with everything rebuilt. A recipe line that make prints with a
+# backslash and a line break is joined into one line.
+tests_lines()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL BUILD
+		make -nB -C "$ROOT/tests" "$@"
+	) 2> /dev/null | sed -e ':a' -e '/\\$/{N;s/\\\n//;ba' -e '}'
+}
+
+# link_line_of TARGET: the line of the dry run that writes TARGET.
+link_line_of()
+{
+	tests_lines "$1" | grep -E -- "-o $1([[:space:]]|\$)"
+}
+
+# links_archive TARGET: that line names the static stub library and no
+# library source.
+links_archive()
+{
+	line=$(link_line_of "$1") || return 1
+	printf '%s\n' "$line" | grep -q 'build/stub/librsswitch\.a' &&
+		! printf '%s\n' "$line" | grep -q 'librsswitch\.c'
+}
+
+# links_shared TARGET: that line links -lrsswitch and no library source.
+links_shared()
+{
+	line=$(link_line_of "$1") || return 1
+	printf '%s\n' "$line" |
+		grep -qE -- '-L[^ ]*build/stub -lrsswitch( |$)' &&
+		! printf '%s\n' "$line" | grep -q 'librsswitch\.c'
+}
+
+for t in test_socket_send test_codewords test_concurrency test_proto \
+	test_version test_codeword_api test_logging test_rsswitchd_failbin; do
+	check "tests: $t links the stub library" links_archive "$t"
+done
+for t in test_rsswitchd_bin test_rsssend_bin; do
+	check "tests: $t links the shared stub library" links_shared "$t"
+done
+
+# tsan_compiles_library: the ThreadSanitizer binary still gets the
+# library sources.
+tsan_compiles_library()
+{
+	link_line_of test_concurrency_tsan | grep -q 'librsswitch\.c'
+}
+check "tests: tsan compiles the library sources" tsan_compiles_library
+
+# The commands that run a test get LD_LIBRARY_PATH as a prefix, never
+# as an exported variable of the whole makefile, which would reach the
+# compiler runs.
+tests_set_loader_path()
+{
+	tests_lines test WEB_PYTHON=/nonexistent |
+		grep -q 'LD_LIBRARY_PATH="/[^"]*build/stub"'
+}
+check "tests: make test sets LD_LIBRARY_PATH to the stub library" \
+	tests_set_loader_path
+no_exported_loader_path()
+{
+	! grep -Eq '^export[[:space:]]+LD_LIBRARY_PATH' "$ROOT/tests/Makefile"
+}
+check "tests: LD_LIBRARY_PATH is not exported by the makefile" \
+	no_exported_loader_path
+
+# make test of the top-level Makefile hands the stub directory to the
+# tests: BUILD when the board is the stub, build/stub otherwise, so
+# that a BUILD of the libgpiod board never receives the stub.
+test_goal_build()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -n -C "$ROOT" "$@" test
+	) 2> /dev/null | grep -E -- '^make -C tests test BUILD='
+}
+test_goal_passes_stub_dir()
+{
+	test_goal_build BOARD=stub BUILD=/nonexistent/rss/stub |
+		grep -qx 'make -C tests test BUILD=/nonexistent/rss/stub' &&
+		test_goal_build BOARD=gpiod BUILD=/nonexistent/rss/gpiod |
+		grep -qx "make -C tests test BUILD=$ROOT/build/stub"
+}
+check "Makefile: make test gives the tests a stub directory" \
+	test_goal_passes_stub_dir
+
 # A comma in a .PHONY line made make treat "rpi," as a name, so the real
 # board targets were not phony and an existing file of that name stopped
 # the build.

@@ -212,9 +212,17 @@ uninstall:
 		ldconfig || echo "$(LDCONFIG_WARNING)" >&2; \
 	fi
 
-# The tests build their own copy of the sources, whatever BOARD is.
+# The tests link the stub library, whatever BOARD is. They build it in
+# BUILD when BOARD is the stub, and in build/stub otherwise, so that a
+# BUILD meant for the libgpiod board never receives the stub.
+ifeq ($(BOARD),stub)
+TESTBUILD := $(abspath $(BUILD))
+else
+TESTBUILD := $(abspath build/stub)
+endif
+
 test:
-	$(MAKE) -C tests test
+	$(MAKE) -C tests test BUILD=$(TESTBUILD)
 
 # A BUILD outside the default is removed as well.
 clean:
