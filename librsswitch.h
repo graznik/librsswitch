@@ -75,6 +75,10 @@
  * send in another thread never changes what it returns.
  */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Sets the GPIO config string passed to board_init() on every
  * subsequent rss_send() call. NULL (the default, if never called)
@@ -240,5 +244,9 @@ enum rss_type {
  * never touches the board.
  */
 const char *rss_version(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* LIBRSSWITCH_H */

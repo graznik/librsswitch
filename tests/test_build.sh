@@ -354,5 +354,40 @@ board_defines_gone()
 }
 check "the per-board defines and directories stay gone" board_defines_gone
 
+# A C++ program that includes the header must link against the library,
+# which is compiled as C. The small program calls one function of each
+# kind that does not need a board: rss_version(), and rss_send() with a
+# group out of range, which is rejected before any board is opened.
+# Only the warning flags valid for C++ are used.
+cxx_links()
+{
+	printf '%s\n' '#include "librsswitch.h"' \
+		'int main()' \
+		'{' \
+		'	if (!rss_version())' \
+		'		return 1;' \
+		'	if (rss_send(RSS_REV_008345, 99, 0, 0) != -1)' \
+		'		return 1;' \
+		'	if (rss_last_error() != RSS_ERR_ARG)' \
+		'		return 1;' \
+		'	return 0;' \
+		'}' > "$S/cxx.cc" || return 1
+
+	for f in librsswitch.c boards/stub/stub.c boards/gpiod/gpiod_config.c
+	do
+		cc -pthread -I"$ROOT" -c "$ROOT/$f" \
+			-o "$S/cxx_$(basename "$f" .c).o" || return 1
+	done
+	g++ -Wall -Wextra -pedantic -Werror -I"$ROOT" -c "$S/cxx.cc" \
+		-o "$S/cxx.o" || return 1
+	g++ -pthread -o "$S/cxx_prog" "$S/cxx.o" "$S"/cxx_*.o || return 1
+	"$S/cxx_prog"
+}
+if command -v g++ > /dev/null 2>&1; then
+	check "C++ programs link the C library" cxx_links
+else
+	echo "SKIP C++ header check: g++ not found" >&2
+fi
+
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

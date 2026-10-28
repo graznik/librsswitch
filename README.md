@@ -151,7 +151,8 @@ make -C examples/network x86_64
 
 ## Usage
 
-Seven public functions, declared in librsswitch.h.
+Seven public functions, declared in librsswitch.h. The header can be
+included from C++ as well: its declarations have C linkage there.
 
 ```c
 rss_gpio_config(const char *config);
