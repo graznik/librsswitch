@@ -72,11 +72,15 @@ LD_LIBRARY_PATH, and an installed daemon through the loader cache.
  --timeout SECS closes a connection when no complete command
                 arrives for SECS seconds, 1-3600 (default 10)
  --help         show usage and exit
+ --version      print the librsswitch version and exit
 ```
 
-Exit status is 0 for --help or a clean stop by SIGTERM/SIGINT, 1
-when socket setup fails or --gpio is malformed (both printed on
-stderr), or 2 for a usage error.
+--version prints the version of the library the loader picked, which
+need not be the one the daemon was built against.
+
+Exit status is 0 for --help, --version or a clean stop by
+SIGTERM/SIGINT, 1 when socket setup fails or --gpio is malformed (both
+printed on stderr), or 2 for a usage error.
 
 As soon as the daemon is listening, it prints one line to
 stderr: `rsswitchd: listening on ADDR:PORT`. With --port 0 this

@@ -61,3 +61,6 @@ Arguments: DEV (0 = REV 008345, 1 = Pollin 2605), GROUP, SOCKET, DATA
 malformed (nothing sent), 2 usage error (nothing sent). A malformed
 --gpio is refused before anything is sent, with
 `rsssend: malformed --gpio '<value>'` on stderr.
+
+`rsssend --version` (the only argument) prints the version of the
+library the loader picked, for example `1.0.0`, and exits 0.

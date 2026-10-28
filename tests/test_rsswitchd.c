@@ -52,6 +52,7 @@
 #include <unistd.h>
 
 #include "minitest.h"
+#include "../librsswitch.h"
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 #define MAX_LIVE_PIDS 64
@@ -831,6 +832,24 @@ static void test_help(void)
 	CHECK(strstr(out, "--gpio") != NULL);
 	CHECK(strstr(out, "5000") != NULL);
 	CHECK(strstr(out, "0.0.0.0") != NULL);
+	CHECK(strstr(out, "--version") != NULL);
+	CHECK_EQ(err[0], '\0');
+}
+
+/*
+ * --version prints the version of the library the loader picked, and
+ * nothing else: no listening socket is opened, stderr stays empty.
+ */
+static void test_version_option(void)
+{
+	static const char *const args[] = {"--version", NULL};
+	char out[256], err[256];
+	int status = 0;
+
+	CHECK_EQ(daemon_run(args, &status, out, sizeof(out), err,
+			    sizeof(err), 2000), 0);
+	CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	CHECK_EQ(strcmp(out, LIBRSSWITCH_VERSION "\n"), 0);
 	CHECK_EQ(err[0], '\0');
 }
 
@@ -2606,6 +2625,7 @@ int main(int argc, char *argv[])
 	atexit(reap_all);
 
 	test_help();
+	test_version_option();
 	test_invalid_options();
 	test_option_forms();
 	test_malformed_gpio_refused();

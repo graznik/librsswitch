@@ -27,6 +27,14 @@ if [ -z "$BIN" ]; then
 	exit 2
 fi
 
+# The version the library header declares, read the way the Makefile
+# reads it.
+HDR=$(dirname "$0")/../librsswitch.h
+VERSION=$(awk '$2 == "LIBRSSWITCH_VERSION_MAJOR" {a = $3}
+	$2 == "LIBRSSWITCH_VERSION_MINOR" {b = $3}
+	$2 == "LIBRSSWITCH_VERSION_PATCH" {c = $3}
+	END {print a "." b "." c}' "$HDR")
+
 ERRFILE=$(mktemp)
 trap 'rm -f "$ERRFILE"' EXIT
 
@@ -82,6 +90,11 @@ check()
 check "no arguments" 2 "" contains "Usage:"
 check "valid pollin on" 0 "0FFF0000F00F" empty ""  1 17 23 1
 check "library-rejected group" 1 "" contains "rsssend:"  1 32 0 1
+
+# --- --version prints the loaded library's version -------------------
+check "version" 0 "$VERSION" empty ""  --version
+check "version with extra argument" 2 "" contains "Usage:"  --version extra
+check "misspelt version" 2 "" contains "Usage:"  --versions
 
 # --- strtoul validation, one bad argument at a time -----------------
 check "invalid dev" 2 "" contains "invalid DEV 'abc'"  abc 0 0 1

@@ -77,6 +77,7 @@ static const struct option long_opts[] = {
 	{"gpio", required_argument, NULL, 'g'},
 	{"timeout", required_argument, NULL, 't'},
 	{"help", no_argument,       NULL, 'h'},
+	{"version", no_argument, NULL, 'V'},
 	{NULL, 0, NULL, 0}
 };
 
@@ -89,7 +90,7 @@ static void usage(FILE *out)
 {
 	fprintf(out,
 		"Usage: rsswitchd [--port PORT] [--bind ADDR] [--gpio CONFIG]\n"
-		"                 [--timeout SECONDS] [--help]\n"
+		"                 [--timeout SECONDS] [--help] [--version]\n"
 		"  --port PORT    TCP port to listen on, 0-65535; 0 lets the\n"
 		"                 kernel pick a free port (default 5000)\n"
 		"  --bind ADDR    IPv4 address to listen on (default 0.0.0.0,\n"
@@ -99,7 +100,8 @@ static void usage(FILE *out)
 		"  --timeout SECS closes a connection when no complete\n"
 		"                 command arrives for SECS seconds, 1-3600\n"
 		"                 (default 10)\n"
-		"  --help         show this text and exit\n");
+		"  --help         show this text and exit\n"
+		"  --version      print the librsswitch version and exit\n");
 }
 
 /*
@@ -277,6 +279,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 			usage(stdout);
+			exit(0);
+		case 'V':
+			printf("%s\n", rss_version());
 			exit(0);
 		default:
 			usage(stderr);

@@ -416,6 +416,10 @@ SONAME and changes only for an incompatible ABI change, MINOR grows
 with new API, PATCH with fixes. The version is the library's own and
 independent of the tags of the project.
 
+rsswitchd --version and rsssend --version print this string and a
+newline to stdout and exit 0, so they report the library the loader
+picked for them, not the one they were built with.
+
 
 ## Thread safety
 

@@ -51,6 +51,11 @@ int main(int argc, char *argv[])
 	uint32_t dev, group, isocket, data;
 	int ret;
 
+	if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+		printf("%s\n", rss_version());
+		return 0;
+	}
+
 	if (argc == 5) {
 		gpio_config = NULL;
 	} else if (argc == 7 && strcmp(argv[5], "--gpio") == 0) {
