@@ -72,7 +72,8 @@ trap 'exit 1' HUP INT TERM
 TREE="$S/tree"
 mkdir "$TREE" || exit 1
 cp -R "$ROOT/Makefile" "$ROOT/librsswitch.c" "$ROOT/librsswitch.h" \
-	"$ROOT/librsswitch.map" "$ROOT/boards" "$TREE" || exit 1
+	"$ROOT/librsswitch.map" "$ROOT/librsswitch.pc.in" "$ROOT/boards" \
+	"$TREE" || exit 1
 mkdir -p "$TREE/examples/basic" "$TREE/examples/network" || exit 1
 cp "$ROOT/examples/basic/Makefile" "$ROOT/examples/basic/rsssend.c" \
 	"$TREE/examples/basic" || exit 1
@@ -544,16 +545,24 @@ bad_board()
 }
 check "an unknown BOARD stops make" bad_board
 
+# copy_sources DIR makes DIR a copy of the library sources.
+copy_sources()
+{
+	mkdir "$1" || return 1
+	cp -R "$TREE/Makefile" "$TREE/librsswitch.c" "$TREE/librsswitch.h" \
+		"$TREE/librsswitch.map" "$TREE/librsswitch.pc.in" \
+		"$TREE/boards" "$1"
+}
+
 # BUILD moves the files of a board out of the build directory, with an
 # absolute and with a relative path, and writes nothing to build/ then.
-# make clean removes the directory again, and an empty BUILD stops make.
-# The program links against the library in the other place, which is
-# what the examples and the tests do on a file system without symbolic
+# make clean removes what the build wrote in BUILD, and the directory
+# once nothing else is in it, and an empty BUILD stops make. The
+# program links against the library in the other place, which is what
+# the examples and the tests do on a file system without symbolic
 # links.
 ELSE="$S/elsewhere"
-mkdir "$ELSE" || exit 1
-cp -R "$TREE/Makefile" "$TREE/librsswitch.c" "$TREE/librsswitch.h" \
-	"$TREE/librsswitch.map" "$TREE/boards" "$ELSE" || exit 1
+copy_sources "$ELSE" || exit 1
 
 make_else()
 {
@@ -563,6 +572,22 @@ make_else()
 			CROSS_COMPILE= "$@"
 	) > "$S/make-else.log" 2>&1 || {
 		sed 's/^/  /' "$S/make-else.log" >&2
+		return 1
+	}
+}
+
+# make_in DIR ARGS... runs make in the copy DIR like make_else does.
+make_in()
+{
+	dir=$1
+	shift
+
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -s -C "$dir" BOARD=stub DEBUG= LIBGPIOD_VERSION= \
+			CROSS_COMPILE= "$@"
+	) > "$S/make-in.log" 2>&1 || {
+		sed 's/^/  /' "$S/make-in.log" >&2
 		return 1
 	}
 }
@@ -650,6 +675,57 @@ build_dir_clean()
 	[ ! -e "$S/out/stub" ] && [ ! -e "$ELSE/rel/stub" ]
 }
 check "make clean removes the BUILD directory" build_dir_clean
+
+build_dir_foreign()
+{
+	f="$S/shared/stub"
+	mkdir -p "$f/boards" || return 1
+	echo mine > "$f/notes" || return 1
+	echo mine > "$f/boards/notes" || return 1
+	make_else BUILD="$f" || return 1
+	make_else BUILD="$f" DESTDIR="$S/stage" install || return 1
+	[ -f "$f/librsswitch.so.$VERSION" ] &&
+		[ -f "$f/librsswitch.pc" ] || return 1
+	# Stands for an object that a libgpiod build left in the same
+	# BUILD.
+	mkdir -p "$f/boards/gpiod" || return 1
+	: > "$f/boards/gpiod/gpiod_board.o" || return 1
+	make_else BUILD="$f" clean || return 1
+	(cd "$f" && find . ! -name . | LC_ALL=C sort) > "$S/foreign.after" ||
+		return 1
+	printf '%s\n' ./boards ./boards/notes ./notes > "$S/foreign.want"
+	cmp -s "$S/foreign.after" "$S/foreign.want"
+}
+check "make clean keeps the other files of a BUILD directory and removes the build products" \
+	build_dir_foreign
+
+build_dir_dot()
+{
+	d="$S/dot"
+	copy_sources "$d" || return 1
+	(cd "$d" && find . | LC_ALL=C sort) > "$S/dot.before" || return 1
+	make_in "$d" BUILD=. || return 1
+	[ -f "$d/librsswitch.so.$VERSION" ] || return 1
+	make_in "$d" BUILD=. clean || return 1
+	(cd "$d" && find . | LC_ALL=C sort) > "$S/dot.after" || return 1
+	cmp -s "$S/dot.before" "$S/dot.after"
+}
+check "BUILD=.: make clean removes the build products and keeps the sources" \
+	build_dir_dot
+
+build_dir_self()
+{
+	d="$S/self"
+	copy_sources "$d" || return 1
+	(cd "$d" && find . | LC_ALL=C sort) > "$S/self.before" || return 1
+	make_in "$d" BUILD="$d" || return 1
+	[ -f "$d/librsswitch.so.$VERSION" ] || return 1
+	make_in "$d" BUILD="$d" clean || return 1
+	(cd "$d" && find . | LC_ALL=C sort) > "$S/self.after" || return 1
+	cmp -s "$S/self.before" "$S/self.after"
+}
+check "BUILD naming the source tree: make clean keeps the sources" \
+	build_dir_self
 
 echo "$passed/$total checks passed" >&2
 [ "$passed" -eq "$total" ] || exit 1

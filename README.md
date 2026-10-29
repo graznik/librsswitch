@@ -109,8 +109,11 @@ make -C examples/network BOARD=stub BUILD=/tmp/rsswitch-build/stub
 LD_LIBRARY_PATH=/tmp/rsswitch-build/stub examples/network/rsswitchd --bind 127.0.0.1
 ```
 
-The goal test runs the tests of tests/, and clean removes build/ and
-the BUILD directory.
+The goal test runs the tests of tests/, and clean removes build/. From
+a BUILD directory elsewhere, clean removes only the files that the build
+and install write there, and the directory itself only when nothing
+else is left in it. A BUILD that names a directory of your own, or the
+sources, therefore keeps your files.
 
 
 ## Installing the library

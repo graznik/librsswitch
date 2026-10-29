@@ -112,6 +112,12 @@ else
 $(error BOARD must be gpiod or stub)
 endif
 
+# Every library source of every board. make clean removes the objects
+# of all of them from BUILD whatever BOARD is, because one BUILD may
+# have held either board. A new board adds its source here as well as
+# in the chain above.
+ALL_SRCS := librsswitch.c boards/gpiod/gpiod_config.c boards/gpiod/gpiod_board.c boards/stub/stub.c
+
 # Where the files of BOARD are built. The default is a directory of its
 # own below the sources. A checkout on a file system that cannot make
 # symbolic links, or a build that must leave the source tree alone,
@@ -330,11 +336,28 @@ abi-baseline: $(SOFILE)
 	$(ABIDW) --no-show-locs --no-comp-dir-path --no-corpus-path \
 		--header-file librsswitch.h --out-file $(ABI_BASELINE) $(SOFILE)
 
-# A BUILD outside the default is removed as well.
+# build/ belongs to the Makefile and is removed as a whole. A BUILD
+# elsewhere may come from the environment and may name a directory that
+# holds other files, or the sources. From it clean removes only the
+# files that a build or an install writes there, for either board, and
+# then the directories of the build that are left empty, BUILD last. A
+# dedicated BUILD therefore disappears, and a file of the owner's stays
+# together with the directories that hold it. The names are relative to
+# BUILD and are quoted for the shell. There is no cd, which CDPATH could
+# redirect, and no rmdir -p, which would climb into parents that the
+# build did not make.
+CLEAN_FILES := $(ALL_SRCS:.c=.o) $(ALL_SRCS:.c=.d) \
+	librsswitch.so.$(VERSION) $(SONAME) librsswitch.so \
+	librsswitch.a librsswitch-static.o librsswitch-internal.a \
+	librsswitch.pc .flags
+CLEAN_DIRS := $(patsubst %/,%,$(sort $(dir $(filter boards/%,$(ALL_SRCS))))) boards
+QBUILD := $(subst ','\'',$(BUILD))
+
 clean:
 	rm -rf build
 ifneq ($(BUILD),build/$(BOARD))
-	rm -rf "$(BUILD)"
+	rm -f $(foreach f,$(CLEAN_FILES),'$(QBUILD)/$(f)')
+	@rmdir $(foreach d,$(CLEAN_DIRS),'$(QBUILD)/$(d)') '$(QBUILD)' 2> /dev/null || :
 endif
 
 -include $(DEPS)
