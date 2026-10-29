@@ -21,10 +21,11 @@
  * convention (a mismatch here was previously only caught by chance).
  *
  * Adding a new platform: implement these five functions in a new
- * boards/<platform>/<platform>.c + .h, add a Makefile target. Nothing
- * outside boards/<platform>/ needs to change. A board that drives its
- * line through libgpiod implements none of these functions itself: its
- * Makefile target builds boards/gpiod/gpiod_board.c, which holds the
+ * boards/<platform>/<platform>.c + .h and give the top-level Makefile a
+ * BOARD= value for it, in the branch that adds the board's source to
+ * SRCS and its libraries to SO_LIBS. A board that drives its line
+ * through libgpiod implements none of these functions itself:
+ * BOARD=gpiod builds boards/gpiod/gpiod_board.c, which holds the
  * default chip and line in boards/gpiod/gpiod_board.h.
  */
 #ifndef BOARD_H
@@ -32,13 +33,13 @@
 
 #include <stdint.h>
 
-/* The causes a board returns are the SOCKET_ERR_ values declared there. */
+/* The causes a board returns are the RSS_ERR_ values declared there. */
 #include "../librsswitch.h"
 
 /*
  * A board reports a failure with a negative value. -1 means "other"
  * (-(int32_t)RSS_ERR_OTHER); a board that can name the cause returns
- * -(int32_t)SOCKET_ERR_x for it instead. A board never returns
+ * -(int32_t)RSS_ERR_x for it instead. A board never returns
  * RSS_ERR_NONE or RSS_ERR_ARG as a negative value, and the
  * library reads any other negative value as RSS_ERR_OTHER. Each
  * function below says which causes it can return.
@@ -60,7 +61,7 @@
  * that way. The stub board has no real line, so it has nothing to
  * drive; its board_init()/board_exit()/transmit() are no-ops.
  *
- * Returns 0, or -(int32_t)SOCKET_ERR_x for a failure the board can
+ * Returns 0, or -(int32_t)RSS_ERR_x for a failure the board can
  * name (RSS_ERR_NOCHIP, RSS_ERR_BUSY, RSS_ERR_DENIED or
  * RSS_ERR_BADLINE), or -1 for any other failure.
  */

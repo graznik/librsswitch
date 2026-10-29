@@ -286,7 +286,7 @@ static int32_t fail(enum rss_err err)
 
 /*
  * Turns the value a board returned into a cause. A board returns 0, -1
- * or -(int32_t)SOCKET_ERR_x for a failure it can name; -1 is
+ * or -(int32_t)RSS_ERR_x for a failure it can name; -1 is
  * RSS_ERR_OTHER. A value outside that range is RSS_ERR_OTHER too.
  * The range is tested before ret is negated, so INT32_MIN is never
  * negated.
