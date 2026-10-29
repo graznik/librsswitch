@@ -15,8 +15,13 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 
 # Builds the shared and the static library of each board and checks
-# them: the file names and links, the SONAME, the members of the
-# archive, that the shared library exports exactly the functions
+# them: the file names and links, the SONAME, that the static library
+# librsswitch.a holds the whole library as one object and defines only
+# the public functions as global names, so that a program with its own
+# transmit() and board_init() links it statically, and that
+# librsswitch-internal.a, which the tests link, holds the objects as
+# they are and keeps the internal names, that the shared library
+# exports exactly the functions
 # marked RSS_API in librsswitch.h, all at the symbol version of the
 # SONAME, and nothing of the board contract, and that neither the
 # library nor a program linked against it carries an RPATH or RUNPATH.
@@ -221,24 +226,125 @@ has_debug_info()
 		grep -q '\.debug_info'
 }
 
-# members_are BOARD: the archive holds the objects of the core and of
-# the board, and nothing else.
-members_are()
+# archive_is_one_object BOARD: the installed archive holds the whole
+# library as one object, and nothing else.
+archive_is_one_object()
+{
+	[ "$(ar t "$TREE/build/$1/librsswitch.a")" = librsswitch-static.o ]
+}
+
+# globals ARCHIVE: the global names that ARCHIVE defines, without
+# duplicates, one per line.
+globals()
+{
+	nm -g --defined-only "$1" |
+		awk 'NF == 3 { print $3 }' | LC_ALL=C sort -u
+}
+
+# archive_globals_are_api BOARD: the installed archive defines exactly the
+# functions of the header as global names, so no other name reaches the
+# program that links it.
+archive_globals_are_api()
+{
+	ar="$TREE/build/$1/librsswitch.a"
+
+	[ -f "$ar" ] && [ -n "$want" ] || return 1
+	globals "$ar" > "$S/archive-$1.names"
+	printf '%s\n' "$want" > "$S/api.names"
+	extra=$(LC_ALL=C comm -23 "$S/archive-$1.names" "$S/api.names")
+	[ -z "$extra" ] || printf '  global in the archive: %s\n' \
+		"$extra" >&2
+	[ "$(cat "$S/archive-$1.names")" = "$want" ]
+}
+
+# A program with names of its own that the board code of the library
+# uses with other signatures. When argc > 1 it sends Pollin 17/23 On
+# through the library, which prints the codeword of its own stub board,
+# so the program's transmit() must not take the place of that board's.
+printf '%s\n' '#include <stdio.h>' \
+	'#include "librsswitch.h"' \
+	'' \
+	'int transmit(int x);' \
+	'int board_init(void);' \
+	'' \
+	'int transmit(int x)' \
+	'{' \
+	'	return x + 1;' \
+	'}' \
+	'' \
+	'int board_init(void)' \
+	'{' \
+	'	return 41;' \
+	'}' \
+	'' \
+	'int main(int argc, char **argv)' \
+	'{' \
+	'	(void)argv;' \
+	'	if (transmit(1) != 2 || board_init() != 41)' \
+	'		return 1;' \
+	'	if (argc > 1 && rss_send(RSS_POLLIN_2605, 17, 23, 1) != 0)' \
+	'		return 1;' \
+	'	puts(rss_version());' \
+	'	return 0;' \
+	'}' > "$S/static-consumer.c"
+
+# board_libs DIR: the libraries that the archive in build/DIR needs. A
+# DIR is named after its board, or starts with it for a build with
+# other flags. The libraries come after the archive on the command
+# line, or the linker would not yet see a use of them, and --as-needed
+# would drop them.
+board_libs()
+{
+	case $1 in
+	gpiod*)
+		echo -lgpiod
+		;;
+	esac
+}
+
+# static_consumer_runs DIR: the program links the installed archive of
+# build/DIR statically and runs. The stub prints its codeword, which
+# shows that the library used its own board; the libgpiod board opens no
+# GPIO here.
+static_consumer_runs()
+{
+	libs=$(board_libs "$1")
+	# shellcheck disable=SC2086
+	cc -Wall -Werror -I"$TREE" -o "$S/static-$1" "$S/static-consumer.c" \
+		"$TREE/build/$1/librsswitch.a" $libs -pthread || return 1
+	case $1 in
+	stub*)
+		"$S/static-$1" send > "$S/static-$1.out" || return 1
+		printf '%s\n%s\n' 0FFF0000F00F "$VERSION" > "$S/static-$1.want"
+		;;
+	*)
+		"$S/static-$1" > "$S/static-$1.out" || return 1
+		printf '%s\n' "$VERSION" > "$S/static-$1.want"
+		;;
+	esac
+	cmp -s "$S/static-$1.out" "$S/static-$1.want" || return 1
+	! readelf -d "$S/static-$1" | grep -q 'NEEDED.*librsswitch'
+}
+
+# internal_members_are BOARD: the internal archive holds the objects of
+# the core and of the board as separate members, and nothing else.
+internal_members_are()
 {
 	if [ "$1" = gpiod ]; then
 		board_obj=gpiod_board.o
 	else
 		board_obj=stub.o
 	fi
-	got=$(ar t "$TREE/build/$1/librsswitch.a" | LC_ALL=C sort) || return 1
+	got=$(ar t "$TREE/build/$1/librsswitch-internal.a" | LC_ALL=C sort) ||
+		return 1
 	[ "$got" = "$(printf '%s\n' gpiod_config.o librsswitch.o \
 		"$board_obj" | LC_ALL=C sort)" ]
 }
 
 # The functions that the internal headers declare: the board contract,
 # the config parser and the stub's test hooks. They stay global in the
-# archive, which links the tests, and are not exported by the shared
-# library. A declaration starts in the first column.
+# internal archive, which links the tests, and are not exported by the
+# shared library. A declaration starts in the first column.
 declared_internal()
 {
 	for h in boards/board.h boards/gpiod/gpiod_config.h \
@@ -248,23 +354,38 @@ declared_internal()
 	done
 }
 
-# archive_globals_known BOARD: the archive defines no global name other
-# than the public functions and the internal ones that the headers
-# declare, so no stray name reaches the program that links it.
-archive_globals_known()
+# internal_globals_known BOARD: the internal archive defines no global
+# name other than the public functions and the internal ones that the
+# headers declare.
+internal_globals_known()
 {
-	ar="$TREE/build/$1/librsswitch.a"
+	ar="$TREE/build/$1/librsswitch-internal.a"
 
 	[ -f "$ar" ] || return 1
-	nm -g --defined-only "$ar" |
-		awk '$2 ~ /^[TDBRVWC]$/ { print $3 }' | LC_ALL=C sort -u \
-		> "$S/archive-$1.names"
+	globals "$ar" > "$S/internal-$1.names"
 	{ printf '%s\n' "$want"; declared_internal; } | LC_ALL=C sort -u \
 		> "$S/allowed.names"
-	extra=$(LC_ALL=C comm -23 "$S/archive-$1.names" "$S/allowed.names")
-	[ -z "$extra" ] || printf '  global in the archive: %s\n' \
+	extra=$(LC_ALL=C comm -23 "$S/internal-$1.names" "$S/allowed.names")
+	[ -z "$extra" ] || printf '  global in the internal archive: %s\n' \
 		"$extra" >&2
-	[ -z "$extra" ] && [ -s "$S/archive-$1.names" ]
+	[ -z "$extra" ] && [ -s "$S/internal-$1.names" ]
+}
+
+# internal_archive_clashes BOARD: linking the same program against the
+# internal archive fails with a multiple definition of transmit. The
+# tests rely on that archive keeping the internal names global, to reach
+# the test hooks and to put a board of their own in front of it, and
+# this shows that the checks above can fail.
+internal_archive_clashes()
+{
+	libs=$(board_libs "$1")
+	# shellcheck disable=SC2086
+	! LC_ALL=C cc -Wall -Werror -I"$TREE" -o "$S/clash-$1" \
+		"$S/static-consumer.c" \
+		"$TREE/build/$1/librsswitch-internal.a" $libs -pthread \
+		> "$S/clash-$1.log" 2>&1 &&
+		grep -Eq 'multiple definition of .transmit|duplicate symbol: transmit' \
+			"$S/clash-$1.log"
 }
 
 for b in $BOARDS; do
@@ -281,10 +402,72 @@ for b in $BOARDS; do
 		no_rpath "$TREE/build/$b/librsswitch.so.$VERSION"
 	check "$b: the shared library has debug information" \
 		has_debug_info "$b"
-	check "$b: the archive holds the core and the board" members_are "$b"
-	check "$b: the archive defines only known global names" \
-		archive_globals_known "$b"
+	check "$b: the archive holds one object of the whole library" \
+		archive_is_one_object "$b"
+	check "$b: the archive defines only the public functions as global names" \
+		archive_globals_are_api "$b"
+	check "$b: a program with its own transmit() and board_init() links the archive" \
+		static_consumer_runs "$b"
+	check "$b: the internal archive holds the core and the board" \
+		internal_members_are "$b"
+	check "$b: the internal archive defines only known global names" \
+		internal_globals_known "$b"
+	check "$b: the internal archive keeps the internal names global" \
+		internal_archive_clashes "$b"
 done
+
+# build_variant DIR CFLAGS: builds the stub in build/DIR with CFLAGS in
+# place of the default flags of the Makefile.
+build_variant()
+{
+	(
+		unset MAKEFLAGS MFLAGS MAKELEVEL
+		make -s -C "$TREE" BOARD=stub BUILD="build/$1" CFLAGS="$2" \
+			DEBUG= LIBGPIOD_VERSION= CROSS_COMPILE=
+	) > "$S/make-$1.log" 2>&1 || {
+		sed 's/^/  /' "$S/make-$1.log" >&2
+		return 1
+	}
+}
+
+# The archive must stay limited to the interface under flags a packager
+# or a user passes: -flto puts intermediate code into the objects, whose
+# symbol table objcopy alone does not change, and a visibility of
+# default makes every name of the library global to begin with.
+for v in "stub-lto:-O2 -flto" "stub-visible:-O2 -fvisibility=default"; do
+	d=${v%%:*}
+	f=${v#*:}
+	check "$d ($f): the stub builds" build_variant "$d" "$f"
+	check "$d: the archive holds one object of the whole library" \
+		archive_is_one_object "$d"
+	check "$d: the archive defines only the public functions as global names" \
+		archive_globals_are_api "$d"
+	check "$d: a program with its own transmit() and board_init() links the archive" \
+		static_consumer_runs "$d"
+done
+
+# stale_archive_rebuilt: a tree whose archive was made by an older
+# Makefile, from the objects as they are, gets the limited archive from
+# the next make. The stamp records the tools and options of the archive,
+# so a Makefile that makes it differently writes another stamp, and the
+# old archive does not count as up to date even though it is newer than
+# every object.
+stale_archive_rebuilt()
+{
+	d="$TREE/build/stub-stale"
+
+	build_variant stub-stale "-O2" || return 1
+	grep -q -e '--keep-global-symbol' "$d/.flags" || return 1
+	rm -f "$d/librsswitch.a" &&
+		ar rcs "$d/librsswitch.a" "$d/librsswitch.o" \
+			"$d/boards/stub/stub.o" "$d/boards/gpiod/gpiod_config.o" &&
+		echo 'gcc -O2' > "$d/.flags" &&
+		touch "$d/librsswitch.a" || return 1
+	build_variant stub-stale "-O2" || return 1
+	archive_is_one_object stub-stale && archive_globals_are_api stub-stale
+}
+check "an archive made by an older Makefile is made again" \
+	stale_archive_rebuilt
 
 # build_programs BOARD: builds rsssend and rsswitchd against the library
 # of BOARD, which the Makefiles of the examples make first.

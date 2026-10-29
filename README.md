@@ -52,16 +52,22 @@ make BOARD=stub     # the stub board, in build/stub/
 ```
 
 Each build leaves librsswitch.so.1.0.0, the links librsswitch.so.1 and
-librsswitch.so to it, and librsswitch.a in the directory of its board.
-The two boards build side by side, so switching between them needs no
-make clean. Any other BOARD stops make with an error. The version in
-the file names and in the SONAME comes from the LIBRSSWITCH_VERSION_*
-lines of librsswitch.h.
+librsswitch.so to it, and librsswitch.a in the directory of its board,
+and librsswitch-internal.a next to them, which only the tests use and
+make install never copies. The two boards build side by side, so
+switching between them needs no make clean. Any other BOARD stops make
+with an error. The version in the file names and in the SONAME comes
+from the LIBRSSWITCH_VERSION_* lines of librsswitch.h.
 
 The shared library exports the eight functions of librsswitch.h and
 nothing else; the names of the board code, such as transmit() and
 board_init(), are not visible to a program that links it. The static
-library has no export list, so it keeps those names.
+library defines the same eight functions as its only global names. It
+holds the library as one object in which every other name is local, so
+a program with a transmit() or board_init() of its own links it
+without a clash. The unit tests link librsswitch-internal.a instead,
+the objects as they are, which keeps those functions and the test
+hooks of the stub board global for them.
 
 LIBGPIOD_VERSION=1 or 2 forces the libgpiod API (see "Software setup"
 below), and DEBUG=1 turns on the verbose syslog output:
@@ -620,7 +626,8 @@ WEB_VENV=/path makes and uses a venv at that place instead, with
 
 The tests do not compile the library sources. They build build/stub
 with the top-level Makefile and link it: the unit tests link its
-static library, which keeps the test hooks of the stub board, and the
+librsswitch-internal.a, the static library that keeps the board
+functions and the test hooks of the stub board global, and the
 test builds of rsswitchd and rsssend link its shared library, as the
 real programs do. make test sets LD_LIBRARY_PATH to that directory for
 the commands that run a test. Running a test program by hand needs it

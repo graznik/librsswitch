@@ -21,8 +21,11 @@
 # libgpiod board replace each other, that one make call builds and
 # installs from a tree without build/, that an install after a build
 # rebuilds nothing, and that a program builds and runs against the
-# installed tree through pkg-config. Takes the root of the code
-# repository as $1; run by `make test`. It needs no root.
+# installed tree through pkg-config. The installed static library
+# defines only the public functions as global names, and a program with
+# a transmit() and a board_init() of its own links it statically.
+# Takes the root of the code repository as $1; run by `make test`. It
+# needs no root.
 #
 # Nothing is written outside a temporary directory. The library is
 # built in a copy of the sources there, and install, ln, rm and
@@ -76,6 +79,10 @@ MAJOR=$(header_number MAJOR)
 MINOR=$(header_number MINOR)
 PATCH=$(header_number PATCH)
 VERSION="$MAJOR.$MINOR.$PATCH"
+
+# The functions the header marks as public, one name per line.
+want=$(sed -n -E 's/^RSS_API[^(]*[ *]([A-Za-z_0-9]+)\(.*/\1/p' \
+	"$ROOT/librsswitch.h" | LC_ALL=C sort)
 
 # The stand-ins. REAL_* are the tools they run after the checks.
 for tool in install ln rm; do
@@ -314,6 +321,67 @@ stage_pc_stub()
 }
 check "the stub's librsswitch.pc has the version and no Requires.private" \
 	stage_pc_stub
+
+# stage_archive_is_api: the installed archive defines exactly the
+# functions of the header as global names.
+stage_archive_is_api()
+{
+	ar="$S/stage/usr/local/lib/librsswitch.a"
+
+	[ -f "$ar" ] && [ -n "$want" ] || return 1
+	got=$(nm -g --defined-only "$ar" |
+		awk 'NF == 3 { print $3 }' | LC_ALL=C sort -u)
+	printf '%s\n' "$want" > "$S/api.names"
+	extra=$(printf '%s\n' "$got" | LC_ALL=C comm -23 - "$S/api.names")
+	[ -z "$extra" ] || printf '  global in the archive: %s\n' \
+		"$extra" >&2
+	[ "$got" = "$want" ]
+}
+check "the installed archive defines only the public functions as global names" \
+	stage_archive_is_api
+
+# A program with a transmit() and a board_init() of its own, linked
+# statically against the installed archive without pkg-config, so the
+# check never skips. The stub prints the codeword through its own board,
+# which a clash with the names of the program would have broken.
+printf '%s\n' '#include <stdio.h>' \
+	'#include <librsswitch.h>' \
+	'' \
+	'int transmit(int x);' \
+	'int board_init(void);' \
+	'' \
+	'int transmit(int x)' \
+	'{' \
+	'	return x + 1;' \
+	'}' \
+	'' \
+	'int board_init(void)' \
+	'{' \
+	'	return 41;' \
+	'}' \
+	'' \
+	'int main(void)' \
+	'{' \
+	'	if (transmit(1) != 2 || board_init() != 41)' \
+	'		return 1;' \
+	'	if (rss_send(RSS_POLLIN_2605, 17, 23, 1) != 0)' \
+	'		return 1;' \
+	'	puts(rss_version());' \
+	'	return 0;' \
+	'}' > "$S/static.c"
+
+stage_archive_links()
+{
+	cc -Wall -Werror -I"$S/stage/usr/local/include" -o "$S/static" \
+		"$S/static.c" "$S/stage/usr/local/lib/librsswitch.a" \
+		-pthread || return 1
+	"$S/static" > "$S/static.out" || return 1
+	printf '%s\n%s\n' 0FFF0000F00F "$VERSION" > "$S/static.want"
+	cmp -s "$S/static.out" "$S/static.want" &&
+		! readelf -d "$S/static" | grep -q 'NEEDED.*librsswitch'
+}
+check "a program with its own transmit() and board_init() links the installed archive" \
+	stage_archive_links
 
 # A program built with pkg-config against the installed tree. The two
 # variables are given to the pkg-config call itself: the first points it

@@ -12,17 +12,19 @@ LIB_SRCS = ../librsswitch.c ../boards/stub/stub.c \
 
 # The stub library, built by the top-level Makefile. BUILD names its
 # directory, relative to this one; the default is build/stub of the
-# repository. STUBLIB is the static library, which the unit tests link
-# so that they still reach the test hooks of the stub board, as hidden
-# visibility affects only the dynamic symbol table. STUBSO is the
-# shared library, which the test builds of rsswitchd and rsssend link
-# like the real programs do. They find it at run time through
-# LD_LIBRARY_PATH, which `test` sets to the absolute STUBDIR for the
-# commands that run a test, and for those only: exported for the whole
-# makefile it would reach the compiler runs as well.
+# repository. STUBLIB is the archive of the stub library that keeps the
+# internal names global and is never installed. The unit tests link it
+# so that they still reach the test hooks of the stub board and the
+# board functions, and so that a test board in front of it replaces the
+# board member. The installed librsswitch.a keeps only the public
+# functions global. STUBSO is the shared library, which the test builds
+# of rsswitchd and rsssend link like the real programs do. They find it
+# at run time through LD_LIBRARY_PATH, which `test` sets to the absolute
+# STUBDIR for the commands that run a test, and for those only: exported
+# for the whole makefile it would reach the compiler runs as well.
 BUILD ?= ../build/stub
 STUBDIR := $(abspath $(BUILD))
-STUBLIB := $(BUILD)/librsswitch.a
+STUBLIB := $(BUILD)/librsswitch-internal.a
 STUBSO := $(BUILD)/librsswitch.so
 TEST_DEPS = minitest.h pulse_decode.h ../librsswitch.c ../librsswitch.h \
 	    ../boards/board.h ../boards/stub/stub.c ../boards/stub/stub.h \
@@ -111,10 +113,11 @@ ABI_MAKE := $(MAKE)
 
 .PHONY: test venv clean tsan FORCE
 
-# One sub-make builds the shared and the static library, so the two
+# One sub-make builds the shared library and both archives, so they
 # never race under -j. It runs every time and builds only what changed.
-# The shared library has no recipe of its own and depends on the static
-# one, so a test program relinks only when the library changed.
+# The shared library has no recipe of its own and depends on the
+# internal archive, which the same sub-make builds, so a test program
+# relinks only when the library changed.
 $(STUBLIB): FORCE
 	$(MAKE) -C .. BOARD=stub BUILD=$(STUBDIR)
 
@@ -255,7 +258,7 @@ test_proto: test_proto.c minitest.h ../examples/network/rsswitchd_proto.c \
 		../examples/network/rsswitchd_proto.c $(STUBLIB)
 
 # Built like test_rsswitchd_bin, but with failing_board.c in front of
-# the static stub library, so test_rsswitchd's test_err_send can reach
+# the internal stub archive, so test_rsswitchd's test_err_send can reach
 # the daemon's ERR send reply path: a well-formed command still passes
 # the daemon's own checks and reaches the library, and it is the
 # board_init() call of failing_board.c that then fails. The board comes

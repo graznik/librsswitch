@@ -379,6 +379,23 @@ top_keeps_required_flags()
 check "Makefile: CFLAGS= keeps -fPIC and -fvisibility=hidden" \
 	top_keeps_required_flags
 
+# A cross build must take every tool of the installed static library
+# from CROSS_COMPILE, as it does gcc and ar: a host tool would act on
+# objects of another architecture. The relocatable link goes through
+# the compiler, never through a bare ld.
+top_archive_cross_tools()
+{
+	lines=$(top_lines CROSS_COMPILE=rss-cross-) || return 1
+	printf '%s\n' "$lines" | grep -q '^rss-cross-gcc .* -r -nostdlib ' &&
+		printf '%s\n' "$lines" | grep -q 'rss-cross-objcopy --localize-hidden' &&
+		printf '%s\n' "$lines" | grep -q 'rss-cross-readelf -S ' &&
+		printf '%s\n' "$lines" | grep -q 'rss-cross-nm -g --defined-only ' &&
+		printf '%s\n' "$lines" | grep -q '^rss-cross-ar rcs ' &&
+		! printf '%s\n' "$lines" | grep -qE '(^|[[:space:]])(ld|objcopy|nm|readelf) '
+}
+check "Makefile: a cross build makes the archive with the cross gcc, objcopy, nm, readelf and ar" \
+	top_archive_cross_tools
+
 # The tests link the stub library that the top-level Makefile builds
 # instead of compiling the library sources, except the ThreadSanitizer
 # run, which keeps them so that the library is instrumented.
@@ -400,12 +417,14 @@ link_line_of()
 	tests_lines "$1" | grep -E -- "-o $1([[:space:]]|\$)"
 }
 
-# links_archive TARGET: that line names the static stub library and no
-# library source.
+# links_archive TARGET: that line names the internal archive of the stub
+# library, which keeps the internal names global, and neither the
+# installed archive nor a library source.
 links_archive()
 {
 	line=$(link_line_of "$1") || return 1
-	printf '%s\n' "$line" | grep -q 'build/stub/librsswitch\.a' &&
+	printf '%s\n' "$line" | grep -q 'build/stub/librsswitch-internal\.a' &&
+		! printf '%s\n' "$line" | grep -q 'build/stub/librsswitch\.a' &&
 		! printf '%s\n' "$line" | grep -q 'librsswitch\.c'
 }
 

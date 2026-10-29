@@ -1,7 +1,9 @@
 # Builds the library for one board into build/<board>/: the shared
 # library librsswitch.so.MAJOR.MINOR.PATCH with the links
 # librsswitch.so.MAJOR and librsswitch.so, and the static library
-# librsswitch.a, both made from the same objects.
+# librsswitch.a, in which only the public functions are global names.
+# The unit tests link a third file, librsswitch-internal.a, which keeps
+# the objects as they are and is never installed.
 #
 #   make                      the libgpiod board, in build/gpiod/
 #   make BOARD=stub           the stub board, in build/stub/
@@ -28,6 +30,12 @@ CROSS_COMPILE ?=
 
 CC := $(CROSS_COMPILE)gcc
 AR := $(CROSS_COMPILE)ar
+# objcopy, nm and readelf make and check the installed static library.
+# A cross build takes them from the same prefix as the compiler, never
+# from the host.
+OBJCOPY := $(CROSS_COMPILE)objcopy
+NM := $(CROSS_COMPILE)nm
+READELF := $(CROSS_COMPILE)readelf
 
 # Where install puts the files. DESTDIR is prepended to every path and
 # is meant for staging a package: it is not part of the paths that
@@ -122,18 +130,23 @@ SONAME := librsswitch.so.$(MAJOR)
 SOFILE := $(BUILD)/librsswitch.so.$(VERSION)
 SOLINKS := $(BUILD)/$(SONAME) $(BUILD)/librsswitch.so
 ARFILE := $(BUILD)/librsswitch.a
+STATIC_OBJ := $(BUILD)/librsswitch-static.o
+INTERNAL_ARFILE := $(BUILD)/librsswitch-internal.a
 LIBFILES := $(SOFILE) $(SOLINKS) $(ARFILE)
 
 .PHONY: all test clean install uninstall abicheck abi-baseline FORCE
 
-all: $(LIBFILES)
+all: $(LIBFILES) $(INTERNAL_ARFILE)
 
 # make does not notice a changed DEBUG, LIBGPIOD_VERSION, CROSS_COMPILE
 # or flag, because the objects exist already. The flags are written to
 # a stamp file, only when they differ from the file's content, and
 # every object and library file depends on it, so such a change
-# rebuilds the board's objects without make clean.
-STAMP := $(CC) $(RSS_CFLAGS) $(CFLAGS) $(RSS_CPPFLAGS) $(CPPFLAGS) $(LDFLAGS) $(SO_LIBS)
+# rebuilds the board's objects without make clean. The tools and the
+# options that make the static library are part of the stamp as well,
+# so that a tree built with other ones makes its archive again.
+ARCHIVE_LOCALIZE := --localize-hidden --wildcard --keep-global-symbol='rss_*'
+STAMP := $(CC) $(AR) $(OBJCOPY) $(ARCHIVE_LOCALIZE) $(RSS_CFLAGS) $(CFLAGS) $(RSS_CPPFLAGS) $(CPPFLAGS) $(LDFLAGS) $(SO_LIBS)
 QSTAMP := $(subst ','\'',$(STAMP))
 
 $(BUILD)/.flags: FORCE
@@ -159,10 +172,49 @@ $(BUILD)/$(SONAME): $(SOFILE)
 $(BUILD)/librsswitch.so: $(BUILD)/$(SONAME)
 	ln -sf $(SONAME) $@
 
-# The same position independent objects go into the archive. All
-# functions of the board contract stay global in it by design; only the
-# shared library is limited to the public interface.
+# The members of an archive are linked as they are, so
+# -fvisibility=hidden does not keep the internal names out of a static
+# link. board_init(), transmit() and the other functions of the board,
+# the config parser and the test hooks of the stub would clash with a
+# function of the same name in the program. A program that defined all
+# of the board functions would even replace the board of the library.
+#
+# So the library is first linked into one relocatable object, in which
+# the references between its own files point at definitions in the same
+# object. objcopy then makes every name local except the public
+# functions:
+#   --localize-hidden takes the names that -fvisibility=hidden keeps out
+#   of the shared library.
+#   --keep-global-symbol with the rss_* pattern of librsswitch.map keeps
+#   only the interface global, even if a CFLAGS given on the command
+#   line changed the visibility.
+# The relocatable link goes through the compiler, with the flags of the
+# objects, so that it uses the ABI they were built for. With -flto in
+# CFLAGS the objects hold intermediate code whose symbol table objcopy
+# does not change; -flinker-output=nolto-rel compiles it into machine
+# code first. The recipe refuses an object that still holds such code or
+# a global name outside the interface. The archive therefore defines
+# what the shared library exports and nothing else, and it is what
+# install copies. Should a step fail, the archive is gone and the next
+# make runs every step again.
 $(ARFILE): $(OBJS) $(BUILD)/.flags
+	rm -f $@
+	$(CC) $(RSS_CFLAGS) $(CFLAGS) -r -nostdlib -flinker-output=nolto-rel \
+		-o $(STATIC_OBJ) $(OBJS)
+	$(OBJCOPY) $(ARCHIVE_LOCALIZE) $(STATIC_OBJ)
+	@if $(READELF) -S $(STATIC_OBJ) | grep -q '\.gnu\.lto_'; then \
+		echo "$(STATIC_OBJ) still holds LTO code" >&2; \
+		exit 1; \
+	fi
+	@$(NM) -g --defined-only $(STATIC_OBJ) | \
+		awk 'NF == 3 && $$3 !~ /^rss_/ { print "global name in $(STATIC_OBJ): " $$3; bad = 1 } END { exit bad }' >&2
+	$(AR) rcs $@ $(STATIC_OBJ)
+
+# This archive is for the unit tests only and is never installed. The
+# tests call the board functions and the test hooks of the stub
+# directly and put a board of their own in front of the archive. That
+# needs the objects as separate members with their global names.
+$(INTERNAL_ARFILE): $(OBJS) $(BUILD)/.flags
 	rm -f $@
 	$(AR) rcs $@ $(OBJS)
 
