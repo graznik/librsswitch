@@ -3,7 +3,7 @@
 rsswitchd is a network daemon for the Raspberry Pi, BeagleBone
 Black and a stub build for tests. It links
 [librsswitch](https://github.com/graznik/librsswitch) and
-serves a line-based TCP protocol that switches REV 008345 and
+serves a line-based TCP protocol that switches REV 008342 and
 Pollin 2605 sockets on or off.
 
 
@@ -100,7 +100,7 @@ Protocol v2 is `dev group socket data`, with single spaces,
 plain decimal digits and no leading zeros:
 
 ```
- dev   0 = REV 008345     1 = Pollin 2605
+ dev   0 = REV 008342     1 = Pollin 2605
  group 0-3                0-31
  socket 0-2               0-31
  data  1 = on, 0 = off (both devices)

@@ -133,8 +133,8 @@ RSS_API int32_t rss_gpio_config_check(const char *config);
  * Sends a switch command for one of the two built-in device tables.
  *
  * dev is RSS_REV_008345 or RSS_POLLIN_2605 (see enum rss_type below). group
- * is 0-3 for REV 008345 and 0-31 for Pollin 2605. socket is 0-2 for
- * REV 008345 and 0-31 for Pollin 2605. data is 0 for off, 1 for on.
+ * is 0-3 for REV 008342 and 0-31 for Pollin 2605. socket is 0-2 for
+ * REV 008342 and 0-31 for Pollin 2605. data is 0 for off, 1 for on.
  *
  * Arguments are fully validated before board_init() or any GPIO
  * access: an invalid dev, group, socket or data is logged and never
@@ -254,6 +254,10 @@ enum rss_err {
  */
 RSS_API enum rss_err rss_last_error(void);
 
+/*
+ * RSS_REV_008345 is the REV socket (type label: REV 008342; the
+ * identifier keeps the historical number).
+ */
 enum rss_type {
 		  RSS_REV_008345,
 		  RSS_POLLIN_2605

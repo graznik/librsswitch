@@ -115,7 +115,7 @@ static void *log_ctx;
 /*
  * Tri-state code parts of the two supported devices, indexed by
  * group, socket and data. Their sizes define the valid address ranges
- * for each device (REV 008345: group 0-3, socket 0-2; Pollin 2605:
+ * for each device (REV 008342: group 0-3, socket 0-2; Pollin 2605:
  * group 0-31, socket 0-31; both: data 0-1).
  */
 static const char * const rev_008345_groups[] = {"1FFF", "F1FF", "FF1F",
@@ -401,7 +401,7 @@ static int32_t send_sync(uint32_t pulse_len)
 }
 
 /**
- * Emulates the PT2260 encoder used by REV 008345.
+ * Emulates the PT2260 encoder used by REV 008342.
  * @param igroup    Socket group, valid range 0-3
  * @param isocket   Socket within the group, valid range 0-2
  * @param idata     0 = off, 1 = on

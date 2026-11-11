@@ -11,7 +11,7 @@ static void usage(void)
 {
 	fprintf(stderr,
 		"Usage: rsssend DEV GROUP SOCKET DATA [--gpio CONFIG]\n"
-		"  DEV:  0 = REV 008345, 1 = Pollin 2605\n"
+		"  DEV:  0 = REV 008342, 1 = Pollin 2605\n"
 		"  DATA: 0 = off, 1 = on\n"
 		"Exit status: 0 sent, 1 send failed or malformed --gpio, 2 usage error\n");
 }

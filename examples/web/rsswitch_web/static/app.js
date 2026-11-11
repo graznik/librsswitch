@@ -21,7 +21,7 @@ const HINT = "This is the last command sent, not the real state of the "
 /* What the socket type select shows. A type that is not here shows its
  * id, so a type that the server learns needs no change of the page. */
 const TYPE_LABELS = {
-	"rev_008345": "REV 008345",
+	"rev_008345": "REV 008342",
 	"pollin_2605": "Pollin 2605",
 };
 

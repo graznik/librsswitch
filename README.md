@@ -1,7 +1,7 @@
 # librsswitch
 
 librsswitch (remote socket switch) is a Linux library for controlling
-remote controlled power sockets. It switches REV 008345 and Pollin
+remote controlled power sockets. It switches REV 008342 and Pollin
 2605 433 MHz sockets by emulating the PT2260/PT2262 encoder chip of
 their remote control on a GPIO line, so a separate 433 MHz sender is
 needed. It runs on the Raspberry Pi (32-bit), the Raspberry Pi 3
@@ -25,8 +25,11 @@ librsswitch is written in C and heavily inspired by
 
 At the moment librsswitch supports the following devices:
 
-- REV 008345 (PT2260-R4S)
+- REV 008342 (PT2260-R4S)
 - Pollin 2605 (PT2262)
+
+The API names the REV socket RSS_REV_008345 (type label: REV 008342;
+the identifier keeps the historical number).
 
 
 ## Hardware setup
@@ -385,9 +388,9 @@ string; this function is for a caller that only wants to know.
 rss_send(uint32_t dev, uint32_t group, uint32_t socket, uint32_t data);
 ```
 
-- dev: 0 = REV 008345, 1 = Pollin 2605
-- group: REV 008345 0-3, Pollin 2605 0-31
-- socket: REV 008345 0-2, Pollin 2605 0-31
+- dev: 0 = REV 008342, 1 = Pollin 2605
+- group: REV 008342 0-3, Pollin 2605 0-31
+- socket: REV 008342 0-2, Pollin 2605 0-31
 - data: 1 = On, 0 = Off
 
 Returns 0 on success, -1 for an out-of-range group/socket/data, an
@@ -449,7 +452,7 @@ uint32_t *ndata);
 ```
 
 Reports the valid address range for dev, the same bounds rss_send()
-enforces: REV 008345 has 4 groups, 3 sockets and 2 data values; Pollin
+enforces: REV 008342 has 4 groups, 3 sockets and 2 data values; Pollin
 2605 has 32 groups, 32 sockets and 2 data values. Lets a caller (such
 as rsswitchd) validate an address itself before calling rss_send(),
 reading the same tables rss_send() does instead of copying the
